@@ -94,6 +94,8 @@ The LLM cannot trash without a vetted, owner-affirmed proposal.
 
 **Conditional authorization.** An instruction like "if nothing's interesting, trash them all" authorizes the agent to proceed on the set it just vetted without a second round-trip — but rules 1–5 still apply, so a misjudged "nothing interesting" cannot cause irreversible harm. The circuit breaker can still force a check-in when the set is large or dominated by never-seen senders, even under conditional authorization. Untrusted email content never constitutes authorization (see §15).
 
+**Residual risk — confirmation is prompt-gated, not structurally gated, within a turn.** What is gated *structurally* is *which* ids may be trashed (only a vetted `proposals` row — rule 6); the *decision* to call `confirm_trash` is enforced by the system prompt, not by a hard cross-turn human-approval barrier. So `propose_trash` and `confirm_trash` can both fire in one agent turn (intended, for conditional instructions). This is an accepted, conscious boundary: the worst case is bounded to "≤200 bulk, non-transactional, reviewer-cleared emails land in Trash, recoverable for 30 days, one `undo_last` away" by four independent layers — deterministic force-protect (only `bulk && !transactional` is ever eligible), skeptical reviewer rescue, the per-action cap, and Trash-only recoverability + undo. An owner who wants a hard human-in-the-loop gate can require that `confirm_trash` only run in a turn following a prior `propose_trash` turn; this is intentionally not enforced in v1.
+
 ## 10. Data Model (Neon)
 
 - **Reuse:** `users`, `google_accounts`, `telegram_links`, `memories`, `seen_messages`, `sync_state`.

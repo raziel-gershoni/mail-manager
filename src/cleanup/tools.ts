@@ -44,9 +44,9 @@ export function confirmTrashTool(): ToolDef {
       if (!proposal) return { ok: false, error: "proposal not found" };
       if (proposal.status !== "pending") return { ok: false, error: `proposal is ${proposal.status}` };
       const runId = randomUUID();
-      await dep.actionLog.record(ctx.userId, runId, proposal.messageIds);
+      await dep.actionLog.record(ctx.userId, runId, proposal.messageIds); // record first so undo covers it
+      await dep.proposals.markConfirmed(ctx.userId, id);                   // burn the proposal before the failure-prone trash
       await ctx.gmail.trash(proposal.messageIds);
-      await dep.proposals.markConfirmed(ctx.userId, id);
       return { ok: true, trashed: proposal.messageIds.length, runId };
     },
   };

@@ -20,7 +20,7 @@ export async function vetTrashSet(
   const rescued = new Map(verdicts.filter(v => v.keep).map(v => [v.id, v.reason]));
   const survivors: string[] = [];
   for (const c of eligible) {
-    if (rescued.has(c.id)) setAside.push({ id: c.id, reason: `rescued: ${rescued.get(c.id) || "valuable"}` });
+    if (rescued.has(c.id)) setAside.push({ id: c.id, reason: `rescued: ${rescued.get(c.id) ?? ""}` });
     else survivors.push(c.id);
   }
   let capped = false;

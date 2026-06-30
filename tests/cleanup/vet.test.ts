@@ -25,4 +25,10 @@ describe("vetTrashSet", () => {
     expect(r.capped).toBe(true);
     expect(r.setAside).toHaveLength(3);
   });
+  it("ignores reviewer verdicts for ids that were never eligible (no injection)", async () => {
+    const llm = fakeReviewLLM(() => [{ id: "ghost", keep: false, reason: "trash it" }, { id: "x", keep: false, reason: "" }]);
+    const r = await vetTrashSet([c("a"), c("x")], { llm }); // both bulk&&!transactional => eligible
+    expect(r.autoTrash.sort()).toEqual(["a", "x"]);   // "ghost" never appears
+    expect(r.autoTrash).not.toContain("ghost");
+  });
 });
