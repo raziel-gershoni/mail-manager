@@ -1,9 +1,17 @@
 // src/agent/tools.ts
 import type { GmailClient } from "../gmail/client.js";
 import type { MemoryStore, Verdict } from "../memory/store.js";
-import type { ToolSchema } from "../llm/provider.js";
+import type { ToolSchema, LLMProvider } from "../llm/provider.js";
+import type { ProposalRepo, ActionLogRepo } from "../cleanup/proposals.js";
 
-export interface ToolContext { userId: number; gmail: GmailClient; memory: MemoryStore; }
+export interface ToolContext {
+  userId: number;
+  gmail: GmailClient;
+  memory: MemoryStore;
+  proposals?: ProposalRepo;
+  actionLog?: ActionLogRepo;
+  llm?: LLMProvider;
+}
 export interface ToolDef { schema: ToolSchema; mutating: boolean; run(args: Record<string, unknown>, ctx: ToolContext): Promise<unknown>; }
 
 const READ_LIMIT = 10;
