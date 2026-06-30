@@ -50,3 +50,18 @@ export const syncState = pgTable("sync_state", {
   lastHistoryId: text("last_history_id").notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+export const conversations = pgTable("conversations", {
+  userId: integer("user_id").primaryKey().references(() => users.id),
+  runningSummary: text("running_summary").notNull().default(""),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const messages = pgTable("messages", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  role: text("role").notNull(),        // 'user' | 'assistant' | 'brief'
+  content: text("content").notNull(),
+  toolNote: text("tool_note").notNull().default(""),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
