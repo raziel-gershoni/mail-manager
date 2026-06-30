@@ -7,7 +7,7 @@ import { geminiProvider } from "../src/llm/gemini.js";
 import { dbMemoryStore } from "../src/db/adapters.js";
 import { dbConversationRepo } from "../src/db/conversation-adapter.js";
 import { readOnlyTools } from "../src/agent/tools.js";
-import { handleMessage } from "../src/telegram/bot.js";
+import { handleMessage, isAllowed } from "../src/telegram/bot.js";
 import { Bot } from "grammy";
 
 const USER_ID = 1;
@@ -15,6 +15,8 @@ const USER_ID = 1;
 export default async function handler(req: Request): Promise<Response> {
   const e = env();
   const update = await verifyQStash(e, req) as any;
+  const fromId = (update as any)?.message?.from?.id;
+  if (!isAllowed(e.TELEGRAM_OWNER_ID, fromId)) return Response.json({ ok: true, skipped: true });
   const text = update?.message?.text;
   const chatId = update?.message?.chat?.id;
   if (typeof text !== "string" || !chatId) return Response.json({ ok: true, skipped: true });

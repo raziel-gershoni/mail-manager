@@ -21,12 +21,18 @@ export default async function handler(req: Request): Promise<Response> {
   const res = await runPoll({ userId: USER_ID, gmail, store: await dbMemoryStore(USER_ID), llm, sync: dbSyncRepo(), seen: dbSeenRepo() });
   if (res.firstRun) return Response.json({ ok: true, firstRun: true });
   const ids = res.important.map(i => i.messageId);
-  const brief = await generateBrief(ids, { gmail, llm });
-  if (brief) {
-    const bot = new Bot(e.TELEGRAM_BOT_TOKEN);
-    await bot.api.sendMessage(e.TELEGRAM_OWNER_ID, brief);
-    await dbConversationRepo().appendTurn(USER_ID, { role: "brief", content: brief });
+  if (ids.length === 0) {
+    await res.commit();
+    return Response.json({ ok: true, important: 0 });
   }
+  let brief = await generateBrief(ids, { gmail, llm });
+  if (!brief || brief.trim() === "") {
+    brief = `${ids.length} new important email(s):\n` +
+      res.important.map(i => `• ${i.subject || "(no subject)"} — ${i.from}`).join("\n");
+  }
+  const bot = new Bot(e.TELEGRAM_BOT_TOKEN);
+  await bot.api.sendMessage(e.TELEGRAM_OWNER_ID, brief);
+  await dbConversationRepo().appendTurn(USER_ID, { role: "brief", content: brief });
   await res.commit();
   return Response.json({ ok: true, important: res.important.length });
 }
