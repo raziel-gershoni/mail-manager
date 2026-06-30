@@ -1,18 +1,29 @@
 import { estimateTokens } from "./tokens.js";
 import type { ConversationState, Turn } from "../conversation/store.js";
 import type { MemoryIndexEntry } from "../memory/store.js";
+import type { ToolCall } from "../llm/provider.js";
 
-export interface AgentMessage { role: "system" | "user" | "assistant" | "tool"; content: string; name?: string; }
+export type AgentMessage =
+  | { role: "system"; content: string }
+  | { role: "user"; content: string }
+  | { role: "assistant"; content: string }
+  | { role: "assistant"; toolCalls: ToolCall[] }
+  | { role: "tool"; name: string; result: unknown };
+type TextMessage = Extract<AgentMessage, { content: string }>;
 export const COMPACT_TOKENS = 40_000;
 
 export function buildAgentMessages(
   system: string, memoryIndex: MemoryIndexEntry[], state: ConversationState, userText: string,
-): AgentMessage[] {
+): TextMessage[] {
   const rules = memoryIndex.length ? memoryIndex.map(m => `- ${m.description}`).join("\n") : "(none yet)";
   const summary = state.summary ? `\n\nConversation so far:\n${state.summary}` : "";
   const sys = `${system}\n\nLearned preferences:\n${rules}${summary}`;
-  const out: AgentMessage[] = [{ role: "system", content: sys }];
-  for (const t of state.window) out.push({ role: t.role === "brief" ? "assistant" : t.role, content: t.content });
+  const out: TextMessage[] = [{ role: "system", content: sys }];
+  for (const t of state.window) {
+    out.push(t.role === "user"
+      ? { role: "user", content: t.content }
+      : { role: "assistant", content: t.content });
+  }
   out.push({ role: "user", content: userText });
   return out;
 }

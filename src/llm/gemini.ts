@@ -5,6 +5,42 @@ import type { AgentMessage } from "../context/assemble.js";
 
 const MODEL = "gemini-3.5-flash";
 
+type GeminiContent = { role: "user" | "model"; parts: any[] };
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+export function toGeminiContents(
+  messages: AgentMessage[],
+): { systemInstruction?: string; contents: GeminiContent[] } {
+  const systems: string[] = [];
+  const contents: GeminiContent[] = [];
+  for (const m of messages) {
+    if (m.role === "system") {
+      systems.push(m.content);
+    } else if (m.role === "user") {
+      contents.push({ role: "user", parts: [{ text: m.content }] });
+    } else if (m.role === "assistant" && "toolCalls" in m) {
+      contents.push({
+        role: "model",
+        parts: m.toolCalls.map(c => ({ functionCall: { name: c.name, args: c.args } })),
+      });
+    } else if (m.role === "assistant") {
+      contents.push({ role: "model", parts: [{ text: m.content }] });
+    } else if (m.role === "tool") {
+      const value = m.result;
+      let response: Record<string, unknown> = isPlainObject(value) ? value : { result: value };
+      if (JSON.stringify(response).length > 40_000) {
+        response = { result: JSON.stringify(value).slice(0, 40_000) };
+      }
+      contents.push({ role: "user", parts: [{ functionResponse: { name: m.name, response } }] });
+    }
+  }
+  const systemInstruction = systems.length ? systems.join("\n\n") : undefined;
+  return { systemInstruction, contents };
+}
+
 export function parseClassifyJson(text: string): ClassifyResult {
   const obj = JSON.parse(text) as Record<string, unknown>;
   // recall bias: missing/unknown important => treat as important+suspicious
@@ -41,15 +77,11 @@ export function geminiProvider(apiKey: string): LLMProvider {
       return parseClassifyJson(res.text ?? "");
     },
     async agentStep(messages: AgentMessage[], tools) {
-      const contents = messages.filter(m => m.role !== "system").map(m => ({
-        role: m.role === "assistant" ? "model" : "user",
-        parts: [{ text: m.content }],
-      }));
-      const system = messages.find(m => m.role === "system")?.content;
+      const { systemInstruction, contents } = toGeminiContents(messages);
       const res = await ai.models.generateContent({
         model: MODEL, contents,
         config: {
-          systemInstruction: system,
+          systemInstruction,
           tools: tools.length ? [{ functionDeclarations: tools.map(t => ({ name: t.name, description: t.description, parameters: t.parameters as any })) }] : undefined,
           temperature: 0,
         },
