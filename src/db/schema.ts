@@ -1,5 +1,5 @@
 // src/db/schema.ts
-import { pgTable, serial, integer, text, timestamp, boolean, bigint, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, boolean, bigint, uniqueIndex, jsonb } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -63,5 +63,23 @@ export const messages = pgTable("messages", {
   role: text("role").notNull(),        // 'user' | 'assistant' | 'brief'
   content: text("content").notNull(),
   toolNote: text("tool_note").notNull().default(""),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const proposals = pgTable("proposals", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  messageIds: jsonb("message_ids").$type<string[]>().notNull(),
+  summary: text("summary").notNull().default(""),
+  status: text("status").notNull().default("pending"), // 'pending' | 'confirmed' | 'expired'
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const actionLog = pgTable("action_log", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  runId: text("run_id").notNull(),
+  messageIds: jsonb("message_ids").$type<string[]>().notNull(),
+  undone: boolean("undone").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
