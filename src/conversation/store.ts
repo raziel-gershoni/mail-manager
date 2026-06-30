@@ -11,8 +11,8 @@ export function fakeConversationRepo(): ConversationRepo {
   const m = new Map<number, ConversationState>();
   const get = (u: number) => m.get(u) ?? { summary: "", window: [] };
   return {
-    async load(u) { const s = get(u); return { summary: s.summary, window: [...s.window] }; },
-    async appendTurn(u, t) { const s = get(u); m.set(u, { summary: s.summary, window: [...s.window, t] }); },
-    async replaceState(u, state) { m.set(u, { summary: state.summary, window: [...state.window] }); },
+    async load(u) { const s = get(u); return { summary: s.summary, window: s.window.map(t => ({ ...t })) }; },
+    async appendTurn(u, t) { const s = get(u); m.set(u, { summary: s.summary, window: [...s.window, { ...t }] }); },
+    async replaceState(u, state) { m.set(u, { summary: state.summary, window: state.window.map(t => ({ ...t })) }); },
   };
 }
