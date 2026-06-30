@@ -11,6 +11,16 @@ describe("fakeProposalRepo", () => {
     expect((await r.get(1, p.id))?.status).toBe("confirmed");
     expect(await r.get(1, 999)).toBeNull();
   });
+
+  it("returned proposal messageIds are isolated from stored state", async () => {
+    const r = fakeProposalRepo();
+    const p = await r.create(1, ["a", "b"], "s");
+    p.messageIds.push("c");                       // mutate the returned array
+    expect((await r.get(1, p.id))?.messageIds).toEqual(["a", "b"]); // storage unchanged
+    const got = (await r.get(1, p.id))!;
+    got.messageIds.push("z");                      // mutate a get() result
+    expect((await r.get(1, p.id))?.messageIds).toEqual(["a", "b"]); // still unchanged
+  });
 });
 
 describe("fakeActionLogRepo", () => {

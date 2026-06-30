@@ -18,11 +18,11 @@ export function fakeProposalRepo(): ProposalRepo {
   return {
     async create(userId, messageIds, summary) {
       const p: Proposal = { id: ++seq, userId, messageIds: [...messageIds], summary, status: "pending" };
-      rows.push(p); return { ...p };
+      rows.push(p); return { ...p, messageIds: [...p.messageIds] };
     },
     async get(userId, id) {
       const p = rows.find(r => r.userId === userId && r.id === id);
-      return p ? { ...p } : null;
+      return p ? { ...p, messageIds: [...p.messageIds] } : null;
     },
     async markConfirmed(userId, id) {
       const p = rows.find(r => r.userId === userId && r.id === id);
