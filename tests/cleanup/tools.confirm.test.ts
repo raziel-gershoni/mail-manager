@@ -32,4 +32,22 @@ describe("confirmTrashTool", () => {
     expect(res.ok).toBe(false);
     expect(c.gmail.trashedIds!()).toEqual([]);
   });
+  it("second confirm of same proposal returns ok:false and doesn't duplicate action_log", async () => {
+    const c = ctx();
+    const p = await c.proposals.create(1, ["x", "y", "z"], "test");
+    const res1 = await tool.run({ proposalId: p.id }, c) as any;
+    expect(res1.ok).toBe(true);
+    const firstRunId = res1.runId;
+    const firstLog = await c.actionLog.lastUndoable(1);
+    expect(firstLog?.messageIds.sort()).toEqual(["x", "y", "z"]);
+
+    // Second confirm should fail (proposal already confirmed)
+    const res2 = await tool.run({ proposalId: p.id }, c) as any;
+    expect(res2.ok).toBe(false);
+
+    // Action log should still have only the first run, not a duplicate
+    const lastLog = await c.actionLog.lastUndoable(1);
+    expect(lastLog?.runId).toBe(firstRunId);
+    expect(lastLog?.messageIds.sort()).toEqual(["x", "y", "z"]);
+  });
 });
