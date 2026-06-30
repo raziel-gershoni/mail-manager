@@ -2,8 +2,9 @@ import type { GmailClient } from "../gmail/client.js";
 import type { MemoryStore } from "../memory/store.js";
 import type { LLMProvider } from "../llm/provider.js";
 import type { SyncStateRepo, SeenRepo } from "./sync.js";
-import type { DigestItem } from "./digest.js";
 import { classifyEmail } from "./classify.js";
+
+export interface DigestItem { messageId: string; from: string; subject: string; reason: string; }
 
 export interface PollDeps {
   userId: number; gmail: GmailClient; store: MemoryStore; llm: LLMProvider;
