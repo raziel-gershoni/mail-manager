@@ -42,6 +42,7 @@ export function fakeSeenRepo(): SeenRepo {
       m.set(k(u, row.messageId), row);
     },
     async recentSuspicious(u, limit) {
+      if (limit <= 0) return [];
       return order
         .filter(o => o.u === u)
         .map(o => m.get(k(o.u, o.id))!)
