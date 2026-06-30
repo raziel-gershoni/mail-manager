@@ -36,7 +36,7 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
     const email = await deps.gmail.getMeta(id);
     const outcome = await classifyEmail(email, { store: deps.store, llm: deps.llm });
     if (outcome.important) {
-      // Defer marking-seen + cursor advance until the digest is delivered.
+      // Defer marking-seen + cursor advance until the brief is delivered.
       important.push({ messageId: id, from: email.from, subject: email.subject, reason: outcome.reason });
       toCommit.push({ id, reason: outcome.reason });
     } else {
