@@ -15,17 +15,23 @@ export default async function handler(req: Request): Promise<Response> {
   const e = env();
   await verifyQStash(e, req);
   const auth = await authedGmailFor(USER_ID, e);
-  const result = await runPoll({
+  const res = await runPoll({
     userId: USER_ID, gmail: googleGmailClient(auth),
     store: await dbMemoryStore(USER_ID), llm: geminiProvider(e.GEMINI_API_KEY),
     sync: dbSyncRepo(), seen: dbSeenRepo(),
   });
-  const msg = buildImportantDigest(result.important);
+  if (res.firstRun) {
+    return Response.json({ ok: true, firstRun: true, important: 0 });
+  }
+  const msg = buildImportantDigest(res.important);
   if (msg) {
+    // Send FIRST. If this throws we never reach commit(), so the cursor stays put
+    // and the important messages remain unseen → QStash retries → at-least-once.
     const bot = new Bot(e.TELEGRAM_BOT_TOKEN);
     const kb = new InlineKeyboard();
     for (const r of msg.buttons) { for (const b of r) kb.text(b.text, b.callbackData); kb.row(); }
     await bot.api.sendMessage(e.TELEGRAM_OWNER_ID, msg.text, { reply_markup: kb, parse_mode: "Markdown" });
   }
-  return Response.json({ ok: true, ...result, important: result.important.length });
+  await res.commit();
+  return Response.json({ ok: true, firstRun: false, processed: res.processed, important: res.important.length });
 }

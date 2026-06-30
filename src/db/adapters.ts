@@ -25,17 +25,24 @@ export async function dbMemoryStore(userId: number): Promise<MemoryStore & { flu
       const row: MemoryRow = { userId, slug, description, body: "", scope: "sender", matchType: "sender", matchValue: email, verdict };
       const idx = local.findIndex(r => r.slug === slug);
       if (idx >= 0) local[idx] = row; else local.push(row);
-      pending.push(
-        db().insert(schema.memories).values({ userId, slug, description, body: "", scope: "sender",
-          matchType: "sender", matchValue: email, verdict, updatedAt: new Date() })
-          .onConflictDoUpdate({ target: [schema.memories.userId, schema.memories.slug],
-            set: { verdict, description, updatedAt: new Date() } })
-          .catch((e) => { console.error("memory upsert failed", e); })
-      );
+      const writePromise = db().insert(schema.memories).values({ userId, slug, description, body: "", scope: "sender",
+        matchType: "sender", matchValue: email, verdict, updatedAt: new Date() })
+        .onConflictDoUpdate({ target: [schema.memories.userId, schema.memories.slug],
+          set: { verdict, description, updatedAt: new Date() } });
+      // Queue the ORIGINAL promise so flush() can observe a rejection. The no-op
+      // catch is attached to a SEPARATE reference purely to suppress Node's
+      // unhandled-rejection warning; it does not swallow the rejection flush() sees.
+      pending.push(writePromise);
+      writePromise.catch(() => {});
       return row;
     },
     async flush(): Promise<void> {
-      await Promise.allSettled(pending);
+      const results = await Promise.allSettled(pending);
+      const rejected = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+      for (const r of rejected) console.error("memory upsert failed", r.reason);
+      if (rejected.length > 0) {
+        throw new Error(`${rejected.length} learned-rule write(s) failed`);
+      }
     },
   };
 }
