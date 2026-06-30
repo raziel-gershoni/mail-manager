@@ -12,13 +12,17 @@ export interface MemoryStore {
   upsertSenderRule(fromEmail: string, verdict: Verdict): MemoryRow;
 }
 
+export function matchRuleIn(rows: MemoryRow[], fromEmail: string, fromDomain: string): RuleMatch | null {
+  const sender = rows.find(r => r.matchType === "sender" && r.matchValue === fromEmail && r.verdict);
+  const hit = sender ?? rows.find(r => r.matchType === "domain" && r.matchValue === fromDomain && r.verdict);
+  return hit ? { slug: hit.slug, verdict: hit.verdict as Verdict } : null;
+}
+
 export function inMemoryStore(seed: MemoryRow[] = []): MemoryStore {
   const rows: MemoryRow[] = [...seed];
   return {
     findRuleFor(fromEmail, fromDomain) {
-      const sender = rows.find(r => r.matchType === "sender" && r.matchValue === fromEmail && r.verdict);
-      const hit = sender ?? rows.find(r => r.matchType === "domain" && r.matchValue === fromDomain && r.verdict);
-      return hit ? { slug: hit.slug, verdict: hit.verdict as Verdict } : null;
+      return matchRuleIn(rows, fromEmail, fromDomain);
     },
     index() {
       return rows.filter(r => r.matchType === null).map(r => ({ slug: r.slug, description: r.description, scope: r.scope }));

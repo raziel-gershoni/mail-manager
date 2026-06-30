@@ -1,19 +1,19 @@
 // src/db/adapters.ts
 import { and, desc, eq } from "drizzle-orm";
 import { db, schema } from "./client.js";
+import { matchRuleIn } from "../memory/store.js";
 import type { MemoryStore, RuleMatch, MemoryIndexEntry, MemoryRow, Verdict } from "../memory/store.js";
 import type { SeenRepo, SeenRow, SyncStateRepo } from "../notifier/sync.js";
 
 // NOTE: dbMemoryStore loads the user's rows once (call per run). Writes go straight to the DB.
-export async function dbMemoryStore(userId: number): Promise<MemoryStore> {
+export async function dbMemoryStore(userId: number): Promise<MemoryStore & { flush(): Promise<void> }> {
   const rows = await db().select().from(schema.memories).where(eq(schema.memories.userId, userId));
   const local: MemoryRow[] = rows.map(r => ({ userId, slug: r.slug, description: r.description, body: r.body,
     scope: r.scope, matchType: r.matchType, matchValue: r.matchValue, verdict: r.verdict }));
+  const pending: Promise<unknown>[] = [];
   return {
     findRuleFor(email, domain): RuleMatch | null {
-      const s = local.find(r => r.matchType === "sender" && r.matchValue === email && r.verdict);
-      const hit = s ?? local.find(r => r.matchType === "domain" && r.matchValue === domain && r.verdict);
-      return hit ? { slug: hit.slug, verdict: hit.verdict as Verdict } : null;
+      return matchRuleIn(local, email, domain);
     },
     index(): MemoryIndexEntry[] {
       return local.filter(r => r.matchType === null).map(r => ({ slug: r.slug, description: r.description, scope: r.scope }));
@@ -25,12 +25,17 @@ export async function dbMemoryStore(userId: number): Promise<MemoryStore> {
       const row: MemoryRow = { userId, slug, description, body: "", scope: "sender", matchType: "sender", matchValue: email, verdict };
       const idx = local.findIndex(r => r.slug === slug);
       if (idx >= 0) local[idx] = row; else local.push(row);
-      // fire-and-forget upsert
-      void db().insert(schema.memories).values({ userId, slug, description, body: "", scope: "sender",
-        matchType: "sender", matchValue: email, verdict, updatedAt: new Date() })
-        .onConflictDoUpdate({ target: [schema.memories.userId, schema.memories.slug],
-          set: { verdict, description, updatedAt: new Date() } });
+      pending.push(
+        db().insert(schema.memories).values({ userId, slug, description, body: "", scope: "sender",
+          matchType: "sender", matchValue: email, verdict, updatedAt: new Date() })
+          .onConflictDoUpdate({ target: [schema.memories.userId, schema.memories.slug],
+            set: { verdict, description, updatedAt: new Date() } })
+          .catch((e) => { console.error("memory upsert failed", e); })
+      );
       return row;
+    },
+    async flush(): Promise<void> {
+      await Promise.allSettled(pending);
     },
   };
 }

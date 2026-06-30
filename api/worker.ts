@@ -13,11 +13,13 @@ export default async function handler(req: Request): Promise<Response> {
   const update = await verifyQStash(e, req);
   const auth = await authedGmailFor(USER_ID, e);
   const gmail = googleGmailClient(auth);
+  const store = await dbMemoryStore(USER_ID);
   const bot = buildBot(e, {
-    store: await dbMemoryStore(USER_ID), seen: dbSeenRepo(), userId: USER_ID,
+    store, seen: dbSeenRepo(), userId: USER_ID,
     gmailFromEmail: async (id) => (await gmail.getMeta(id)).fromEmail,
   });
   await bot.init();
   await bot.handleUpdate(update as any);
+  await store.flush();
   return Response.json({ ok: true });
 }
