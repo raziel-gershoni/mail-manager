@@ -34,7 +34,13 @@ export function toGeminiContents(
       if (JSON.stringify(response).length > 40_000) {
         response = { result: JSON.stringify(value).slice(0, 40_000) };
       }
-      contents.push({ role: "user", parts: [{ functionResponse: { name: m.name, response } }] });
+      const part = { functionResponse: { name: m.name, response } };
+      const last = contents.at(-1);
+      if (last && last.role === "user" && last.parts.length > 0 && last.parts.every((p: any) => "functionResponse" in p)) {
+        last.parts.push(part);
+      } else {
+        contents.push({ role: "user", parts: [part] });
+      }
     }
   }
   const systemInstruction = systems.length ? systems.join("\n\n") : undefined;

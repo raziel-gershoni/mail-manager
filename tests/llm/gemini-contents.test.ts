@@ -54,4 +54,16 @@ describe("toGeminiContents", () => {
     expect(typeof part.functionResponse.response.result).toBe("string");
     expect(part.functionResponse.response.result.length).toBe(40_000);
   });
+
+  it("bundles multiple tool responses from one model turn into a single user content", () => {
+    const out = toGeminiContents([
+      { role: "assistant", toolCalls: [{ name: "a", args: {} }, { name: "b", args: {} }] },
+      { role: "tool", name: "a", result: { x: 1 } },
+      { role: "tool", name: "b", result: { y: 2 } },
+    ]);
+    const userTurns = out.contents.filter((c: any) => c.role === "user");
+    expect(userTurns).toHaveLength(1);
+    expect(userTurns[0]!.parts).toHaveLength(2);
+    expect(userTurns[0]!.parts.every((p: any) => "functionResponse" in p)).toBe(true);
+  });
 });
