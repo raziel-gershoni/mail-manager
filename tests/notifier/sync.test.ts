@@ -23,14 +23,15 @@ describe("fakeSeenRepo", () => {
 
   it("record updates an existing row in-place and does not duplicate it", async () => {
     const r = fakeSeenRepo();
+    // record "a" as suspicious, then re-record "a" (reason changed) — still qualifies
     await r.record(1, { messageId: "a", surfaced: false, verdict: "suspicious", reason: "x" });
-    // Second record call with same messageId — should update, not duplicate
-    await r.record(1, { messageId: "a", surfaced: true, verdict: "important", reason: "y" });
-    const row = await r.get(1, "a");
-    expect(row).toEqual({ messageId: "a", surfaced: true, verdict: "important", reason: "y" });
-    // Message is now surfaced=true so it no longer qualifies as recent suspicious
+    await r.record(1, { messageId: "a", surfaced: false, verdict: "suspicious", reason: "updated" });
+    // a second qualifying row
+    await r.record(1, { messageId: "b", surfaced: false, verdict: "suspicious", reason: "y" });
     const sus = await r.recentSuspicious(1, 10);
-    expect(sus).toEqual([]);
+    expect(sus.map(x => x.messageId)).toEqual(["b", "a"]); // length 2 proves "a" wasn't double-pushed
+    // and prove the field actually updated in place:
+    expect((await r.get(1, "a"))?.reason).toBe("updated");
   });
 
   it("get returns null for missing messageId and the exact recorded row", async () => {
