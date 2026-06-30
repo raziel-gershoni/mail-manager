@@ -1,4 +1,5 @@
 // src/cleanup/tools.ts
+import { randomUUID } from "node:crypto";
 import type { ToolDef, ToolContext } from "../agent/tools.js";
 import type { TrashCandidate } from "../llm/provider.js";
 import { riskSignals } from "../gmail/risk.js";
@@ -27,6 +28,26 @@ export function proposeTrashTool(): ToolDef {
       const summary = `${vet.autoTrash.length} to trash, ${vet.setAside.length} set aside${vet.capped ? " (capped)" : ""}`;
       const proposal = await dep.proposals.create(ctx.userId, vet.autoTrash, summary);
       return { proposalId: proposal.id, willTrash: vet.autoTrash.length, setAside: vet.setAside, capped: vet.capped, summary };
+    },
+  };
+}
+
+export function confirmTrashTool(): ToolDef {
+  return {
+    mutating: true,
+    schema: { name: "confirm_trash", description: "Execute a pending trash proposal by id (moves its emails to Trash, recoverable). Only call after the owner has approved.",
+      parameters: { type: "object", properties: { proposalId: { type: "number" } }, required: ["proposalId"] } },
+    async run(args, ctx) {
+      const dep = requireCleanup(ctx);
+      const id = Number(args.proposalId);
+      const proposal = await dep.proposals.get(ctx.userId, id);
+      if (!proposal) return { ok: false, error: "proposal not found" };
+      if (proposal.status !== "pending") return { ok: false, error: `proposal is ${proposal.status}` };
+      await ctx.gmail.trash(proposal.messageIds);
+      const runId = randomUUID();
+      await dep.actionLog.record(ctx.userId, runId, proposal.messageIds);
+      await dep.proposals.markConfirmed(ctx.userId, id);
+      return { ok: true, trashed: proposal.messageIds.length, runId };
     },
   };
 }
