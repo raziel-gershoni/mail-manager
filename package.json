@@ -2,7 +2,9 @@
   "name": "mail-manager",
   "type": "module",
   "private": true,
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
@@ -17,12 +19,13 @@
     "drizzle-orm": "^0.33.0",
     "google-auth-library": "^9.0.0",
     "googleapis": "^144.0.0",
-    "grammy": "^1.30.0"
+    "grammy": "^1.30.0",
+    "node-html-parser": "^6.1.13"
   },
   "devDependencies": {
+    "@types/node": "^20.16.0",
     "drizzle-kit": "^0.24.0",
     "typescript": "^5.6.0",
-    "vitest": "^2.1.0",
-    "@types/node": "^20.16.0"
+    "vitest": "^2.1.0"
   }
 }
