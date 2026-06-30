@@ -30,4 +30,20 @@ describe("runAgentTurn", () => {
     const res = await runAgentTurn([{ role: "user", content: "loop" }], { llm, tools: readOnlyTools(), ctx: ctx(), maxIters: 3 });
     expect(res.text).toMatch(/couldn't complete|stopped/i);
   });
+  it("appends assistant turn before tool results", async () => {
+    const seen: any[][] = [];
+    let n = 0;
+    const llm = fakeAgentLLM((messages) => {
+      seen.push(messages);
+      return n++ === 0
+        ? { kind: "tool_calls", calls: [{ name: "list_memories", args: {} }] }
+        : { kind: "final", text: "done" };
+    });
+    await runAgentTurn([{ role: "user", content: "x" }], { llm, tools: readOnlyTools(), ctx: ctx() });
+    const second = seen[1]!;
+    const toolIdx = second.findIndex((m: any) => m.role === "tool");
+    const asstIdx = second.findIndex((m: any) => m.role === "assistant");
+    expect(asstIdx).toBeGreaterThanOrEqual(0);
+    expect(asstIdx).toBeLessThan(toolIdx);
+  });
 });

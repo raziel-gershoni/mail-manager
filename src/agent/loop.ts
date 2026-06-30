@@ -17,11 +17,12 @@ export async function runAgentTurn(
   for (let i = 0; i < max; i++) {
     const step = await deps.llm.agentStep(convo, schemas);
     if (step.kind === "final") return { text: step.text, toolNote: used.join(",") || "none" };
+    convo.push({ role: "assistant", content: JSON.stringify(step.calls) });
     for (const call of step.calls) {
       used.push(call.name);
       let result: unknown;
       try { result = await dispatchTool(call.name, call.args, deps.ctx, deps.tools); }
-      catch (e) { result = { error: (e as Error).message }; }
+      catch (e) { result = { error: e instanceof Error ? e.message : String(e) }; }
       convo.push({ role: "tool", name: call.name, content: JSON.stringify(result).slice(0, 40_000) });
     }
   }
