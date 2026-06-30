@@ -10,6 +10,8 @@ export interface MemoryStore {
   index(): MemoryIndexEntry[];
   list(): MemoryRow[];
   upsertSenderRule(fromEmail: string, verdict: Verdict): MemoryRow;
+  upsertRule(input: { matchValue: string; scope: "sender" | "domain"; verdict: Verdict; description: string }): MemoryRow;
+  deleteBySlug(slug: string): void;
 }
 
 export function matchRuleIn(rows: MemoryRow[], fromEmail: string, fromDomain: string): RuleMatch | null {
@@ -30,13 +32,21 @@ export function inMemoryStore(seed: MemoryRow[] = []): MemoryStore {
     list() { return [...rows]; },
     upsertSenderRule(fromEmail, verdict) {
       const slug = `sender:${fromEmail}`;
+      const description = `sender ${fromEmail} is ${verdict}`;
       let row = rows.find(r => r.slug === slug);
       if (!row) {
-        row = { userId: 1, slug, description: `sender ${fromEmail} is ${verdict}`,
-          body: "", scope: "sender", matchType: "sender", matchValue: fromEmail, verdict };
+        row = { userId: 1, slug, description, body: "", scope: "sender", matchType: "sender", matchValue: fromEmail, verdict };
         rows.push(row);
-      } else { row.verdict = verdict; row.description = `sender ${fromEmail} is ${verdict}`; }
+      } else { row.verdict = verdict; row.description = description; }
       return row;
     },
+    upsertRule({ matchValue, scope, verdict, description }) {
+      const slug = `${scope}:${matchValue}`;
+      let row = rows.find(r => r.slug === slug);
+      if (!row) { row = { userId: 1, slug, description, body: "", scope, matchType: scope, matchValue, verdict }; rows.push(row); }
+      else { row.verdict = verdict; row.description = description; }
+      return row;
+    },
+    deleteBySlug(slug) { const i = rows.findIndex(r => r.slug === slug); if (i >= 0) rows.splice(i, 1); },
   };
 }
