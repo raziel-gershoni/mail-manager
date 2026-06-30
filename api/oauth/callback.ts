@@ -10,6 +10,7 @@ export default async function handler(req: Request): Promise<Response> {
     const { email } = await exchangeAndStore(env(), code);
     return new Response(`Connected ${email}. You can close this tab.`, { status: 200 });
   } catch (e) {
-    return new Response(`OAuth error: ${(e as Error).message}`, { status: 500 });
+    console.error("oauth callback error", e);
+    return new Response("OAuth failed — check the server logs.", { status: 500 });
   }
 }

@@ -12,7 +12,7 @@ describe("buildAuthUrl", () => {
     const url = new URL(buildAuthUrl(env, "state123"));
     expect(url.searchParams.get("access_type")).toBe("offline");
     expect(url.searchParams.get("prompt")).toBe("consent");
-    expect(url.searchParams.get("scope")).toContain("gmail.modify");
+    expect(url.searchParams.get("scope")).toBe("https://www.googleapis.com/auth/gmail.modify");
     expect(url.searchParams.get("state")).toBe("state123");
     expect(url.searchParams.get("client_id")).toBe("cid");
   });

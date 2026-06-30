@@ -23,9 +23,10 @@ export async function exchangeAndStore(env: Env, code: string): Promise<{ email:
   const { tokens } = await client.getToken(code);
   if (!tokens.refresh_token) throw new Error("no refresh_token (re-consent with prompt=consent)");
   client.setCredentials(tokens);
-  const oauth2 = google.oauth2({ version: "v2", auth: client });
-  const me = await oauth2.userinfo.get();
-  const email = me.data.email!;
+  const gmail = google.gmail({ version: "v1", auth: client });
+  const profile = await gmail.users.getProfile({ userId: "me" });
+  const email = profile.data.emailAddress;
+  if (!email) throw new Error("could not resolve account email from gmail profile");
   // single-user bootstrap: ensure a user row id=1 exists, then store the account
   const enc = encryptSecret(tokens.refresh_token, env.TOKEN_ENC_KEY);
   const [user] = await db().select().from(schema.users).limit(1);
