@@ -51,3 +51,23 @@ export function confirmTrashTool(): ToolDef {
     },
   };
 }
+
+export function undoLastTool(): ToolDef {
+  return {
+    mutating: true,
+    schema: { name: "undo_last", description: "Undo the most recent trash action (restores those emails from Trash).",
+      parameters: { type: "object", properties: {} } },
+    async run(_args, ctx) {
+      const dep = requireCleanup(ctx);
+      const run = await dep.actionLog.lastUndoable(ctx.userId);
+      if (!run) return { ok: false, error: "nothing to undo" };
+      await ctx.gmail.untrash(run.messageIds);
+      await dep.actionLog.markUndone(ctx.userId, run.runId);
+      return { ok: true, restored: run.messageIds.length };
+    },
+  };
+}
+
+export function trashTools(): ToolDef[] {
+  return [proposeTrashTool(), confirmTrashTool(), undoLastTool()];
+}
