@@ -21,11 +21,13 @@ Gmail-to-Telegram notification bot. Polls Gmail history, classifies emails with 
 
 - [ ] Visit https://<app>/api/oauth/callback flow via the auth URL (log it from buildAuthUrl); see "Connected <email>".
 - [ ] Run `npm run db:migrate` to apply the conversations + messages migration before deploying.
+- [ ] Run `npm run db:migrate` for the proposals/action_log migration (cleanup flow).
 - [ ] Manually trigger the QStash schedule once → first run sets the cursor, no Telegram message.
 - [ ] Send yourself a new email → trigger the schedule → receive a natural-language brief (not a button list).
 - [ ] Message the bot in plain language ("what's new?", "anything from the bank?", "linkedin is never important"); confirm it replies conversationally, that `search`/`read` answer inbox questions, and that a stated preference shows up next time.
 - [ ] Confirm the 30-min poll posts a natural-language brief (not a button list).
 - [ ] Send a Telegram message from a different account → bot ignores it (allowlist).
+- [ ] Cleanup flow: message 'clean my linkedin junk' → the bot proposes a vetted set and asks before trashing; approve → it trashes (recoverable); 'undo' → it restores; confirm nothing trashes without your approval.
 
 ## Environment variables
 

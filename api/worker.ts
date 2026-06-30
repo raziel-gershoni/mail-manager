@@ -7,6 +7,8 @@ import { geminiProvider } from "../src/llm/gemini.js";
 import { dbMemoryStore } from "../src/db/adapters.js";
 import { dbConversationRepo } from "../src/db/conversation-adapter.js";
 import { readOnlyTools } from "../src/agent/tools.js";
+import { trashTools } from "../src/cleanup/tools.js";
+import { dbProposalRepo, dbActionLogRepo } from "../src/db/cleanup-adapters.js";
 import { handleMessage, isAllowed } from "../src/telegram/bot.js";
 import { Bot } from "grammy";
 
@@ -24,7 +26,9 @@ export default async function handler(req: Request): Promise<Response> {
   const store = await dbMemoryStore(USER_ID);
   const reply = await handleMessage(text, {
     userId: USER_ID, gmail: googleGmailClient(auth), memory: store,
-    llm: geminiProvider(e.GEMINI_API_KEY), convo: dbConversationRepo(), tools: readOnlyTools(),
+    llm: geminiProvider(e.GEMINI_API_KEY), convo: dbConversationRepo(),
+    proposals: dbProposalRepo(), actionLog: dbActionLogRepo(),
+    tools: [...readOnlyTools(), ...trashTools()],
   });
   await store.flush();
   const bot = new Bot(e.TELEGRAM_BOT_TOKEN);

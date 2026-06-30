@@ -6,12 +6,14 @@ import { fakeAgentLLM } from "../../src/llm/provider.js";
 import { readOnlyTools } from "../../src/agent/tools.js";
 import { fakeGmailClient } from "../../src/gmail/client.js";
 import { inMemoryStore } from "../../src/memory/store.js";
+import { fakeProposalRepo, fakeActionLogRepo } from "../../src/cleanup/proposals.js";
 
 function deps(script: any): SecretaryDeps {
   return {
     userId: 1, memory: inMemoryStore(), convo: fakeConversationRepo(),
     gmail: fakeGmailClient({ historyId: "1", addedSince: {}, messages: {}, searchResults: {}, bodies: {} }),
     llm: fakeAgentLLM(script), tools: readOnlyTools(),
+    proposals: fakeProposalRepo(), actionLog: fakeActionLogRepo(),
   };
 }
 
