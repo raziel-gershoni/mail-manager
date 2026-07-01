@@ -12,10 +12,15 @@ Gmail-to-Telegram notification bot. Polls Gmail history, classifies emails with 
 4. Telegram: create a bot via @BotFather, get TELEGRAM_BOT_TOKEN; get your numeric id
    (TELEGRAM_OWNER_ID) from @userinfobot; pick a random TELEGRAM_WEBHOOK_SECRET.
 5. Upstash: create QStash, copy QSTASH_TOKEN + both signing keys.
-6. Set all env vars in Vercel and deploy.
-7. Set the Telegram webhook:
-   curl "https://api.telegram.org/bot<token>/setWebhook?url=https://<app>/api/telegram&secret_token=<secret>"
-8. Create a QStash schedule (every 30 min) targeting https://<app>/api/poll.
+6. Set all env vars in Vercel (including SETUP_SECRET — pick a random string) and deploy.
+   Migrations auto-apply on deploy via the `vercel-build` script (`drizzle-kit migrate && tsc --noEmit`);
+   this requires DATABASE_URL to be set as a Production env var (Vercel exposes it at build time)
+   with build-time network access to Neon. A failed migration or type error blocks the deploy.
+   `drizzle-kit migrate` is idempotent, so re-deploys are safe.
+7. After the first deploy (and whenever APP_BASE_URL changes), run once:
+   `curl -X POST https://<app>/api/setup -H 'Authorization: Bearer <SETUP_SECRET>'`
+   This idempotently creates the 30-min QStash poll schedule (→ /api/poll) and registers the
+   Telegram webhook (→ /api/telegram). Safe to re-run.
 
 ## Verify
 
@@ -46,6 +51,7 @@ Gmail-to-Telegram notification bot. Polls Gmail history, classifies emails with 
 | QSTASH_CURRENT_SIGNING_KEY | QStash current signing key |
 | QSTASH_NEXT_SIGNING_KEY | QStash next signing key |
 | APP_BASE_URL | Deployed Vercel app URL (https://<app>.vercel.app) |
+| SETUP_SECRET | Random secret to authorize POST /api/setup |
 
 ## Development
 

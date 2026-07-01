@@ -21,3 +21,18 @@ export async function verifyQStash(env: Env, req: Request): Promise<unknown> {
   if (!valid) throw new Error("invalid qstash signature");
   return bodyText ? JSON.parse(bodyText) : {};
 }
+
+export const POLL_CRON = "*/30 * * * *";
+
+export function pollScheduleExists(existing: { destination: string }[], destination: string): boolean {
+  return existing.some(s => s.destination === destination);
+}
+
+export async function ensurePollSchedule(env: Env): Promise<{ created: boolean; destination: string; scheduleId?: string }> {
+  const destination = buildDestination(env.APP_BASE_URL, "/api/poll");
+  const client = new Client({ token: env.QSTASH_TOKEN });
+  const existing = await client.schedules.list();
+  if (pollScheduleExists(existing, destination)) return { created: false, destination };
+  const { scheduleId } = await client.schedules.create({ destination, cron: POLL_CRON });
+  return { created: true, destination, scheduleId };
+}

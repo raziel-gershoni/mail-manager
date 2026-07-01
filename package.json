@@ -10,7 +10,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "vercel-build": "drizzle-kit migrate && tsc --noEmit"
   },
   "dependencies": {
     "@google/genai": "^2.10.0",

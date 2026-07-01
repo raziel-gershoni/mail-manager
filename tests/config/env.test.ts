@@ -7,7 +7,7 @@ const valid = {
   GOOGLE_CLIENT_SECRET: "sec", GOOGLE_REDIRECT_URI: "https://a/cb", GEMINI_API_KEY: "g",
   TELEGRAM_BOT_TOKEN: "t", TELEGRAM_OWNER_ID: "123", TELEGRAM_WEBHOOK_SECRET: "w",
   QSTASH_TOKEN: "q", QSTASH_CURRENT_SIGNING_KEY: "c", QSTASH_NEXT_SIGNING_KEY: "n",
-  APP_BASE_URL: "https://a",
+  APP_BASE_URL: "https://a", SETUP_SECRET: "s",
 };
 
 describe("loadEnv", () => {

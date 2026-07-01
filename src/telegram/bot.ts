@@ -9,6 +9,7 @@ import type { ToolDef, ToolContext } from "../agent/tools.js";
 import type { ProposalRepo, ActionLogRepo } from "../cleanup/proposals.js";
 import { buildAgentMessages, needsCompaction, compactState } from "../context/assemble.js";
 import { runAgentTurn } from "../agent/loop.js";
+import { buildDestination } from "../queue/qstash.js";
 
 export function isAllowed(ownerId: number, fromId: number | undefined): boolean {
   return fromId !== undefined && fromId === ownerId;
@@ -41,6 +42,13 @@ export async function handleMessage(text: string, deps: SecretaryDeps): Promise<
     await deps.convo.replaceState(deps.userId, compacted);
   }
   return result.text;
+}
+
+export async function ensureTelegramWebhook(env: Env): Promise<{ url: string }> {
+  const url = buildDestination(env.APP_BASE_URL, "/api/telegram");
+  const bot = new Bot(env.TELEGRAM_BOT_TOKEN);
+  await bot.api.setWebhook(url, { secret_token: env.TELEGRAM_WEBHOOK_SECRET, allowed_updates: ["message"] });
+  return { url };
 }
 
 export function buildBot(env: Env, deps: SecretaryDeps): Bot {
