@@ -14,7 +14,7 @@ import { Bot } from "grammy";
 
 const USER_ID = 1;
 
-export default async function handler(req: Request): Promise<Response> {
+export async function POST(req: Request): Promise<Response> {
   const e = env();
   const update = await verifyQStash(e, req) as any;
   const fromId = (update as any)?.message?.from?.id;

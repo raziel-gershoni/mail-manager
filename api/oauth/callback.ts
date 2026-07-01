@@ -3,7 +3,7 @@ import { env } from "../../src/config/env.js";
 import { exchangeAndStore } from "../../src/oauth/google.js";
 import { searchParam } from "../../src/http/url.js";
 
-export default async function handler(req: Request): Promise<Response> {
+export async function GET(req: Request): Promise<Response> {
   const code = searchParam(req.url, "code");
   if (!code) return new Response("missing code", { status: 400 });
   try {

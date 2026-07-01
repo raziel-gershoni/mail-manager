@@ -3,7 +3,7 @@ import { env } from "../src/config/env.js";
 import { enqueue } from "../src/queue/qstash.js";
 import { isAllowed } from "../src/telegram/bot.js";
 
-export default async function handler(req: Request): Promise<Response> {
+export async function POST(req: Request): Promise<Response> {
   const e = env();
   if (req.headers.get("x-telegram-bot-api-secret-token") !== e.TELEGRAM_WEBHOOK_SECRET) {
     return new Response("forbidden", { status: 403 });

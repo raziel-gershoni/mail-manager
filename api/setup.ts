@@ -4,7 +4,7 @@ import { isSetupAuthorized } from "../src/setup/auth.js";
 import { ensurePollSchedule } from "../src/queue/qstash.js";
 import { ensureTelegramWebhook } from "../src/telegram/bot.js";
 
-export default async function handler(req: Request): Promise<Response> {
+export async function POST(req: Request): Promise<Response> {
   const e = env();
   const expected = e.SETUP_SECRET;
   if (!expected) return new Response("setup not configured", { status: 500 });

@@ -6,7 +6,7 @@ import { buildAuthUrl } from "../../src/oauth/google.js";
 import { isSetupAuthorized } from "../../src/setup/auth.js";
 import { searchParam } from "../../src/http/url.js";
 
-export default async function handler(req: Request): Promise<Response> {
+export async function GET(req: Request): Promise<Response> {
   const e = env();
   const expected = e.SETUP_SECRET;
   if (!expected) return new Response("setup not configured (SETUP_SECRET unset)", { status: 500 });

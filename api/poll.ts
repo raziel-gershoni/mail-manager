@@ -12,7 +12,7 @@ import { Bot } from "grammy";
 
 const USER_ID = 1;
 
-export default async function handler(req: Request): Promise<Response> {
+export async function POST(req: Request): Promise<Response> {
   const e = env();
   await verifyQStash(e, req);
   const auth = await authedGmailFor(USER_ID, e);
