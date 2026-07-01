@@ -8,6 +8,7 @@ import type { ConversationRepo } from "../conversation/store.js";
 import type { ToolDef, ToolContext } from "../agent/tools.js";
 import type { ProposalRepo, ActionLogRepo } from "../cleanup/proposals.js";
 import { buildAgentMessages, needsCompaction, compactState } from "../context/assemble.js";
+import { dateContext } from "../context/date.js";
 import { runAgentTurn } from "../agent/loop.js";
 import { buildDestination } from "../queue/qstash.js";
 
@@ -32,7 +33,7 @@ export const INTRO =
 
 export interface SecretaryDeps {
   userId: number; gmail: GmailClient; memory: MemoryStore; llm: LLMProvider; convo: ConversationRepo; tools: ToolDef[];
-  proposals: ProposalRepo; actionLog: ActionLogRepo;
+  proposals: ProposalRepo; actionLog: ActionLogRepo; timezone?: string;
 }
 
 export async function handleMessage(text: string, deps: SecretaryDeps): Promise<string> {
@@ -42,7 +43,8 @@ export async function handleMessage(text: string, deps: SecretaryDeps): Promise<
   if (cmd === "/start" || cmd === "/help") return INTRO;
 
   const state = await deps.convo.load(deps.userId);
-  const messages = buildAgentMessages(SYSTEM_PROMPT, deps.memory.index(), state, text);
+  const system = `${SYSTEM_PROMPT}\n\n${dateContext(new Date(), deps.timezone ?? "UTC")}`;
+  const messages = buildAgentMessages(system, deps.memory.index(), state, text);
   const ctx: ToolContext = { userId: deps.userId, gmail: deps.gmail, memory: deps.memory,
     proposals: deps.proposals, actionLog: deps.actionLog, llm: deps.llm };
   const result = await runAgentTurn(messages, { llm: deps.llm, tools: deps.tools, ctx });

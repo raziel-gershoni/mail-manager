@@ -7,6 +7,7 @@ export interface Env {
   QSTASH_TOKEN: string; QSTASH_CURRENT_SIGNING_KEY: string; QSTASH_NEXT_SIGNING_KEY: string;
   APP_BASE_URL: string;
   SETUP_SECRET?: string;
+  OWNER_TZ?: string;
 }
 const STRINGS = [
   "DATABASE_URL","TOKEN_ENC_KEY","GOOGLE_CLIENT_ID","GOOGLE_CLIENT_SECRET","GOOGLE_REDIRECT_URI",
@@ -26,6 +27,7 @@ export function loadEnv(source: Record<string, string | undefined> = process.env
   else if (!/^\d+$/.test(owner)) throw new Error("TELEGRAM_OWNER_ID must be numeric");
   else out.TELEGRAM_OWNER_ID = Number(owner);
   if (source.SETUP_SECRET) out.SETUP_SECRET = source.SETUP_SECRET;
+  if (source.OWNER_TZ) out.OWNER_TZ = source.OWNER_TZ;
   if (missing.length) throw new Error(`Missing env vars: ${missing.join(", ")}`);
   return out as unknown as Env;
 }

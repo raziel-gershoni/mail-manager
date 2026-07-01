@@ -28,7 +28,7 @@ export async function POST(req: Request): Promise<Response> {
     userId: USER_ID, gmail: googleGmailClient(auth), memory: store,
     llm: geminiProvider(e.GEMINI_API_KEY), convo: dbConversationRepo(),
     proposals: dbProposalRepo(), actionLog: dbActionLogRepo(),
-    tools: [...readOnlyTools(), ...trashTools()],
+    tools: [...readOnlyTools(), ...trashTools()], timezone: e.OWNER_TZ,
   });
   await store.flush();
   const bot = new Bot(e.TELEGRAM_BOT_TOKEN);
