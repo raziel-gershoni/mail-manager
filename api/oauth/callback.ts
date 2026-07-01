@@ -1,10 +1,10 @@
 // api/oauth/callback.ts
 import { env } from "../../src/config/env.js";
 import { exchangeAndStore } from "../../src/oauth/google.js";
+import { searchParam } from "../../src/http/url.js";
 
 export default async function handler(req: Request): Promise<Response> {
-  const url = new URL(req.url);
-  const code = url.searchParams.get("code");
+  const code = searchParam(req.url, "code");
   if (!code) return new Response("missing code", { status: 400 });
   try {
     const { email } = await exchangeAndStore(env(), code);
