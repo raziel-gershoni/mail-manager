@@ -31,8 +31,9 @@ describe("toGeminiContents", () => {
     const out = toGeminiContents([
       { role: "assistant", toolCalls: [{ name: "list_memories", args: {} }] },
     ]);
-    expect(out.contents[0].parts[0]).toEqual({ functionCall: { name: "list_memories", args: {} } });
-    expect("thoughtSignature" in (out.contents[0].parts[0] as object)).toBe(false);
+    const part = out.contents[0]!.parts[0]!;
+    expect(part).toEqual({ functionCall: { name: "list_memories", args: {} } });
+    expect("thoughtSignature" in (part as object)).toBe(false);
   });
 
   it("maps an assistant-content to model/text", () => {
