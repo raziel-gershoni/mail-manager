@@ -9,6 +9,12 @@ if (!token || !owner) {
   process.exit(0);
 }
 
+// Only ping for production deploys — not preview builds.
+if (process.env.VERCEL_ENV && process.env.VERCEL_ENV !== "production") {
+  console.log(`notify-deploy: VERCEL_ENV=${process.env.VERCEL_ENV}, skipping (production only)`);
+  process.exit(0);
+}
+
 const sha = (process.env.VERCEL_GIT_COMMIT_SHA || "").slice(0, 7);
 const msg = (process.env.VERCEL_GIT_COMMIT_MESSAGE || "").split("\n")[0];
 const base = process.env.APP_BASE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
@@ -21,6 +27,8 @@ try {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ chat_id: Number(owner), text, disable_web_page_preview: true }),
+    // Hard timeout: the ping must NEVER stall the build if Telegram is slow/unreachable.
+    signal: AbortSignal.timeout(5000),
   });
   console.log(`notify-deploy: telegram responded ${res.status}`);
 } catch (err) {
