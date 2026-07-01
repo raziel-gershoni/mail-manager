@@ -18,6 +18,23 @@ describe("toGeminiContents", () => {
     expect(out.contents).toEqual([{ role: "user", parts: [{ text: "hi" }] }]);
   });
 
+  it("echoes the thoughtSignature on a model functionCall part when present (Gemini 3)", () => {
+    const out = toGeminiContents([
+      { role: "assistant", toolCalls: [{ name: "search_gmail", args: { q: "x" }, thoughtSignature: "SIG123" }] },
+    ]);
+    expect(out.contents).toEqual([
+      { role: "model", parts: [{ functionCall: { name: "search_gmail", args: { q: "x" } }, thoughtSignature: "SIG123" }] },
+    ]);
+  });
+
+  it("omits thoughtSignature when the tool call has none", () => {
+    const out = toGeminiContents([
+      { role: "assistant", toolCalls: [{ name: "list_memories", args: {} }] },
+    ]);
+    expect(out.contents[0].parts[0]).toEqual({ functionCall: { name: "list_memories", args: {} } });
+    expect("thoughtSignature" in (out.contents[0].parts[0] as object)).toBe(false);
+  });
+
   it("maps an assistant-content to model/text", () => {
     const out = toGeminiContents([{ role: "assistant", content: "hello" }]);
     expect(out.contents).toEqual([{ role: "model", parts: [{ text: "hello" }] }]);

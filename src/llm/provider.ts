@@ -8,7 +8,7 @@ export interface ClassifyInput { email: EmailMeta; risk: RiskSignals; memoryInde
 export interface ClassifyResult { important: boolean; suspicious: boolean; reason: string; }
 
 export interface ToolSchema { name: string; description: string; parameters: Record<string, unknown>; }
-export interface ToolCall { name: string; args: Record<string, unknown>; }
+export interface ToolCall { name: string; args: Record<string, unknown>; thoughtSignature?: string; }
 export type AgentStep = { kind: "tool_calls"; calls: ToolCall[] } | { kind: "final"; text: string };
 export interface BriefEmail { from: string; subject: string; bodyText: string; }
 

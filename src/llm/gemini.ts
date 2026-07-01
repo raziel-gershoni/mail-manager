@@ -25,7 +25,13 @@ export function toGeminiContents(
     } else if (m.role === "assistant" && "toolCalls" in m) {
       contents.push({
         role: "model",
-        parts: m.toolCalls.map(c => ({ functionCall: { name: c.name, args: c.args } })),
+        // Gemini 3 requires echoing the thoughtSignature the model attached to each
+        // functionCall part, or the follow-up turn is rejected with INVALID_ARGUMENT.
+        parts: m.toolCalls.map(c => {
+          const fc: Record<string, unknown> = { functionCall: { name: c.name, args: c.args } };
+          if (c.thoughtSignature) fc.thoughtSignature = c.thoughtSignature;
+          return fc;
+        }),
       });
     } else if (m.role === "assistant") {
       contents.push({ role: "model", parts: [{ text: m.content }] });
@@ -93,7 +99,16 @@ export function geminiProvider(apiKey: string): LLMProvider {
           temperature: 0,
         },
       });
-      const calls = (res.functionCalls ?? []).map(c => ({ name: c.name!, args: (c.args ?? {}) as Record<string, unknown> }));
+      // Read functionCall parts directly (not res.functionCalls) so we can capture the
+      // per-part thoughtSignature that Gemini 3 requires echoed back on the next turn.
+      const parts = res.candidates?.[0]?.content?.parts ?? [];
+      const calls = parts
+        .filter(p => p.functionCall)
+        .map(p => ({
+          name: p.functionCall!.name!,
+          args: (p.functionCall!.args ?? {}) as Record<string, unknown>,
+          thoughtSignature: p.thoughtSignature,
+        }));
       if (calls.length) return { kind: "tool_calls", calls };
       return { kind: "final", text: res.text ?? "" };
     },
