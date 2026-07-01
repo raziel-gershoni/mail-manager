@@ -18,7 +18,7 @@ export interface ReviewVerdict { id: string; keep: boolean; reason: string; }
 export interface LLMProvider {
   classifyImportance(input: ClassifyInput): Promise<ClassifyResult>;
   agentStep(messages: AgentMessage[], tools: ToolSchema[]): Promise<AgentStep>;
-  writeBrief(emails: BriefEmail[]): Promise<string>;
+  writeBrief(emails: BriefEmail[], context?: string): Promise<string>;
   reviewTrash(candidates: TrashCandidate[]): Promise<ReviewVerdict[]>;
 }
 
@@ -53,12 +53,12 @@ export function fakeLLM(fn: (i: ClassifyInput) => ClassifyResult): LLMProvider {
 
 export function fakeAgentLLM(
   script: (messages: AgentMessage[], tools: ToolSchema[]) => AgentStep,
-  brief: (emails: BriefEmail[]) => string = () => "",
+  brief: (emails: BriefEmail[], context?: string) => string = () => "",
 ): LLMProvider {
   return {
     async classifyImportance() { return { important: true, suspicious: false, reason: "fake" }; },
     async agentStep(messages, tools) { return script(messages, tools); },
-    async writeBrief(emails) { return brief(emails); },
+    async writeBrief(emails, context) { return brief(emails, context); },
     async reviewTrash() { return []; },
   };
 }

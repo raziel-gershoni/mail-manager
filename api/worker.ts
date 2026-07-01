@@ -10,6 +10,7 @@ import { readOnlyTools } from "../src/agent/tools.js";
 import { trashTools } from "../src/cleanup/tools.js";
 import { dbProposalRepo, dbActionLogRepo } from "../src/db/cleanup-adapters.js";
 import { handleMessage, isAllowed } from "../src/telegram/bot.js";
+import { sendFormatted } from "../src/telegram/send.js";
 import { Bot } from "grammy";
 
 const USER_ID = 1;
@@ -32,6 +33,6 @@ export async function POST(req: Request): Promise<Response> {
   });
   await store.flush();
   const bot = new Bot(e.TELEGRAM_BOT_TOKEN);
-  await bot.api.sendMessage(chatId, reply);
+  await sendFormatted(bot, chatId, reply);
   return Response.json({ ok: true });
 }

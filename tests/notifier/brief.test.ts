@@ -20,4 +20,11 @@ describe("generateBrief", () => {
     expect(out).toContain("Invoice");
     expect(out).toContain("$420");
   });
+  it("passes the current-date context to writeBrief", async () => {
+    let seenContext: string | undefined;
+    const llm = fakeAgentLLM(() => ({ kind: "final", text: "" }), (_emails, context) => { seenContext = context; return "B"; });
+    await generateBrief(["a"], { gmail, llm, timezone: "UTC" });
+    expect(seenContext).toContain("Today is");
+    expect(seenContext).toContain("(UTC)");
+  });
 });

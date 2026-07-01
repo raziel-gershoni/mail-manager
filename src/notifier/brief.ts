@@ -1,10 +1,14 @@
 // src/notifier/brief.ts
 import type { GmailClient } from "../gmail/client.js";
 import type { LLMProvider, BriefEmail } from "../llm/provider.js";
+import { dateContext } from "../context/date.js";
 
 export const MAX_BRIEF_BODIES = 8;
 
-export async function generateBrief(ids: string[], deps: { gmail: GmailClient; llm: LLMProvider }): Promise<string | null> {
+export async function generateBrief(
+  ids: string[],
+  deps: { gmail: GmailClient; llm: LLMProvider; timezone?: string },
+): Promise<string | null> {
   if (ids.length === 0) return null;
   const emails: BriefEmail[] = [];
   for (const id of ids.slice(0, MAX_BRIEF_BODIES)) {
@@ -15,5 +19,5 @@ export async function generateBrief(ids: string[], deps: { gmail: GmailClient; l
     const m = await deps.gmail.getMeta(id);
     emails.push({ from: m.from, subject: m.subject, bodyText: m.snippet });
   }
-  return deps.llm.writeBrief(emails);
+  return deps.llm.writeBrief(emails, dateContext(new Date(), deps.timezone ?? "UTC"));
 }
