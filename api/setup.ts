@@ -10,8 +10,19 @@ export async function POST(req: Request): Promise<Response> {
   if (!expected) return new Response("setup not configured", { status: 500 });
   const provided = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "") || null;
   if (!isSetupAuthorized(provided, expected)) return new Response("forbidden", { status: 403 });
-  if (req.method !== "POST") return new Response("use POST", { status: 405 });
-  const schedule = await ensurePollSchedule(e);
-  const webhook = await ensureTelegramWebhook(e);
-  return Response.json({ ok: true, schedule, webhook });
+
+  const out: { ok: boolean; schedule?: unknown; webhook?: unknown } = { ok: true };
+  try {
+    out.schedule = await ensurePollSchedule(e);
+  } catch (err) {
+    console.error("setup: schedule step failed", err);
+    return Response.json({ ok: false, step: "schedule", error: (err as Error).message }, { status: 500 });
+  }
+  try {
+    out.webhook = await ensureTelegramWebhook(e);
+  } catch (err) {
+    console.error("setup: webhook step failed", err);
+    return Response.json({ ok: false, step: "webhook", error: (err as Error).message }, { status: 500 });
+  }
+  return Response.json(out);
 }
