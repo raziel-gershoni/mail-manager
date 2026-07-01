@@ -14,4 +14,7 @@ describe("isSetupAuthorized", () => {
   it("returns false when provided is empty", () => {
     expect(isSetupAuthorized("", "s")).toBe(false);
   });
+  it("returns false when lengths differ", () => {
+    expect(isSetupAuthorized("short", "longer-secret")).toBe(false);
+  });
 });

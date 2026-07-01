@@ -6,10 +6,10 @@ import { ensureTelegramWebhook } from "../src/telegram/bot.js";
 
 export default async function handler(req: Request): Promise<Response> {
   const e = env();
-  const url = new URL(req.url);
-  const bearer = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
-  const provided = bearer || url.searchParams.get("secret");
-  if (!isSetupAuthorized(provided, e.SETUP_SECRET)) return new Response("forbidden", { status: 403 });
+  const expected = e.SETUP_SECRET;
+  if (!expected) return new Response("setup not configured", { status: 500 });
+  const provided = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "") || null;
+  if (!isSetupAuthorized(provided, expected)) return new Response("forbidden", { status: 403 });
   if (req.method !== "POST") return new Response("use POST", { status: 405 });
   const schedule = await ensurePollSchedule(e);
   const webhook = await ensureTelegramWebhook(e);
