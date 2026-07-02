@@ -2,3 +2,10 @@ node_modules
 dist
 .env
 .vercel
+
+# Next.js
+.next/
+next-env.d.ts
+
+# TypeScript incremental build cache
+*.tsbuildinfo
