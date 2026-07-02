@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   fakeTelegramLinkRepo, fakeUserDirectory,
   resolveUserForTelegram, isAuthorizedTelegram, ensureOwnerLink,
@@ -15,8 +15,8 @@ describe("resolveUserForTelegram", () => {
   it("bootstraps the owner: resolves to the owner user and upserts a link with the real chatId", async () => {
     const links = fakeTelegramLinkRepo([]);
     const dir = fakeUserDirectory([3]); // owner user = min id with a google account
-    expect(await resolveUserForTelegram(OWNER, OWNER, OWNER, links, dir)).toBe(3);
-    expect(links.all()).toEqual([{ userId: 3, telegramUserId: OWNER, chatId: OWNER }]);
+    expect(await resolveUserForTelegram(OWNER, OWNER, 777, links, dir)).toBe(3);
+    expect(links.all()).toEqual([{ userId: 3, telegramUserId: OWNER, chatId: 777 }]);
   });
   it("returns null for an unlinked non-owner id (not authorized)", async () => {
     const links = fakeTelegramLinkRepo([]);
@@ -34,7 +34,9 @@ describe("resolveUserForTelegram", () => {
 describe("isAuthorizedTelegram", () => {
   it("authorizes the owner id without a DB read", async () => {
     const links = fakeTelegramLinkRepo([]);
+    const spy = vi.spyOn(links, "getByTelegramUserId");
     expect(await isAuthorizedTelegram(OWNER, OWNER, links)).toBe(true);
+    expect(spy).not.toHaveBeenCalled();
   });
   it("authorizes a linked non-owner id", async () => {
     const links = fakeTelegramLinkRepo([{ userId: 7, telegramUserId: 999, chatId: 999 }]);
