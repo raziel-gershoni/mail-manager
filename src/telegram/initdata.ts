@@ -31,6 +31,7 @@ export function verifyInitData(
   } catch { return null; }
   if (!ok) return null;
 
+  if (!params.has("auth_date")) return null;
   const authDate = Number(params.get("auth_date"));
   if (!Number.isFinite(authDate)) return null;
   if (now.getTime() - authDate * 1000 >= maxAgeMs) return null;

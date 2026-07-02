@@ -40,5 +40,7 @@ describe("verifyInitData", () => {
     expect(verifyInitData(new URLSearchParams({ auth_date: authDate, user: userField }).toString(), TOKEN, NOW)).toBeNull(); // no hash
     const noUser = makeInitData({ auth_date: authDate }, TOKEN);
     expect(verifyInitData(noUser, TOKEN, NOW)).toBeNull();
+    const noAuthDate = makeInitData({ user: userField }, TOKEN);
+    expect(verifyInitData(noAuthDate, TOKEN, NOW)).toBeNull();
   });
 });

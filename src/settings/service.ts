@@ -15,7 +15,7 @@ function isValidTimezone(tz: string): boolean {
 }
 
 export function validateSettingsPatch(body: unknown): SettingsPatch | { error: string } {
-  if (!body || typeof body !== "object") return { error: "invalid body" };
+  if (!body || typeof body !== "object" || Array.isArray(body)) return { error: "invalid body" };
   const p = body as Record<string, unknown>;
   const out: SettingsPatch = {};
   if (p.timezone !== undefined) { if (typeof p.timezone !== "string" || !isValidTimezone(p.timezone)) return { error: "invalid timezone" }; out.timezone = p.timezone; }

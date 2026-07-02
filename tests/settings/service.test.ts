@@ -15,6 +15,7 @@ describe("validateSettingsPatch", () => {
     expect(validateSettingsPatch({ timezone: "Not/AZone" })).toHaveProperty("error");
     expect(validateSettingsPatch({ paused: "yes" })).toHaveProperty("error");
     expect(validateSettingsPatch(null)).toHaveProperty("error");
+    expect(validateSettingsPatch([])).toHaveProperty("error");
   });
   it("allows digestEndHour 24 (always-on end)", () => {
     expect(validateSettingsPatch({ digestEndHour: 24 })).toEqual({ digestEndHour: 24 });

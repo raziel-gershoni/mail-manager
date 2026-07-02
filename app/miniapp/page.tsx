@@ -29,15 +29,19 @@ export default function MiniApp() {
 
   async function save(patch: Partial<View>) {
     setStatus("Saving…");
-    const r = await fetch("/api/settings", { method: "POST", headers, body: JSON.stringify(patch) });
-    setStatus(r.ok ? "Saved ✓" : "Save failed");
+    try {
+      const r = await fetch("/api/settings", { method: "POST", headers, body: JSON.stringify(patch) });
+      setStatus(r.ok ? "Saved ✓" : "Save failed");
+    } catch { setStatus("Save failed"); }
   }
   async function reconnect() {
-    const r = await fetch("/api/settings/reconnect", { method: "POST", headers });
-    if (!r.ok) { setStatus("Reconnect failed"); return; }
-    const { url } = await r.json();
-    const tg = (window as unknown as { Telegram?: { WebApp?: { openLink?: (u: string) => void } } }).Telegram?.WebApp;
-    if (tg?.openLink) tg.openLink(url); else window.open(url, "_blank");
+    try {
+      const r = await fetch("/api/settings/reconnect", { method: "POST", headers });
+      if (!r.ok) { setStatus("Reconnect failed"); return; }
+      const { url } = await r.json();
+      const tg = (window as unknown as { Telegram?: { WebApp?: { openLink?: (u: string) => void } } }).Telegram?.WebApp;
+      if (tg?.openLink) tg.openLink(url); else window.open(url, "_blank");
+    } catch { setStatus("Reconnect failed"); }
   }
 
   if (!view) return <main style={S.main}><p>{status}</p></main>;
