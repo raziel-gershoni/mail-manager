@@ -22,6 +22,15 @@ export const telegramLinks = pgTable("telegram_links", {
   chatId: bigint("chat_id", { mode: "number" }).notNull(),
 }, (t) => ({ tgUserUx: uniqueIndex("telegram_links_tg_user_ux").on(t.telegramUserId) }));
 
+export const userSettings = pgTable("user_settings", {
+  userId: integer("user_id").primaryKey().references(() => users.id),
+  timezone: text("timezone"),                                  // null → fall back to OWNER_TZ / UTC
+  digestStartHour: integer("digest_start_hour").notNull().default(0),
+  digestEndHour: integer("digest_end_hour").notNull().default(24),   // 0–24 = always-on
+  paused: boolean("paused").notNull().default(false),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const memories = pgTable("memories", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id),

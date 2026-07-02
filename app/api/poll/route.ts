@@ -7,6 +7,8 @@ import { geminiProvider } from "../../../src/llm/gemini.js";
 import { dbMemoryStore, dbSeenRepo, dbSyncRepo } from "../../../src/db/adapters.js";
 import { dbConversationRepo } from "../../../src/db/conversation-adapter.js";
 import { dbTelegramLinkRepo, dbUserDirectory } from "../../../src/db/user-adapters.js";
+import { dbSettingsRepo } from "../../../src/db/settings-adapter.js";
+import { effectiveSettings } from "../../../src/settings/settings.js";
 import { runPoll } from "../../../src/notifier/poll.js";
 import { generateBrief } from "../../../src/notifier/brief.js";
 import { pollAllUsers } from "../../../src/notifier/fanout.js";
@@ -22,18 +24,21 @@ export async function POST(req: Request): Promise<Response> {
   await verifyQStash(e, req);
   const llm = geminiProvider(e.GEMINI_API_KEY);
   const bot = new Bot(e.TELEGRAM_BOT_TOKEN);
+  const settingsRepo = dbSettingsRepo();
   const summary = await pollAllUsers({
     ownerTelegramId: e.TELEGRAM_OWNER_ID,
     links: dbTelegramLinkRepo(),
     directory: dbUserDirectory(),
-    pollUser: async (userId, chatId) => {
+    now: new Date(),
+    settingsFor: async (userId) => effectiveSettings(await settingsRepo.get(userId), e.OWNER_TZ),
+    pollUser: async (userId, chatId, timezone) => {
       const auth = await authedGmailFor(userId, e);
       const gmail = googleGmailClient(auth);
       const res = await runPoll({ userId, gmail, store: await dbMemoryStore(userId), llm, sync: dbSyncRepo(), seen: dbSeenRepo() });
       if (res.firstRun) return;
       const ids = res.important.map(i => i.messageId);
       if (ids.length === 0) { await res.commit(); return; }
-      let brief = await generateBrief(ids, { gmail, llm, timezone: e.OWNER_TZ });
+      let brief = await generateBrief(ids, { gmail, llm, timezone });
       if (!brief || brief.trim() === "") {
         brief = `${ids.length} new important email(s):\n` +
           res.important.map(i => `• ${i.subject || "(no subject)"} — ${i.from}`).join("\n");

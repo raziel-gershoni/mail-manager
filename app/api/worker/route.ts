@@ -13,6 +13,8 @@ import { handleMessage } from "../../../src/telegram/bot.js";
 import { sendFormatted } from "../../../src/telegram/send.js";
 import { resolveUserForTelegram } from "../../../src/users/identity.js";
 import { dbTelegramLinkRepo, dbUserDirectory } from "../../../src/db/user-adapters.js";
+import { dbSettingsRepo } from "../../../src/db/settings-adapter.js";
+import { effectiveSettings } from "../../../src/settings/settings.js";
 import { Bot } from "grammy";
 
 export const runtime = "nodejs";
@@ -32,11 +34,12 @@ export async function POST(req: Request): Promise<Response> {
   if (userId === null) return Response.json({ ok: true, skipped: true });
   const auth = await authedGmailFor(userId, e);
   const store = await dbMemoryStore(userId);
+  const settings = effectiveSettings(await dbSettingsRepo().get(userId), e.OWNER_TZ);
   const reply = await handleMessage(text, {
     userId, gmail: googleGmailClient(auth), memory: store,
     llm: geminiProvider(e.GEMINI_API_KEY), convo: dbConversationRepo(),
     proposals: dbProposalRepo(), actionLog: dbActionLogRepo(),
-    tools: [...readOnlyTools(), ...trashTools()], timezone: e.OWNER_TZ,
+    tools: [...readOnlyTools(), ...trashTools()], timezone: settings.timezone,
   });
   await store.flush();
   const bot = new Bot(e.TELEGRAM_BOT_TOKEN);
