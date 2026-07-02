@@ -43,6 +43,13 @@
       "when": 1782990527993,
       "tag": "0005_easy_purple_man",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783012441773,
+      "tag": "0006_nervous_wraith",
+      "breakpoints": true
     }
   ]
 }
