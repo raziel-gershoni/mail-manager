@@ -1,8 +1,12 @@
-// api/setup.ts
-import { env } from "../src/config/env.js";
-import { isSetupAuthorized } from "../src/setup/auth.js";
-import { ensurePollSchedule } from "../src/queue/qstash.js";
-import { ensureTelegramWebhook } from "../src/telegram/bot.js";
+// app/api/setup/route.ts
+import { env } from "../../../src/config/env.js";
+import { isSetupAuthorized } from "../../../src/setup/auth.js";
+import { ensurePollSchedule } from "../../../src/queue/qstash.js";
+import { ensureTelegramWebhook } from "../../../src/telegram/bot.js";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export async function POST(req: Request): Promise<Response> {
   const e = env();

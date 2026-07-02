@@ -1,15 +1,19 @@
-// api/poll.ts
-import { env } from "../src/config/env.js";
-import { verifyQStash } from "../src/queue/qstash.js";
-import { authedGmailFor } from "../src/oauth/google.js";
-import { googleGmailClient } from "../src/gmail/client.js";
-import { geminiProvider } from "../src/llm/gemini.js";
-import { dbMemoryStore, dbSeenRepo, dbSyncRepo } from "../src/db/adapters.js";
-import { dbConversationRepo } from "../src/db/conversation-adapter.js";
-import { runPoll } from "../src/notifier/poll.js";
-import { generateBrief } from "../src/notifier/brief.js";
-import { sendFormatted } from "../src/telegram/send.js";
+// app/api/poll/route.ts
+import { env } from "../../../src/config/env.js";
+import { verifyQStash } from "../../../src/queue/qstash.js";
+import { authedGmailFor } from "../../../src/oauth/google.js";
+import { googleGmailClient } from "../../../src/gmail/client.js";
+import { geminiProvider } from "../../../src/llm/gemini.js";
+import { dbMemoryStore, dbSeenRepo, dbSyncRepo } from "../../../src/db/adapters.js";
+import { dbConversationRepo } from "../../../src/db/conversation-adapter.js";
+import { runPoll } from "../../../src/notifier/poll.js";
+import { generateBrief } from "../../../src/notifier/brief.js";
+import { sendFormatted } from "../../../src/telegram/send.js";
 import { Bot } from "grammy";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 const USER_ID = 1;
 
