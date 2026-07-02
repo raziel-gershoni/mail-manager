@@ -42,4 +42,10 @@ describe("action on rules", () => {
     s.upsertRule({ matchValue: "dana@x.com", scope: "sender", verdict: "important", description: "Dana" });
     expect(s.findRuleFor("dana@x.com", "x.com")?.action ?? null).toBeNull();
   });
+  it("upsertRule without an action preserves a previously-set action", () => {
+    const s = inMemoryStore();
+    s.upsertRule({ matchValue: "linkedin.com", scope: "domain", verdict: "unimportant", description: "LinkedIn", action: "trash" });
+    s.upsertRule({ matchValue: "linkedin.com", scope: "domain", verdict: "important", description: "LinkedIn (reclassified)" }); // no action
+    expect(s.findRuleFor("x@linkedin.com", "linkedin.com")).toMatchObject({ verdict: "important", action: "trash" });
+  });
 });

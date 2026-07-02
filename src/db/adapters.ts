@@ -41,13 +41,14 @@ export async function dbMemoryStore(userId: number): Promise<MemoryStore & { flu
     },
     upsertRule({ matchValue, scope, verdict, description, action }): MemoryRow {
       const slug = `${scope}:${matchValue}`;
-      const row: MemoryRow = { userId, slug, description, body: "", scope, matchType: scope, matchValue, verdict, action: action ?? null };
+      const existing = local.find(r => r.slug === slug);
+      const row: MemoryRow = { userId, slug, description, body: "", scope, matchType: scope, matchValue, verdict, action: action ?? existing?.action ?? null };
       const idx = local.findIndex(r => r.slug === slug);
       if (idx >= 0) local[idx] = row; else local.push(row);
       const writePromise = db().insert(schema.memories).values({ userId, slug, description, body: "", scope,
-        matchType: scope, matchValue, verdict, action: action ?? null, updatedAt: new Date() })
+        matchType: scope, matchValue, verdict, action: action ?? existing?.action ?? null, updatedAt: new Date() })
         .onConflictDoUpdate({ target: [schema.memories.userId, schema.memories.slug],
-          set: { verdict, description, action: action ?? null, updatedAt: new Date() } });
+          set: { verdict, description, action: action ?? existing?.action ?? null, updatedAt: new Date() } });
       pending.push(writePromise);
       writePromise.catch(() => {});
       return row;
