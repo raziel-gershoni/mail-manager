@@ -12,6 +12,7 @@ export const googleAccounts = pgTable("google_accounts", {
   email: text("email").notNull(),
   encRefreshToken: text("enc_refresh_token").notNull(),
   scope: text("scope").notNull(),
+  needsReconnect: boolean("needs_reconnect").notNull().default(false),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
@@ -21,6 +22,12 @@ export const telegramLinks = pgTable("telegram_links", {
   telegramUserId: bigint("telegram_user_id", { mode: "number" }).notNull(),
   chatId: bigint("chat_id", { mode: "number" }).notNull(),
 }, (t) => ({ tgUserUx: uniqueIndex("telegram_links_tg_user_ux").on(t.telegramUserId) }));
+
+export const oauthStates = pgTable("oauth_states", {
+  state: text("state").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
 
 export const userSettings = pgTable("user_settings", {
   userId: integer("user_id").primaryKey().references(() => users.id),

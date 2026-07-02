@@ -2,6 +2,8 @@
 import { env } from "../../../src/config/env.js";
 import { verifyQStash } from "../../../src/queue/qstash.js";
 import { authedGmailFor } from "../../../src/oauth/google.js";
+import { dbGoogleAccountRepo } from "../../../src/db/google-account-adapter.js";
+import { isInvalidGrant, reconnectNudgeText } from "../../../src/oauth/reconnect.js";
 import { googleGmailClient } from "../../../src/gmail/client.js";
 import { geminiProvider } from "../../../src/llm/gemini.js";
 import { dbMemoryStore, dbSeenRepo, dbSyncRepo } from "../../../src/db/adapters.js";
@@ -32,20 +34,29 @@ export async function POST(req: Request): Promise<Response> {
     now: new Date(),
     settingsFor: async (userId) => effectiveSettings(await settingsRepo.get(userId), e.OWNER_TZ),
     pollUser: async (userId, chatId, timezone) => {
-      const auth = await authedGmailFor(userId, e);
-      const gmail = googleGmailClient(auth);
-      const res = await runPoll({ userId, gmail, store: await dbMemoryStore(userId), llm, sync: dbSyncRepo(), seen: dbSeenRepo() });
-      if (res.firstRun) return;
-      const ids = res.important.map(i => i.messageId);
-      if (ids.length === 0) { await res.commit(); return; }
-      let brief = await generateBrief(ids, { gmail, llm, timezone });
-      if (!brief || brief.trim() === "") {
-        brief = `${ids.length} new important email(s):\n` +
-          res.important.map(i => `• ${i.subject || "(no subject)"} — ${i.from}`).join("\n");
+      try {
+        const auth = await authedGmailFor(userId, e);
+        const gmail = googleGmailClient(auth);
+        const res = await runPoll({ userId, gmail, store: await dbMemoryStore(userId), llm, sync: dbSyncRepo(), seen: dbSeenRepo() });
+        if (res.firstRun) return;
+        const ids = res.important.map(i => i.messageId);
+        if (ids.length === 0) { await res.commit(); return; }
+        let brief = await generateBrief(ids, { gmail, llm, timezone });
+        if (!brief || brief.trim() === "") {
+          brief = `${ids.length} new important email(s):\n` +
+            res.important.map(i => `• ${i.subject || "(no subject)"} — ${i.from}`).join("\n");
+        }
+        await sendFormatted(bot, chatId, brief);
+        await dbConversationRepo().appendTurn(userId, { role: "brief", content: brief });
+        await res.commit();
+      } catch (err) {
+        if (isInvalidGrant(err)) {
+          const newlyFlagged = await dbGoogleAccountRepo().markNeedsReconnect(userId);
+          if (newlyFlagged) await sendFormatted(bot, chatId, reconnectNudgeText());
+          return; // handled; do not advance the cursor (res.commit only runs on success above)
+        }
+        throw err; // let the fan-out isolate and count other errors
       }
-      await sendFormatted(bot, chatId, brief);
-      await dbConversationRepo().appendTurn(userId, { role: "brief", content: brief });
-      await res.commit();
     },
   });
   return Response.json({ ok: true, ...summary });
