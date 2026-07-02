@@ -1,7 +1,11 @@
-// api/oauth/callback.ts
-import { env } from "../../src/config/env.js";
-import { exchangeAndStore } from "../../src/oauth/google.js";
-import { searchParam } from "../../src/http/url.js";
+// app/api/oauth/callback/route.ts
+import { env } from "../../../../src/config/env.js";
+import { exchangeAndStore } from "../../../../src/oauth/google.js";
+import { searchParam } from "../../../../src/http/url.js";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export async function GET(req: Request): Promise<Response> {
   const code = searchParam(req.url, "code");

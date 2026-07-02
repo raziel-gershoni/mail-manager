@@ -1,17 +1,21 @@
-// api/worker.ts
-import { env } from "../src/config/env.js";
-import { verifyQStash } from "../src/queue/qstash.js";
-import { authedGmailFor } from "../src/oauth/google.js";
-import { googleGmailClient } from "../src/gmail/client.js";
-import { geminiProvider } from "../src/llm/gemini.js";
-import { dbMemoryStore } from "../src/db/adapters.js";
-import { dbConversationRepo } from "../src/db/conversation-adapter.js";
-import { readOnlyTools } from "../src/agent/tools.js";
-import { trashTools } from "../src/cleanup/tools.js";
-import { dbProposalRepo, dbActionLogRepo } from "../src/db/cleanup-adapters.js";
-import { handleMessage, isAllowed } from "../src/telegram/bot.js";
-import { sendFormatted } from "../src/telegram/send.js";
+// app/api/worker/route.ts
+import { env } from "../../../src/config/env.js";
+import { verifyQStash } from "../../../src/queue/qstash.js";
+import { authedGmailFor } from "../../../src/oauth/google.js";
+import { googleGmailClient } from "../../../src/gmail/client.js";
+import { geminiProvider } from "../../../src/llm/gemini.js";
+import { dbMemoryStore } from "../../../src/db/adapters.js";
+import { dbConversationRepo } from "../../../src/db/conversation-adapter.js";
+import { readOnlyTools } from "../../../src/agent/tools.js";
+import { trashTools } from "../../../src/cleanup/tools.js";
+import { dbProposalRepo, dbActionLogRepo } from "../../../src/db/cleanup-adapters.js";
+import { handleMessage, isAllowed } from "../../../src/telegram/bot.js";
+import { sendFormatted } from "../../../src/telegram/send.js";
 import { Bot } from "grammy";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 const USER_ID = 1;
 

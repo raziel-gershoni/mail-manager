@@ -1,7 +1,11 @@
-// api/telegram.ts
-import { env } from "../src/config/env.js";
-import { enqueue } from "../src/queue/qstash.js";
-import { isAllowed } from "../src/telegram/bot.js";
+// app/api/telegram/route.ts
+import { env } from "../../../src/config/env.js";
+import { enqueue } from "../../../src/queue/qstash.js";
+import { isAllowed } from "../../../src/telegram/bot.js";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export async function POST(req: Request): Promise<Response> {
   const e = env();

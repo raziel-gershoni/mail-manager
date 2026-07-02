@@ -1,10 +1,14 @@
-// api/oauth/start.ts — begins the Google OAuth consent flow (owner-guarded).
+// app/api/oauth/start/route.ts — begins the Google OAuth consent flow (owner-guarded).
 // Visit https://<app>/api/oauth/start?key=<SETUP_SECRET> in a browser once to connect Gmail.
 import { randomBytes } from "node:crypto";
-import { env } from "../../src/config/env.js";
-import { buildAuthUrl } from "../../src/oauth/google.js";
-import { isSetupAuthorized } from "../../src/setup/auth.js";
-import { searchParam } from "../../src/http/url.js";
+import { env } from "../../../../src/config/env.js";
+import { buildAuthUrl } from "../../../../src/oauth/google.js";
+import { isSetupAuthorized } from "../../../../src/setup/auth.js";
+import { searchParam } from "../../../../src/http/url.js";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export async function GET(req: Request): Promise<Response> {
   const e = env();
