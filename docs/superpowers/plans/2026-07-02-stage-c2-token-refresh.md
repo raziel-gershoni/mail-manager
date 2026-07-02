@@ -194,7 +194,9 @@ export interface GoogleAccountRepo {
 export function fakeOAuthStateRepo(): OAuthStateRepo & { create(state: string, userId: number, createdAt?: Date): Promise<void> } {
   const rows = new Map<string, { userId: number; createdAt: Date }>();
   return {
-    async create(state, userId, createdAt = new Date("2026-07-02T12:00:00Z")) { rows.set(state, { userId, createdAt }); },
+    // Params annotated explicitly: the return-type intersection adds a 3rd `createdAt`
+    // to the `create` name, which defeats TS contextual typing (would infer `unknown`).
+    async create(state: string, userId: number, createdAt: Date = new Date("2026-07-02T12:00:00Z")) { rows.set(state, { userId, createdAt }); },
     async consume(state, now) {
       const row = rows.get(state);
       rows.delete(state);                            // one-time use, deleted regardless of freshness
@@ -235,8 +237,12 @@ export function dbOAuthStateRepo(): OAuthStateRepo {
       await db().insert(schema.oauthStates).values({ state, userId });
     },
     async consume(state, now) {
-      const [row] = await db().select().from(schema.oauthStates).where(eq(schema.oauthStates.state, state)).limit(1);
-      await db().delete(schema.oauthStates).where(eq(schema.oauthStates.state, state)); // one-time use
+      // Atomic one-time use: DELETE ... RETURNING, so only the caller that actually
+      // removed the row receives it — a concurrent duplicate/replay gets no row (null).
+      // A select-then-delete would have a TOCTOU gap that allows state replay.
+      const [row] = await db().delete(schema.oauthStates)
+        .where(eq(schema.oauthStates.state, state))
+        .returning({ userId: schema.oauthStates.userId, createdAt: schema.oauthStates.createdAt });
       if (!row) return null;
       return isStateFresh(row.createdAt, now) ? row.userId : null;
     },
