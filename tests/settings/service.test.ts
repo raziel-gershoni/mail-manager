@@ -31,8 +31,8 @@ describe("mergePatch", () => {
 describe("buildSettingsView", () => {
   it("assembles settings + gmail status + read-only rules", () => {
     const rules = [
-      { userId: 1, slug: "sender:x@y.com", description: "", body: "", scope: "sender", matchType: "sender", matchValue: "x@y.com", verdict: "important" },
-      { userId: 1, slug: "note", description: "n", body: "", scope: "global", matchType: null, matchValue: null, verdict: null },
+      { userId: 1, slug: "sender:x@y.com", description: "", body: "", scope: "sender", matchType: "sender", matchValue: "x@y.com", verdict: "important", action: null },
+      { userId: 1, slug: "note", description: "n", body: "", scope: "global", matchType: null, matchValue: null, verdict: null, action: null },
     ];
     const view = buildSettingsView(eff, { email: "me@gmail.com", needsReconnect: true }, rules);
     expect(view.gmail).toEqual({ email: "me@gmail.com", connected: true, needsReconnect: true });

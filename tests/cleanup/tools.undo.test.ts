@@ -16,7 +16,7 @@ describe("undoLastTool", () => {
   it("untrashes the last run and marks it undone", async () => {
     const c = ctx();
     await c.gmail.trash(["a", "b"]);
-    await c.actionLog.record(1, "run1", ["a", "b"]);
+    await c.actionLog.record(1, "run1", ["a", "b"], "trash");
     const res = await tool.run({}, c) as any;
     expect(res.ok).toBe(true);
     expect(res.restored).toBe(2);
@@ -25,8 +25,25 @@ describe("undoLastTool", () => {
   });
 });
 
+describe("undoLastTool archive reversal", () => {
+  it("undo_last reverses an archive action via unarchive", async () => {
+    const { undoLastTool } = await import("../../src/cleanup/tools.js");
+    const { fakeActionLogRepo, fakeProposalRepo } = await import("../../src/cleanup/proposals.js");
+    const { fakeGmailClient } = await import("../../src/gmail/client.js");
+    const { fakeAgentLLM } = await import("../../src/llm/provider.js");
+    const gmail = fakeGmailClient({ historyId: "1", addedSince: {}, messages: {} });
+    await gmail.archive(["m1"]);
+    const actionLog = fakeActionLogRepo();
+    await actionLog.record(1, "run-1", ["m1"], "archive");
+    const ctx: any = { userId: 1, gmail, memory: null, proposals: fakeProposalRepo(), actionLog, llm: fakeAgentLLM(() => ({ kind: "final", text: "" }), () => "") };
+    const res = await undoLastTool().run({}, ctx) as any;
+    expect(res.ok).toBe(true);
+    expect(gmail.archivedIds!()).toEqual([]);       // unarchived
+  });
+});
+
 describe("trashTools", () => {
-  it("exposes exactly the three cleanup tools", () => {
-    expect(trashTools().map(t => t.schema.name)).toEqual(["propose_trash", "confirm_trash", "undo_last"]);
+  it("exposes exactly the six cleanup tools", () => {
+    expect(trashTools().map(t => t.schema.name)).toEqual(["propose_trash", "confirm_trash", "undo_last", "archive_messages", "trash_messages", "apply_action_rules"]);
   });
 });

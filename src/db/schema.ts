@@ -48,6 +48,7 @@ export const memories = pgTable("memories", {
   matchType: text("match_type"),  // 'sender' | 'domain' | null
   matchValue: text("match_value"),
   verdict: text("verdict"),        // 'important' | 'unimportant' | null
+  action: text("action"),          // 'trash' | 'archive' | null  (learned cleanup action)
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => ({ slugUx: uniqueIndex("memories_user_slug_ux").on(t.userId, t.slug) }));
 
@@ -96,6 +97,7 @@ export const actionLog = pgTable("action_log", {
   userId: integer("user_id").notNull().references(() => users.id),
   runId: text("run_id").notNull(),
   messageIds: jsonb("message_ids").$type<string[]>().notNull(),
+  action: text("action").notNull().default("trash"),  // 'trash' | 'archive'
   undone: boolean("undone").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
