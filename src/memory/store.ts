@@ -1,23 +1,24 @@
 export type Verdict = "important" | "unimportant";
-export interface RuleMatch { slug: string; verdict: Verdict; }
+export interface RuleMatch { slug: string; verdict: Verdict; action: "trash" | "archive" | null; }
 export interface MemoryIndexEntry { slug: string; description: string; scope: string; }
 export interface MemoryRow {
   userId: number; slug: string; description: string; body: string;
   scope: string; matchType: string | null; matchValue: string | null; verdict: string | null;
+  action: string | null;
 }
 export interface MemoryStore {
   findRuleFor(fromEmail: string, fromDomain: string): RuleMatch | null;
   index(): MemoryIndexEntry[];
   list(): MemoryRow[];
   upsertSenderRule(fromEmail: string, verdict: Verdict): MemoryRow;
-  upsertRule(input: { matchValue: string; scope: "sender" | "domain"; verdict: Verdict; description: string }): MemoryRow;
+  upsertRule(input: { matchValue: string; scope: "sender" | "domain"; verdict: Verdict; description: string; action?: "trash" | "archive" }): MemoryRow;
   deleteBySlug(slug: string): void;
 }
 
 export function matchRuleIn(rows: MemoryRow[], fromEmail: string, fromDomain: string): RuleMatch | null {
   const sender = rows.find(r => r.matchType === "sender" && r.matchValue === fromEmail && r.verdict);
   const hit = sender ?? rows.find(r => r.matchType === "domain" && r.matchValue === fromDomain && r.verdict);
-  return hit ? { slug: hit.slug, verdict: hit.verdict as Verdict } : null;
+  return hit ? { slug: hit.slug, verdict: hit.verdict as Verdict, action: (hit.action as "trash" | "archive" | null) ?? null } : null;
 }
 
 export function inMemoryStore(seed: MemoryRow[] = [], userId = 1): MemoryStore {
@@ -35,16 +36,16 @@ export function inMemoryStore(seed: MemoryRow[] = [], userId = 1): MemoryStore {
       const description = `sender ${fromEmail} is ${verdict}`;
       let row = rows.find(r => r.slug === slug);
       if (!row) {
-        row = { userId, slug, description, body: "", scope: "sender", matchType: "sender", matchValue: fromEmail, verdict };
+        row = { userId, slug, description, body: "", scope: "sender", matchType: "sender", matchValue: fromEmail, verdict, action: null };
         rows.push(row);
       } else { row.verdict = verdict; row.description = description; }
       return row;
     },
-    upsertRule({ matchValue, scope, verdict, description }) {
+    upsertRule({ matchValue, scope, verdict, description, action }) {
       const slug = `${scope}:${matchValue}`;
       let row = rows.find(r => r.slug === slug);
-      if (!row) { row = { userId, slug, description, body: "", scope, matchType: scope, matchValue, verdict }; rows.push(row); }
-      else { row.verdict = verdict; row.description = description; }
+      if (!row) { row = { userId, slug, description, body: "", scope, matchType: scope, matchValue, verdict, action: action ?? null }; rows.push(row); }
+      else { row.verdict = verdict; row.description = description; row.action = action ?? row.action; }
       return row;
     },
     deleteBySlug(slug) { const i = rows.findIndex(r => r.slug === slug); if (i >= 0) rows.splice(i, 1); },

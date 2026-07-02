@@ -9,7 +9,7 @@ import type { SeenRepo, SeenRow, SyncStateRepo } from "../notifier/sync.js";
 export async function dbMemoryStore(userId: number): Promise<MemoryStore & { flush(): Promise<void> }> {
   const rows = await db().select().from(schema.memories).where(eq(schema.memories.userId, userId));
   const local: MemoryRow[] = rows.map(r => ({ userId, slug: r.slug, description: r.description, body: r.body,
-    scope: r.scope, matchType: r.matchType, matchValue: r.matchValue, verdict: r.verdict }));
+    scope: r.scope, matchType: r.matchType, matchValue: r.matchValue, verdict: r.verdict, action: r.action }));
   const pending: Promise<unknown>[] = [];
   return {
     findRuleFor(email, domain): RuleMatch | null {
@@ -22,9 +22,12 @@ export async function dbMemoryStore(userId: number): Promise<MemoryStore & { flu
     upsertSenderRule(email, verdict): MemoryRow {
       const slug = `sender:${email}`;
       const description = `sender ${email} is ${verdict}`;
-      const row: MemoryRow = { userId, slug, description, body: "", scope: "sender", matchType: "sender", matchValue: email, verdict };
+      const existing = local.find(r => r.slug === slug);
+      const row: MemoryRow = { userId, slug, description, body: "", scope: "sender", matchType: "sender", matchValue: email, verdict, action: existing?.action ?? null };
       const idx = local.findIndex(r => r.slug === slug);
       if (idx >= 0) local[idx] = row; else local.push(row);
+      // Importance-only upsert: omit `action` from the update set so an existing
+      // learned cleanup action is never clobbered by a plain importance rule.
       const writePromise = db().insert(schema.memories).values({ userId, slug, description, body: "", scope: "sender",
         matchType: "sender", matchValue: email, verdict, updatedAt: new Date() })
         .onConflictDoUpdate({ target: [schema.memories.userId, schema.memories.slug],
@@ -36,15 +39,15 @@ export async function dbMemoryStore(userId: number): Promise<MemoryStore & { flu
       writePromise.catch(() => {});
       return row;
     },
-    upsertRule({ matchValue, scope, verdict, description }): MemoryRow {
+    upsertRule({ matchValue, scope, verdict, description, action }): MemoryRow {
       const slug = `${scope}:${matchValue}`;
-      const row: MemoryRow = { userId, slug, description, body: "", scope, matchType: scope, matchValue, verdict };
+      const row: MemoryRow = { userId, slug, description, body: "", scope, matchType: scope, matchValue, verdict, action: action ?? null };
       const idx = local.findIndex(r => r.slug === slug);
       if (idx >= 0) local[idx] = row; else local.push(row);
       const writePromise = db().insert(schema.memories).values({ userId, slug, description, body: "", scope,
-        matchType: scope, matchValue, verdict, updatedAt: new Date() })
+        matchType: scope, matchValue, verdict, action: action ?? null, updatedAt: new Date() })
         .onConflictDoUpdate({ target: [schema.memories.userId, schema.memories.slug],
-          set: { verdict, description, updatedAt: new Date() } });
+          set: { verdict, description, action: action ?? null, updatedAt: new Date() } });
       pending.push(writePromise);
       writePromise.catch(() => {});
       return row;

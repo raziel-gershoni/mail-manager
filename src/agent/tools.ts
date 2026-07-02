@@ -43,9 +43,9 @@ export function readOnlyTools(): ToolDef[] {
     {
       mutating: true,
       schema: { name: "write_memory", description: "Create/update a learned rule from the owner's instruction.",
-        parameters: { type: "object", properties: { matchValue: { type: "string" }, scope: { type: "string", enum: ["sender", "domain"] }, verdict: { type: "string", enum: ["important", "unimportant"] }, description: { type: "string" } }, required: ["matchValue", "scope", "verdict", "description"] } },
+        parameters: { type: "object", properties: { matchValue: { type: "string" }, scope: { type: "string", enum: ["sender", "domain"] }, verdict: { type: "string", enum: ["important", "unimportant"] }, description: { type: "string" }, action: { type: "string", enum: ["trash", "archive"] } }, required: ["matchValue", "scope", "verdict", "description"] } },
       async run(args, ctx) {
-        return ctx.memory.upsertRule({ matchValue: String(args.matchValue), scope: args.scope as "sender" | "domain", verdict: args.verdict as Verdict, description: String(args.description) });
+        return ctx.memory.upsertRule({ matchValue: String(args.matchValue), scope: args.scope as "sender" | "domain", verdict: args.verdict as Verdict, description: String(args.description), action: args.action as "trash" | "archive" | undefined });
       },
     },
     {
