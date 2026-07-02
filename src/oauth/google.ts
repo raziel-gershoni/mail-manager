@@ -51,11 +51,15 @@ export async function authedGmailFor(userId: number, env: Env): Promise<OAuth2Cl
   client.setCredentials({ refresh_token: decryptSecret(acct.encRefreshToken, env.TOKEN_ENC_KEY) });
   // Google occasionally rotates the refresh token; persist the new one so it never goes stale.
   client.on("tokens", (tokens) => {
-    if (!tokens.refresh_token) return;
-    const enc = encryptSecret(tokens.refresh_token, env.TOKEN_ENC_KEY);
-    void db().update(schema.googleAccounts).set({ encRefreshToken: enc, updatedAt: new Date() })
-      .where(eq(schema.googleAccounts.id, acct.id))
-      .catch((e) => console.error("failed to persist rotated refresh token", e));
+    try {
+      if (!tokens.refresh_token) return;
+      const enc = encryptSecret(tokens.refresh_token, env.TOKEN_ENC_KEY);
+      void db().update(schema.googleAccounts).set({ encRefreshToken: enc, updatedAt: new Date() })
+        .where(eq(schema.googleAccounts.id, acct.id))
+        .catch((e) => console.error("failed to persist rotated refresh token", e));
+    } catch (e) {
+      console.error("failed to persist rotated refresh token", e);
+    }
   });
   return client;
 }

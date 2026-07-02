@@ -14,7 +14,7 @@ export function isStateFresh(createdAt: Date, now: Date, ttlMs: number = OAUTH_S
 }
 
 export function reconnectNudgeText(email?: string): string {
-  return `⚠️ I lost access to your Gmail${email ? ` (${email})` : ""}. Please reconnect it in Settings to keep getting briefs.`;
+  return `⚠️ I lost access to your Gmail${email ? ` (${email})` : ""}. Please reconnect it to keep getting briefs.`;
 }
 
 export interface OAuthStateRepo {

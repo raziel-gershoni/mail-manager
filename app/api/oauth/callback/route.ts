@@ -12,9 +12,9 @@ export async function GET(req: Request): Promise<Response> {
   const code = searchParam(req.url, "code");
   const state = searchParam(req.url, "state");
   if (!code || !state) return new Response("missing code or state", { status: 400 });
-  const userId = await dbOAuthStateRepo().consume(state, new Date());
-  if (userId === null) return new Response("invalid or expired state", { status: 403 });
   try {
+    const userId = await dbOAuthStateRepo().consume(state, new Date());
+    if (userId === null) return new Response("invalid or expired state", { status: 403 });
     const { email } = await exchangeAndStore(env(), code, userId);
     return new Response(`Connected ${email}. You can close this tab.`, { status: 200 });
   } catch (e) {
