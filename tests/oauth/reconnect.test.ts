@@ -9,6 +9,7 @@ describe("isInvalidGrant", () => {
     expect(isInvalidGrant({ message: "invalid_grant" })).toBe(true);
     expect(isInvalidGrant({ response: { data: { error: "invalid_grant" } } })).toBe(true);
     expect(isInvalidGrant({ message: "Error: invalid_grant (Token has been expired or revoked.)" })).toBe(true);
+    expect(isInvalidGrant({ code: "invalid_grant" })).toBe(true);
   });
   it("is false for unrelated errors", () => {
     expect(isInvalidGrant({ message: "network timeout" })).toBe(false);
@@ -22,6 +23,7 @@ describe("isStateFresh", () => {
     const created = new Date("2026-07-02T12:00:00Z");
     expect(isStateFresh(created, new Date(created.getTime() + OAUTH_STATE_TTL_MS - 1))).toBe(true);
     expect(isStateFresh(created, new Date(created.getTime() + OAUTH_STATE_TTL_MS + 1))).toBe(false);
+    expect(isStateFresh(created, new Date(created.getTime() + OAUTH_STATE_TTL_MS))).toBe(false);
   });
 });
 
