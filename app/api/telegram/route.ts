@@ -1,7 +1,8 @@
 // app/api/telegram/route.ts
 import { env } from "../../../src/config/env.js";
 import { enqueue } from "../../../src/queue/qstash.js";
-import { isAllowed } from "../../../src/telegram/bot.js";
+import { isAuthorizedTelegram } from "../../../src/users/identity.js";
+import { dbTelegramLinkRepo } from "../../../src/db/user-adapters.js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,7 +15,7 @@ export async function POST(req: Request): Promise<Response> {
   }
   const update = await req.json();
   const fromId = update?.message?.from?.id;
-  if (!isAllowed(e.TELEGRAM_OWNER_ID, fromId)) {
+  if (typeof fromId !== "number" || !(await isAuthorizedTelegram(e.TELEGRAM_OWNER_ID, fromId, dbTelegramLinkRepo()))) {
     return Response.json({ ok: true, skipped: true });
   }
   await enqueue(e, "/api/worker", update);   // ack immediately; process async
