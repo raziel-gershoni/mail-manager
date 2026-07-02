@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   fakeTelegramLinkRepo, fakeUserDirectory,
-  resolveUserForTelegram, isAuthorizedTelegram, ensureOwnerLink,
+  resolveUserForTelegram, isAuthorizedTelegram, ensureOwnerLink, resolveUserIdForApp,
 } from "../../src/users/identity.js";
 
 const OWNER = 555;
@@ -45,6 +45,18 @@ describe("isAuthorizedTelegram", () => {
   it("rejects an unlinked non-owner id", async () => {
     const links = fakeTelegramLinkRepo([]);
     expect(await isAuthorizedTelegram(OWNER, 123, links)).toBe(false);
+  });
+});
+
+describe("resolveUserIdForApp", () => {
+  it("returns the linked userId, else owner→ownerUserId, else null (no upsert)", async () => {
+    const linked = fakeTelegramLinkRepo([{ userId: 7, telegramUserId: 999, chatId: 999 }]);
+    const dir = fakeUserDirectory([3, 7]);
+    expect(await resolveUserIdForApp(555, 999, linked, dir)).toBe(7);
+    const empty = fakeTelegramLinkRepo([]);
+    expect(await resolveUserIdForApp(555, 555, empty, dir)).toBe(3);   // owner → min userId
+    expect(empty.all()).toEqual([]);                                   // no upsert side effect
+    expect(await resolveUserIdForApp(555, 123, empty, dir)).toBeNull(); // unlinked non-owner
   });
 });
 

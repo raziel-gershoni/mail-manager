@@ -22,5 +22,10 @@ export function dbGoogleAccountRepo(): GoogleAccountRepo {
       await db().update(schema.googleAccounts).set({ encRefreshToken, updatedAt: new Date() })
         .where(eq(schema.googleAccounts.userId, userId));
     },
+    async getStatus(userId) {
+      const [r] = await db().select({ email: schema.googleAccounts.email, needsReconnect: schema.googleAccounts.needsReconnect })
+        .from(schema.googleAccounts).where(eq(schema.googleAccounts.userId, userId)).limit(1);
+      return r ? { email: r.email, needsReconnect: r.needsReconnect } : null;
+    },
   };
 }

@@ -30,6 +30,17 @@ export async function resolveUserForTelegram(
   return null;
 }
 
+// Read-only identity resolution for the mini app (no lazy link creation).
+export async function resolveUserIdForApp(
+  ownerTelegramId: number, telegramUserId: number,
+  links: TelegramLinkRepo, directory: UserDirectory,
+): Promise<number | null> {
+  const link = await links.getByTelegramUserId(telegramUserId);
+  if (link) return link.userId;
+  if (telegramUserId === ownerTelegramId) return directory.ownerUserId();
+  return null;
+}
+
 // Cheap authorization gate (read-only). Owner short-circuits with no DB read.
 export async function isAuthorizedTelegram(
   ownerTelegramId: number, telegramUserId: number, links: TelegramLinkRepo,

@@ -41,6 +41,7 @@ export async function handleMessage(text: string, deps: SecretaryDeps): Promise<
   // (The worker calls handleMessage directly, so command handling must live here.)
   const cmd = text.trim().split(/\s+/)[0]?.toLowerCase().split("@")[0];
   if (cmd === "/start" || cmd === "/help") return INTRO;
+  if (cmd === "/settings") return "Tap the ⚙️ Settings button at the bottom-left of the chat to open your settings.";
 
   const state = await deps.convo.load(deps.userId);
   const system = `${SYSTEM_PROMPT}\n\n${dateContext(new Date(), deps.timezone ?? "UTC")}`;
@@ -63,9 +64,13 @@ export async function ensureTelegramWebhook(env: Env): Promise<{ url: string }> 
   const url = buildDestination(env.APP_BASE_URL, "/api/telegram");
   const bot = new Bot(env.TELEGRAM_BOT_TOKEN);
   await bot.api.setWebhook(url, { secret_token: env.TELEGRAM_WEBHOOK_SECRET, allowed_updates: ["message"] });
+  await bot.api.setChatMenuButton({
+    menu_button: { type: "web_app", text: "Settings", web_app: { url: `${env.APP_BASE_URL}/miniapp` } },
+  });
   await bot.api.setMyCommands([
     { command: "start", description: "What I do and how to talk to me" },
     { command: "help", description: "Show what I can do" },
+    { command: "settings", description: "Open your settings" },
   ]);
   return { url };
 }
