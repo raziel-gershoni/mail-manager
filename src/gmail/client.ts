@@ -33,6 +33,9 @@ export interface GmailClient {
   trash(ids: string[]): Promise<void>;
   untrash(ids: string[]): Promise<void>;
   trashedIds?(): string[]; // test-only introspection (implemented on the fake)
+  archive(ids: string[]): Promise<void>;
+  unarchive(ids: string[]): Promise<void>;
+  archivedIds?(): string[]; // test-only introspection (fake)
 }
 
 export function googleGmailClient(auth: OAuth2Client): GmailClient {
@@ -84,6 +87,14 @@ export function googleGmailClient(auth: OAuth2Client): GmailClient {
       if (ids.length === 0) return;
       await gmail.users.messages.batchModify({ userId: "me", requestBody: { ids, removeLabelIds: ["TRASH"] } });
     },
+    async archive(ids) {
+      if (ids.length === 0) return;
+      await gmail.users.messages.batchModify({ userId: "me", requestBody: { ids, removeLabelIds: ["INBOX"] } });
+    },
+    async unarchive(ids) {
+      if (ids.length === 0) return;
+      await gmail.users.messages.batchModify({ userId: "me", requestBody: { ids, addLabelIds: ["INBOX"] } });
+    },
   };
   return c;
 }
@@ -96,6 +107,7 @@ export function fakeGmailClient(opts: {
   bodies?: Record<string, string>;
 }): GmailClient {
   const trashed = new Set<string>();
+  const archivedFromInbox = new Set<string>();
   const c: GmailClient = {
     async currentHistoryId() { return opts.historyId; },
     async listAddedMessageIds(start) { return opts.addedSince[start] ?? []; },
@@ -116,6 +128,9 @@ export function fakeGmailClient(opts: {
     async trash(ids) { for (const id of ids) trashed.add(id); },
     async untrash(ids) { for (const id of ids) trashed.delete(id); },
     trashedIds() { return [...trashed]; },
+    async archive(ids) { for (const id of ids) archivedFromInbox.add(id); },
+    async unarchive(ids) { for (const id of ids) archivedFromInbox.delete(id); },
+    archivedIds() { return [...archivedFromInbox]; },
   };
   return c;
 }
