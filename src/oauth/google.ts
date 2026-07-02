@@ -18,7 +18,12 @@ export function buildAuthUrl(env: Env, state: string): string {
   });
 }
 
-export async function exchangeAndStore(env: Env, code: string): Promise<{ email: string }> {
+export async function ensureBootstrapUser(): Promise<number> {
+  const [user] = await db().select().from(schema.users).limit(1);
+  return user?.id ?? (await db().insert(schema.users).values({}).returning())[0]!.id;
+}
+
+export async function exchangeAndStore(env: Env, code: string, userId: number): Promise<{ email: string }> {
   const client = oauthClient(env);
   const { tokens } = await client.getToken(code);
   if (!tokens.refresh_token) throw new Error("no refresh_token (re-consent with prompt=consent)");
@@ -27,13 +32,11 @@ export async function exchangeAndStore(env: Env, code: string): Promise<{ email:
   const profile = await gmail.users.getProfile({ userId: "me" });
   const email = profile.data.emailAddress;
   if (!email) throw new Error("could not resolve account email from gmail profile");
-  // single-user bootstrap: ensure a user row id=1 exists, then store the account
   const enc = encryptSecret(tokens.refresh_token, env.TOKEN_ENC_KEY);
-  const [user] = await db().select().from(schema.users).limit(1);
-  const userId = user?.id ?? (await db().insert(schema.users).values({}).returning())[0]!.id;
   const existing = await db().select().from(schema.googleAccounts).where(eq(schema.googleAccounts.userId, userId)).limit(1);
   if (existing[0]) {
-    await db().update(schema.googleAccounts).set({ encRefreshToken: enc, email, updatedAt: new Date() })
+    await db().update(schema.googleAccounts)
+      .set({ encRefreshToken: enc, email, needsReconnect: false, updatedAt: new Date() })
       .where(eq(schema.googleAccounts.id, existing[0].id));
   } else {
     await db().insert(schema.googleAccounts).values({ userId, email, encRefreshToken: enc, scope: SCOPE });

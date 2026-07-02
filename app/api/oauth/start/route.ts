@@ -2,9 +2,10 @@
 // Visit https://<app>/api/oauth/start?key=<SETUP_SECRET> in a browser once to connect Gmail.
 import { randomBytes } from "node:crypto";
 import { env } from "../../../../src/config/env.js";
-import { buildAuthUrl } from "../../../../src/oauth/google.js";
+import { buildAuthUrl, ensureBootstrapUser } from "../../../../src/oauth/google.js";
 import { isSetupAuthorized } from "../../../../src/setup/auth.js";
 import { searchParam } from "../../../../src/http/url.js";
+import { dbOAuthStateRepo } from "../../../../src/db/oauth-state-adapter.js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,6 +17,8 @@ export async function GET(req: Request): Promise<Response> {
   if (!expected) return new Response("setup not configured (SETUP_SECRET unset)", { status: 500 });
   const key = searchParam(req.url, "key");
   if (!isSetupAuthorized(key, expected)) return new Response("forbidden", { status: 403 });
+  const userId = await ensureBootstrapUser();
   const state = randomBytes(16).toString("hex");
+  await dbOAuthStateRepo().create(state, userId);
   return new Response(null, { status: 302, headers: { Location: buildAuthUrl(e, state) } });
 }
