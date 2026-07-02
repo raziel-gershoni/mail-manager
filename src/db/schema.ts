@@ -20,7 +20,7 @@ export const telegramLinks = pgTable("telegram_links", {
   userId: integer("user_id").notNull().references(() => users.id),
   telegramUserId: bigint("telegram_user_id", { mode: "number" }).notNull(),
   chatId: bigint("chat_id", { mode: "number" }).notNull(),
-});
+}, (t) => ({ tgUserUx: uniqueIndex("telegram_links_tg_user_ux").on(t.telegramUserId) }));
 
 export const memories = pgTable("memories", {
   id: serial("id").primaryKey(),
