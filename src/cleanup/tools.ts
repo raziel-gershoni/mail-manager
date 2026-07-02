@@ -69,6 +69,40 @@ export function undoLastTool(): ToolDef {
   };
 }
 
+export function archiveMessagesTool(): ToolDef {
+  return {
+    mutating: true,
+    schema: { name: "archive_messages", description: "Archive specific messages by id NOW (removes them from the inbox; they stay in All Mail). Recoverable via undo_last. Use for messages the owner explicitly named.",
+      parameters: { type: "object", properties: { ids: { type: "array", items: { type: "string" } }, reason: { type: "string" } }, required: ["ids"] } },
+    async run(args, ctx) {
+      const dep = requireCleanup(ctx);
+      const ids = (args.ids as string[]) ?? [];
+      if (ids.length === 0) return { ok: false, error: "no ids" };
+      const runId = randomUUID();
+      await dep.actionLog.record(ctx.userId, runId, ids, "archive");
+      await ctx.gmail.archive(ids);
+      return { ok: true, archived: ids.length, runId };
+    },
+  };
+}
+
+export function trashMessagesTool(): ToolDef {
+  return {
+    mutating: true,
+    schema: { name: "trash_messages", description: "Trash specific messages by id NOW (moves to Trash, recoverable). Bypasses the bulk-junk vet — use ONLY for messages the owner explicitly named. For a broad 'clean all X junk' sweep, use propose_trash instead.",
+      parameters: { type: "object", properties: { ids: { type: "array", items: { type: "string" } }, reason: { type: "string" } }, required: ["ids"] } },
+    async run(args, ctx) {
+      const dep = requireCleanup(ctx);
+      const ids = (args.ids as string[]) ?? [];
+      if (ids.length === 0) return { ok: false, error: "no ids" };
+      const runId = randomUUID();
+      await dep.actionLog.record(ctx.userId, runId, ids, "trash"); // record before mutating so undo always covers it
+      await ctx.gmail.trash(ids);
+      return { ok: true, trashed: ids.length, runId };
+    },
+  };
+}
+
 export function trashTools(): ToolDef[] {
-  return [proposeTrashTool(), confirmTrashTool(), undoLastTool()];
+  return [proposeTrashTool(), confirmTrashTool(), undoLastTool(), archiveMessagesTool(), trashMessagesTool()];
 }
