@@ -43,7 +43,7 @@ describe("undoLastTool archive reversal", () => {
 });
 
 describe("trashTools", () => {
-  it("exposes exactly the five cleanup tools", () => {
-    expect(trashTools().map(t => t.schema.name)).toEqual(["propose_trash", "confirm_trash", "undo_last", "archive_messages", "trash_messages"]);
+  it("exposes exactly the six cleanup tools", () => {
+    expect(trashTools().map(t => t.schema.name)).toEqual(["propose_trash", "confirm_trash", "undo_last", "archive_messages", "trash_messages", "apply_action_rules"]);
   });
 });

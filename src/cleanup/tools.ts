@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto";
 import type { ToolDef, ToolContext } from "../agent/tools.js";
 import type { TrashCandidate } from "../llm/provider.js";
 import { riskSignals } from "../gmail/risk.js";
-import { vetTrashSet } from "./vet.js";
+import { vetTrashSet, TRASH_CAP } from "./vet.js";
+import { bucketByAction } from "./apply-rules.js";
 
 function requireCleanup(ctx: ToolContext) {
   if (!ctx.proposals || !ctx.actionLog || !ctx.llm) throw new Error("cleanup deps unavailable");
@@ -103,6 +104,28 @@ export function trashMessagesTool(): ToolDef {
   };
 }
 
+export function applyActionRulesTool(): ToolDef {
+  return {
+    mutating: true,
+    schema: { name: "apply_action_rules", description: "For the given message ids, auto-archive/trash the ones matching a learned action rule (by exact sender/domain), and return the ids with NO rule grouped by sender so you can ask the owner. Use this for 'clean up my inbox'.",
+      parameters: { type: "object", properties: { ids: { type: "array", items: { type: "string" } } }, required: ["ids"] } },
+    async run(args, ctx) {
+      const dep = requireCleanup(ctx);
+      const ids = (args.ids as string[]) ?? [];
+      const items = [];
+      for (const id of ids) {
+        const m = await ctx.gmail.getMeta(id);
+        const rule = ctx.memory.findRuleFor(m.fromEmail, m.fromDomain);
+        items.push({ id, from: m.from, subject: m.subject, action: rule?.action ?? null });
+      }
+      const b = bucketByAction(items, TRASH_CAP);
+      if (b.archive.length) { await dep.actionLog.record(ctx.userId, randomUUID(), b.archive, "archive"); await ctx.gmail.archive(b.archive); }
+      if (b.trash.length) { await dep.actionLog.record(ctx.userId, randomUUID(), b.trash, "trash"); await ctx.gmail.trash(b.trash); }
+      return { archived: b.archive.length, trashed: b.trash.length, undecided: b.undecided, capped: b.capped };
+    },
+  };
+}
+
 export function trashTools(): ToolDef[] {
-  return [proposeTrashTool(), confirmTrashTool(), undoLastTool(), archiveMessagesTool(), trashMessagesTool()];
+  return [proposeTrashTool(), confirmTrashTool(), undoLastTool(), archiveMessagesTool(), trashMessagesTool(), applyActionRulesTool()];
 }
