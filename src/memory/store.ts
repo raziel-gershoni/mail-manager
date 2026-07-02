@@ -20,7 +20,7 @@ export function matchRuleIn(rows: MemoryRow[], fromEmail: string, fromDomain: st
   return hit ? { slug: hit.slug, verdict: hit.verdict as Verdict } : null;
 }
 
-export function inMemoryStore(seed: MemoryRow[] = []): MemoryStore {
+export function inMemoryStore(seed: MemoryRow[] = [], userId = 1): MemoryStore {
   const rows: MemoryRow[] = [...seed];
   return {
     findRuleFor(fromEmail, fromDomain) {
@@ -35,7 +35,7 @@ export function inMemoryStore(seed: MemoryRow[] = []): MemoryStore {
       const description = `sender ${fromEmail} is ${verdict}`;
       let row = rows.find(r => r.slug === slug);
       if (!row) {
-        row = { userId: 1, slug, description, body: "", scope: "sender", matchType: "sender", matchValue: fromEmail, verdict };
+        row = { userId, slug, description, body: "", scope: "sender", matchType: "sender", matchValue: fromEmail, verdict };
         rows.push(row);
       } else { row.verdict = verdict; row.description = description; }
       return row;
@@ -43,7 +43,7 @@ export function inMemoryStore(seed: MemoryRow[] = []): MemoryStore {
     upsertRule({ matchValue, scope, verdict, description }) {
       const slug = `${scope}:${matchValue}`;
       let row = rows.find(r => r.slug === slug);
-      if (!row) { row = { userId: 1, slug, description, body: "", scope, matchType: scope, matchValue, verdict }; rows.push(row); }
+      if (!row) { row = { userId, slug, description, body: "", scope, matchType: scope, matchValue, verdict }; rows.push(row); }
       else { row.verdict = verdict; row.description = description; }
       return row;
     },
