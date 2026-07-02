@@ -24,14 +24,14 @@ export function dbProposalRepo(): ProposalRepo {
 
 export function dbActionLogRepo(): ActionLogRepo {
   return {
-    async record(userId, runId, messageIds) {
-      await db().insert(schema.actionLog).values({ userId, runId, messageIds, undone: false });
+    async record(userId, runId, messageIds, action) {
+      await db().insert(schema.actionLog).values({ userId, runId, messageIds, action, undone: false });
     },
     async lastUndoable(userId): Promise<ActionRun | null> {
       const [row] = await db().select().from(schema.actionLog)
         .where(and(eq(schema.actionLog.userId, userId), eq(schema.actionLog.undone, false)))
         .orderBy(desc(schema.actionLog.createdAt)).limit(1);
-      return row ? { runId: row.runId, messageIds: row.messageIds } : null;
+      return row ? { runId: row.runId, messageIds: row.messageIds, action: row.action as "trash" | "archive" } : null;
     },
     async markUndone(userId, runId) {
       await db().update(schema.actionLog).set({ undone: true })

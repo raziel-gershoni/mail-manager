@@ -26,8 +26,8 @@ describe("fakeProposalRepo", () => {
 describe("fakeActionLogRepo", () => {
   it("records runs and returns the most recent undoable, then marks it undone", async () => {
     const r = fakeActionLogRepo();
-    await r.record(1, "run1", ["a"]);
-    await r.record(1, "run2", ["b", "c"]);
+    await r.record(1, "run1", ["a"], "trash");
+    await r.record(1, "run2", ["b", "c"], "trash");
     expect((await r.lastUndoable(1))?.runId).toBe("run2");
     await r.markUndone(1, "run2");
     expect((await r.lastUndoable(1))?.runId).toBe("run1");  // run2 skipped

@@ -5,9 +5,9 @@ export interface ProposalRepo {
   get(userId: number, id: number): Promise<Proposal | null>;
   markConfirmed(userId: number, id: number): Promise<void>;
 }
-export interface ActionRun { runId: string; messageIds: string[]; }
+export interface ActionRun { runId: string; messageIds: string[]; action: "trash" | "archive"; }
 export interface ActionLogRepo {
-  record(userId: number, runId: string, messageIds: string[]): Promise<void>;
+  record(userId: number, runId: string, messageIds: string[], action: "trash" | "archive"): Promise<void>;
   lastUndoable(userId: number): Promise<ActionRun | null>;
   markUndone(userId: number, runId: string): Promise<void>;
 }
@@ -32,13 +32,13 @@ export function fakeProposalRepo(): ProposalRepo {
 }
 
 export function fakeActionLogRepo(): ActionLogRepo {
-  const rows: { userId: number; runId: string; messageIds: string[]; undone: boolean }[] = [];
+  const rows: { userId: number; runId: string; messageIds: string[]; action: "trash" | "archive"; undone: boolean }[] = [];
   return {
-    async record(userId, runId, messageIds) { rows.push({ userId, runId, messageIds: [...messageIds], undone: false }); },
+    async record(userId, runId, messageIds, action) { rows.push({ userId, runId, messageIds: [...messageIds], action, undone: false }); },
     async lastUndoable(userId) {
       for (let i = rows.length - 1; i >= 0; i--) {
         const r = rows[i]!;
-        if (r.userId === userId && !r.undone) return { runId: r.runId, messageIds: [...r.messageIds] };
+        if (r.userId === userId && !r.undone) return { runId: r.runId, messageIds: [...r.messageIds], action: r.action };
       }
       return null;
     },

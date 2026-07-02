@@ -44,7 +44,7 @@ export function confirmTrashTool(): ToolDef {
       if (!proposal) return { ok: false, error: "proposal not found" };
       if (proposal.status !== "pending") return { ok: false, error: `proposal is ${proposal.status}` };
       const runId = randomUUID();
-      await dep.actionLog.record(ctx.userId, runId, proposal.messageIds); // record first so undo covers it
+      await dep.actionLog.record(ctx.userId, runId, proposal.messageIds, "trash"); // record first so undo covers it
       await dep.proposals.markConfirmed(ctx.userId, id);                   // burn the proposal before the failure-prone trash
       await ctx.gmail.trash(proposal.messageIds);
       return { ok: true, trashed: proposal.messageIds.length, runId };
@@ -55,15 +55,16 @@ export function confirmTrashTool(): ToolDef {
 export function undoLastTool(): ToolDef {
   return {
     mutating: true,
-    schema: { name: "undo_last", description: "Undo the most recent trash action (restores those emails from Trash).",
+    schema: { name: "undo_last", description: "Undo the most recent cleanup action (restores trashed or un-archives the last batch).",
       parameters: { type: "object", properties: {} } },
     async run(_args, ctx) {
       const dep = requireCleanup(ctx);
       const run = await dep.actionLog.lastUndoable(ctx.userId);
       if (!run) return { ok: false, error: "nothing to undo" };
-      await ctx.gmail.untrash(run.messageIds);
+      if (run.action === "archive") await ctx.gmail.unarchive(run.messageIds);
+      else await ctx.gmail.untrash(run.messageIds);
       await dep.actionLog.markUndone(ctx.userId, run.runId);
-      return { ok: true, restored: run.messageIds.length };
+      return { ok: true, restored: run.messageIds.length, action: run.action };
     },
   };
 }
