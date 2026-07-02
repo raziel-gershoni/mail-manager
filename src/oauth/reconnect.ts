@@ -26,6 +26,7 @@ export interface GoogleAccountRepo {
   markNeedsReconnect(userId: number): Promise<boolean>;  // true iff it transitioned false→true (nudge only then)
   clearNeedsReconnect(userId: number): Promise<void>;
   updateRefreshToken(userId: number, encRefreshToken: string): Promise<void>;
+  getStatus(userId: number): Promise<{ email: string; needsReconnect: boolean } | null>;
 }
 
 export function fakeOAuthStateRepo(): OAuthStateRepo & { create(state: string, userId: number, createdAt?: Date): Promise<void> } {
@@ -41,12 +42,13 @@ export function fakeOAuthStateRepo(): OAuthStateRepo & { create(state: string, u
   };
 }
 
-export function fakeGoogleAccountRepo(seed: Record<number, boolean> = {}): GoogleAccountRepo & { flag(userId: number): boolean } {
+export function fakeGoogleAccountRepo(seed: Record<number, boolean> = {}, emails: Record<number, string> = {}): GoogleAccountRepo & { flag(userId: number): boolean } {
   const needs: Record<number, boolean> = { ...seed };
   return {
     async markNeedsReconnect(userId) { if (needs[userId]) return false; needs[userId] = true; return true; },
     async clearNeedsReconnect(userId) { needs[userId] = false; },
     async updateRefreshToken() { /* no-op in fake */ },
+    async getStatus(userId) { return userId in needs ? { email: emails[userId] ?? "a@b.com", needsReconnect: needs[userId]! } : null; },
     flag(userId) { return needs[userId] ?? false; },
   };
 }
