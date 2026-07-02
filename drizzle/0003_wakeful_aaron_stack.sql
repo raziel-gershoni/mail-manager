@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS "telegram_links_tg_user_ux" ON "telegram_links" USING btree ("telegram_user_id");

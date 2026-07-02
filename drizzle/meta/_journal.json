@@ -22,6 +22,13 @@
       "when": 1782850694988,
       "tag": "0002_complete_juggernaut",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1782987022181,
+      "tag": "0003_wakeful_aaron_stack",
+      "breakpoints": true
     }
   ]
 }
