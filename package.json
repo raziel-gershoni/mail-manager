@@ -14,7 +14,7 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "vercel-build": "tsc --noEmit && drizzle-kit migrate"
+    "vercel-build": "drizzle-kit migrate && next build && node scripts/notify-deploy.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.10.0",
