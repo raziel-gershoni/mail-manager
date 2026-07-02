@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { hourInZone, isWithinDigestWindow } from "../../src/settings/window.js";
 
 describe("hourInZone", () => {
@@ -16,6 +16,14 @@ describe("hourInZone", () => {
     const midnightUtc = new Date("2026-07-02T00:30:00Z");
     expect(hourInZone(midnightUtc, "UTC")).toBe(0);
   });
+  it("normalizes a '24' hour string to 0 (defensive against ICU midnight rendering)", () => {
+    const spy = vi.spyOn(Intl, "DateTimeFormat").mockImplementation((() => ({ format: () => "24" })) as unknown as typeof Intl.DateTimeFormat);
+    try {
+      expect(hourInZone(new Date("2026-07-02T00:00:00Z"), "UTC")).toBe(0);
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });
 
 describe("isWithinDigestWindow", () => {
@@ -32,6 +40,7 @@ describe("isWithinDigestWindow", () => {
     expect(isWithinDigestWindow(at(3), "UTC", 22, 7)).toBe(true);
     expect(isWithinDigestWindow(at(7), "UTC", 22, 7)).toBe(false); // end exclusive
     expect(isWithinDigestWindow(at(12), "UTC", 22, 7)).toBe(false);
+    expect(isWithinDigestWindow(at(22), "UTC", 22, 7)).toBe(true); // start-inclusive
   });
   it("start === end means always-on", () => {
     expect(isWithinDigestWindow(at(3), "UTC", 0, 0)).toBe(true);
