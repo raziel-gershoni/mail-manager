@@ -28,7 +28,7 @@ describe("runAgentTurn", () => {
   it("stops at maxIters without a final", async () => {
     const llm = fakeAgentLLM(() => ({ kind: "tool_calls", calls: [{ name: "list_memories", args: {} }] }));
     const res = await runAgentTurn([{ role: "user", content: "loop" }], { llm, tools: readOnlyTools(), ctx: ctx(), maxIters: 3 });
-    expect(res.text).toMatch(/ran out of steps|couldn't complete/i);
+    expect(res.text).toMatch(/narrow it down/i);
   });
   it("appends assistant turn before tool results", async () => {
     const seen: any[][] = [];
@@ -56,6 +56,15 @@ describe("runAgentTurn", () => {
     });
     const res = await runAgentTurn([{ role: "user", content: "x" }], { llm, tools: readOnlyTools(), ctx: ctx(), maxIters: 3 });
     expect(res.text).toBe("here you go");
+  });
+  it("respects a wall-clock budget: stops planning and force-finals with a tool-free call", async () => {
+    // schemas empty on the forced call → the model must produce a final answer
+    const llm = { agentStep: (_msgs: unknown, schemas: unknown[]) =>
+      Array.isArray(schemas) && schemas.length === 0
+        ? Promise.resolve({ kind: "final", text: "best effort" })
+        : Promise.resolve({ kind: "tool_calls", calls: [{ name: "list_memories", args: {} }] }) } as unknown as import("../../src/llm/provider.js").LLMProvider;
+    const res = await runAgentTurn([{ role: "user", content: "x" }], { llm, tools: readOnlyTools(), ctx: ctx(), maxIters: 5, budgetMs: 30 });
+    expect(res.text).toBe("best effort"); // budget (30ms) exhausted immediately → forced final answer, not the apology
   });
   it("emits structured logs for tool calls and the final", async () => {
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});

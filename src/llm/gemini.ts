@@ -80,7 +80,7 @@ function prompt(i: ClassifyInput): string {
 
 // Per-call HTTP timeout so a single hung Gemini request can't eat the whole
 // Vercel /api/worker 60s budget. Must stay comfortably under 60s.
-const GEMINI_TIMEOUT_MS = 45_000;
+const GEMINI_TIMEOUT_MS = 30_000; // per-call backstop; the agent loop enforces a tighter wall-clock budget
 
 export function geminiProvider(apiKey: string): LLMProvider {
   const ai = new GoogleGenAI({ apiKey, httpOptions: { timeout: GEMINI_TIMEOUT_MS } });
