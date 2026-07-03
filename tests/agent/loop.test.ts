@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { runAgentTurn } from "../../src/agent/loop.js";
 import { fakeAgentLLM } from "../../src/llm/provider.js";
 import { readOnlyTools, type ToolContext } from "../../src/agent/tools.js";
@@ -28,7 +28,7 @@ describe("runAgentTurn", () => {
   it("stops at maxIters without a final", async () => {
     const llm = fakeAgentLLM(() => ({ kind: "tool_calls", calls: [{ name: "list_memories", args: {} }] }));
     const res = await runAgentTurn([{ role: "user", content: "loop" }], { llm, tools: readOnlyTools(), ctx: ctx(), maxIters: 3 });
-    expect(res.text).toMatch(/couldn't complete|stopped/i);
+    expect(res.text).toMatch(/ran out of steps|couldn't complete/i);
   });
   it("appends assistant turn before tool results", async () => {
     const seen: any[][] = [];
@@ -45,5 +45,32 @@ describe("runAgentTurn", () => {
     const asstIdx = second.findIndex((m: any) => m.role === "assistant");
     expect(asstIdx).toBeGreaterThanOrEqual(0);
     expect(asstIdx).toBeLessThan(toolIdx);
+  });
+  it("forces a final answer after exhausting tool rounds (no canned apology)", async () => {
+    let n = 0;
+    const llm = fakeAgentLLM(() => {
+      n++;
+      return n <= 3
+        ? { kind: "tool_calls", calls: [{ name: "list_memories", args: {} }] }
+        : { kind: "final", text: "here you go" };
+    });
+    const res = await runAgentTurn([{ role: "user", content: "x" }], { llm, tools: readOnlyTools(), ctx: ctx(), maxIters: 3 });
+    expect(res.text).toBe("here you go");
+  });
+  it("emits structured logs for tool calls and the final", async () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      let calls = 0;
+      const llm = fakeAgentLLM(() => {
+        calls++;
+        return calls === 1
+          ? { kind: "tool_calls", calls: [{ name: "list_memories", args: {} }] }
+          : { kind: "final", text: "done" };
+      });
+      await runAgentTurn([{ role: "user", content: "x" }], { llm, tools: readOnlyTools(), ctx: ctx() });
+      const events = spy.mock.calls.map(c => { try { return (JSON.parse(c[0] as string) as { event: string }).event; } catch { return null; } });
+      expect(events).toContain("agent.tool");
+      expect(events).toContain("agent.final");
+    } finally { spy.mockRestore(); }
   });
 });
