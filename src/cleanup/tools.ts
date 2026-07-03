@@ -5,6 +5,8 @@ import type { TrashCandidate } from "../llm/provider.js";
 import { riskSignals } from "../gmail/risk.js";
 import { vetTrashSet, TRASH_CAP } from "./vet.js";
 import { bucketByAction } from "./apply-rules.js";
+import { GMAIL_FETCH_CONCURRENCY } from "../gmail/client.js";
+import { mapLimit } from "../util/concurrency.js";
 
 function requireCleanup(ctx: ToolContext) {
   if (!ctx.proposals || !ctx.actionLog || !ctx.llm) throw new Error("cleanup deps unavailable");
@@ -18,13 +20,12 @@ export function proposeTrashTool(): ToolDef {
       parameters: { type: "object", properties: { ids: { type: "array", items: { type: "string" } }, reason: { type: "string" } }, required: ["ids", "reason"] } },
     async run(args, ctx) {
       const dep = requireCleanup(ctx);
-      const ids = (args.ids as string[]) ?? [];
-      const candidates: TrashCandidate[] = [];
-      for (const id of ids) {
-        const m = await ctx.gmail.getMeta(id);
+      const ids = ((args.ids as string[]) ?? []).slice(0, TRASH_CAP);
+      const metas = await mapLimit(ids, GMAIL_FETCH_CONCURRENCY, (id) => ctx.gmail.getMeta(id));
+      const candidates: TrashCandidate[] = metas.map((m, i) => {
         const r = riskSignals(m);
-        candidates.push({ id, from: m.from, subject: m.subject, bulk: r.bulk, transactional: r.transactional });
-      }
+        return { id: ids[i]!, from: m.from, subject: m.subject, bulk: r.bulk, transactional: r.transactional };
+      });
       const vet = await vetTrashSet(candidates, { llm: dep.llm });
       const summary = `${vet.autoTrash.length} to trash, ${vet.setAside.length} set aside${vet.capped ? " (capped)" : ""}`;
       const proposal = await dep.proposals.create(ctx.userId, vet.autoTrash, summary);
@@ -111,13 +112,12 @@ export function applyActionRulesTool(): ToolDef {
       parameters: { type: "object", properties: { ids: { type: "array", items: { type: "string" } } }, required: ["ids"] } },
     async run(args, ctx) {
       const dep = requireCleanup(ctx);
-      const ids = (args.ids as string[]) ?? [];
-      const items = [];
-      for (const id of ids) {
-        const m = await ctx.gmail.getMeta(id);
+      const ids = ((args.ids as string[]) ?? []).slice(0, TRASH_CAP);
+      const metas = await mapLimit(ids, GMAIL_FETCH_CONCURRENCY, (id) => ctx.gmail.getMeta(id));
+      const items = metas.map((m, i) => {
         const rule = ctx.memory.findRuleFor(m.fromEmail, m.fromDomain);
-        items.push({ id, from: m.from, subject: m.subject, action: rule?.action ?? null });
-      }
+        return { id: ids[i]!, from: m.from, subject: m.subject, action: rule?.action ?? null };
+      });
       const b = bucketByAction(items, TRASH_CAP);
       if (b.archive.length) { await dep.actionLog.record(ctx.userId, randomUUID(), b.archive, "archive"); await ctx.gmail.archive(b.archive); }
       if (b.trash.length) { await dep.actionLog.record(ctx.userId, randomUUID(), b.trash, "trash"); await ctx.gmail.trash(b.trash); }

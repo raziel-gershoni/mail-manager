@@ -5,6 +5,7 @@ import { fakeActionLogRepo, fakeProposalRepo } from "../../src/cleanup/proposals
 import { fakeAgentLLM } from "../../src/llm/provider.js";
 import { fakeGmailClient } from "../../src/gmail/client.js";
 import { inMemoryStore } from "../../src/memory/store.js";
+import { TRASH_CAP } from "../../src/cleanup/vet.js";
 
 describe("bucketByAction", () => {
   it("buckets by rule action; groups un-ruled by sender", () => {
@@ -56,5 +57,35 @@ describe("applyActionRulesTool (integration)", () => {
     expect(res.undecided.length).toBe(1);
     expect(res.undecided[0].ids).toEqual(["m1"]);
     expect(await log.lastUndoable(1)).not.toBeNull();
+  });
+
+  it("caps fetch + trash at TRASH_CAP even when given a much larger id list", async () => {
+    const N = TRASH_CAP + 50;
+    const messages: Record<string, any> = {};
+    for (let i = 0; i < N; i++) {
+      messages[`m${i}`] = {
+        id: `m${i}`, threadId: `t${i}`, snippet: "s",
+        payload: { headers: [{ name: "From", value: `sender${i} <s${i}@bulk.com>` }, { name: "Subject", value: "junk" }] },
+      };
+    }
+    const gmail = fakeGmailClient({ historyId: "1", addedSince: {}, messages });
+    let getMetaCalls = 0;
+    const origGetMeta = gmail.getMeta.bind(gmail);
+    gmail.getMeta = async (id: string) => { getMetaCalls++; return origGetMeta(id); };
+
+    const memory = inMemoryStore();
+    memory.upsertRule({ matchValue: "bulk.com", scope: "domain", verdict: "unimportant", description: "bulk", action: "trash" });
+    const log = fakeActionLogRepo();
+    const ctx = {
+      userId: 1, gmail, memory, proposals: fakeProposalRepo(), actionLog: log,
+      llm: fakeAgentLLM(() => ({ kind: "final", text: "" }), () => ""),
+    } as any;
+
+    const ids = Object.keys(messages);
+    const res = await applyActionRulesTool().run({ ids }, ctx) as any;
+
+    expect(res.trashed).toBeLessThanOrEqual(TRASH_CAP);
+    expect(gmail.trashedIds!().length).toBeLessThanOrEqual(TRASH_CAP);
+    expect(getMetaCalls).toBeLessThanOrEqual(TRASH_CAP);
   });
 });

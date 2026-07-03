@@ -3,6 +3,7 @@ import type { GmailClient } from "../gmail/client.js";
 import type { MemoryStore, Verdict } from "../memory/store.js";
 import type { ToolSchema, LLMProvider } from "../llm/provider.js";
 import type { ProposalRepo, ActionLogRepo } from "../cleanup/proposals.js";
+import { mapLimit } from "../util/concurrency.js";
 
 export interface ToolContext {
   userId: number;
@@ -36,9 +37,8 @@ export function readOnlyTools(): ToolDef[] {
         parameters: { type: "object", properties: { ids: { type: "array", items: { type: "string" } } }, required: ["ids"] } },
       async run(args, ctx) {
         const ids = (args.ids as string[] ?? []).slice(0, READ_LIMIT);
-        const out = [];
-        for (const id of ids) { const f = await ctx.gmail.readFull(id); out.push({ id, from: f.meta.from, subject: f.meta.subject, bodyText: f.bodyText }); }
-        return out;
+        const fulls = await mapLimit(ids, 5, (id) => ctx.gmail.readFull(id));
+        return fulls.map((f, i) => ({ id: ids[i]!, from: f.meta.from, subject: f.meta.subject, bodyText: f.bodyText }));
       },
     },
     {
