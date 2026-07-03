@@ -78,8 +78,12 @@ function prompt(i: ClassifyInput): string {
   ].join("\n\n");
 }
 
+// Per-call HTTP timeout so a single hung Gemini request can't eat the whole
+// Vercel /api/worker 60s budget. Must stay comfortably under 60s.
+const GEMINI_TIMEOUT_MS = 45_000;
+
 export function geminiProvider(apiKey: string): LLMProvider {
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({ apiKey, httpOptions: { timeout: GEMINI_TIMEOUT_MS } });
   return {
     async classifyImportance(input) {
       const res = await ai.models.generateContent({

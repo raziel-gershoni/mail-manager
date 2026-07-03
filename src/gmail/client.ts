@@ -2,8 +2,10 @@ import { google } from "googleapis";
 import type { OAuth2Client } from "google-auth-library";
 import { parseMessage, type EmailMeta, type GmailRawMessage } from "./headers.js";
 import { htmlToText } from "./html.js";
+import { mapLimit } from "../util/concurrency.js";
 
 const MAX_BODY_CHARS = 40_000;
+export const GMAIL_FETCH_CONCURRENCY = 8;
 
 function decodeBody(raw: GmailRawMessage): string {
   // walk payload parts; prefer text/plain, else text/html (stripped)
@@ -29,6 +31,7 @@ export interface GmailClient {
   listAddedMessageIds(startHistoryId: string): Promise<string[]>;
   getMeta(id: string): Promise<EmailMeta>;
   search(q: string, max?: number): Promise<EmailMeta[]>;
+  countMessages(q: string): Promise<number>;
   readFull(id: string): Promise<{ meta: EmailMeta; bodyText: string }>;
   trash(ids: string[]): Promise<void>;
   untrash(ids: string[]): Promise<void>;
@@ -67,12 +70,19 @@ export function googleGmailClient(auth: OAuth2Client): GmailClient {
       });
       return parseMessage(res.data as GmailRawMessage);
     },
-    async search(q, max = 200) {
+    async search(q, max = 25) {
       const res = await gmail.users.messages.list({ userId: "me", q, maxResults: max });
       const ids = (res.data.messages ?? []).map(m => m.id!).filter(Boolean);
-      const metas: EmailMeta[] = [];
-      for (const id of ids) metas.push(await c.getMeta(id));
-      return metas;
+      return mapLimit(ids, GMAIL_FETCH_CONCURRENCY, id => c.getMeta(id));
+    },
+    async countMessages(q) {
+      let count = 0; let pageToken: string | undefined; let pages = 0;
+      do {
+        const res = await gmail.users.messages.list({ userId: "me", q, maxResults: 500, pageToken });
+        count += (res.data.messages ?? []).length;
+        pageToken = res.data.nextPageToken ?? undefined;
+      } while (pageToken && ++pages < 40);
+      return count;
     },
     async readFull(id) {
       const res = await gmail.users.messages.get({ userId: "me", id, format: "full" });
@@ -118,6 +128,9 @@ export function fakeGmailClient(opts: {
     },
     async search(q) {
       return Promise.all((opts.searchResults?.[q] ?? []).map(id => c.getMeta(id)));
+    },
+    async countMessages(q) {
+      return (opts.searchResults?.[q] ?? []).length;
     },
     async readFull(id) {
       const raw = opts.messages[id];

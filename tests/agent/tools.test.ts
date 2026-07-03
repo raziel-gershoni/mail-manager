@@ -19,6 +19,7 @@ describe("readOnlyTools", () => {
   it("exposes no destructive or send capability", () => {
     const names = readOnlyTools().map(t => t.schema.name);
     expect(names).toContain("search_gmail");
+    expect(names).toContain("count_messages");
     expect(names).toContain("read_messages");
     for (const banned of ["trash", "send_email", "forward", "http", "delete_messages"]) {
       expect(names.some(n => n.includes(banned))).toBe(false);
@@ -32,6 +33,10 @@ describe("dispatchTool", () => {
   it("search_gmail returns metadata rows", async () => {
     const r = await dispatchTool("search_gmail", { query: "from:y.com" }, ctx(), tools) as any[];
     expect(r[0].id).toBe("a");
+  });
+  it("count_messages returns a fast count without reading contents", async () => {
+    const r = await dispatchTool("count_messages", { query: "from:y.com" }, ctx(), tools) as { query: string; count: number };
+    expect(r).toEqual({ query: "from:y.com", count: 1 });
   });
   it("read_messages returns stripped bodies, capped at 10", async () => {
     const r = await dispatchTool("read_messages", { ids: ["a"] }, ctx(), tools) as any[];
