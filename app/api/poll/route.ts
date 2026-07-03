@@ -15,6 +15,7 @@ import { runPoll } from "../../../src/notifier/poll.js";
 import { generateBrief } from "../../../src/notifier/brief.js";
 import { pollAllUsers } from "../../../src/notifier/fanout.js";
 import { sendFormatted } from "../../../src/telegram/send.js";
+import { log } from "../../../src/util/log.js";
 import { Bot } from "grammy";
 
 export const runtime = "nodejs";
@@ -22,8 +23,10 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function POST(req: Request): Promise<Response> {
+  const t0 = Date.now();
   const e = env();
   await verifyQStash(e, req);
+  log("poll.start", {});
   const llm = geminiProvider(e.GEMINI_API_KEY);
   const bot = new Bot(e.TELEGRAM_BOT_TOKEN);
   const settingsRepo = dbSettingsRepo();
@@ -49,8 +52,10 @@ export async function POST(req: Request): Promise<Response> {
         await sendFormatted(bot, chatId, brief);
         await dbConversationRepo().appendTurn(userId, { role: "brief", content: brief });
         await res.commit();
+        log("poll.brief", { userId, important: ids.length });
       } catch (err) {
         if (isInvalidGrant(err)) {
+          log("poll.reconnect", { userId });
           const newlyFlagged = await dbGoogleAccountRepo().markNeedsReconnect(userId);
           if (newlyFlagged) await sendFormatted(bot, chatId, reconnectNudgeText());
           return; // handled; do not advance the cursor (res.commit only runs on success above)
@@ -59,5 +64,6 @@ export async function POST(req: Request): Promise<Response> {
       }
     },
   });
+  log("poll.done", { ...summary, ms: Date.now() - t0 });
   return Response.json({ ok: true, ...summary });
 }

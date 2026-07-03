@@ -40,6 +40,25 @@ export interface SecretaryDeps {
   proposals: ProposalRepo; actionLog: ActionLogRepo; timezone?: string;
 }
 
+const TOOL_VERBS: Record<string, string> = {
+  search_gmail: "searched", count_messages: "counted", read_messages: "read",
+  list_memories: "checked rules", write_memory: "learned a rule", delete_memory: "removed a rule",
+  propose_trash: "reviewed for trash", confirm_trash: "trashed", undo_last: "undid",
+  archive_messages: "archived", trash_messages: "trashed", apply_action_rules: "applied rules",
+};
+
+// A compact, human-readable trail of what the agent DID this turn, derived from the
+// actual tool calls (no LLM prompting → non-disruptive). Empty when no tools ran.
+export function activityFooter(toolNote: string): string {
+  if (!toolNote || toolNote === "none") return "";
+  const verbs: string[] = [];
+  for (const name of toolNote.split(",").filter(Boolean)) {
+    const v = TOOL_VERBS[name] ?? name;
+    if (verbs[verbs.length - 1] !== v) verbs.push(v); // collapse consecutive repeats
+  }
+  return verbs.length ? `\n\n_· ${verbs.join(" · ")}_` : "";
+}
+
 export async function handleMessage(text: string, deps: SecretaryDeps): Promise<string> {
   // Deterministic, instant replies for /start and /help — no LLM round-trip.
   // (The worker calls handleMessage directly, so command handling must live here.)
@@ -61,7 +80,7 @@ export async function handleMessage(text: string, deps: SecretaryDeps): Promise<
       `${prev}\n${older.map(t => `${t.role}: ${t.content}`).join("\n")}`.slice(-8000));
     await deps.convo.replaceState(deps.userId, compacted);
   }
-  return result.text;
+  return result.text + activityFooter(result.toolNote);
 }
 
 export async function ensureTelegramWebhook(env: Env): Promise<{ url: string }> {

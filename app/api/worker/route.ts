@@ -17,6 +17,7 @@ import { dbSettingsRepo } from "../../../src/db/settings-adapter.js";
 import { effectiveSettings } from "../../../src/settings/settings.js";
 import { withIdempotency } from "../../../src/queue/idempotency.js";
 import { dbIdempotencyRepo } from "../../../src/db/idempotency-adapter.js";
+import { log } from "../../../src/util/log.js";
 import { Bot } from "grammy";
 
 export const runtime = "nodejs";
@@ -24,17 +25,23 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function POST(req: Request): Promise<Response> {
+  const t0 = Date.now();
   const e = env();
   const update = await verifyQStash(e, req) as any;
   const fromId = update?.message?.from?.id;
   const chatId = update?.message?.chat?.id;
   const text = update?.message?.text;
+  const updateId = update?.update_id;
   if (typeof fromId !== "number" || typeof text !== "string" || typeof chatId !== "number") {
+    log("worker.skip", { reason: "bad_payload", updateId });
     return Response.json({ ok: true, skipped: true });
   }
+  log("worker.recv", { updateId, fromId, chatId, textLen: text.length });
   const userId = await resolveUserForTelegram(e.TELEGRAM_OWNER_ID, fromId, chatId, dbTelegramLinkRepo(), dbUserDirectory());
-  if (userId === null) return Response.json({ ok: true, skipped: true });
-  const updateId = update?.update_id;
+  if (userId === null) {
+    log("worker.skip", { reason: "unauthorized", updateId, fromId });
+    return Response.json({ ok: true, skipped: true });
+  }
   const key = String(updateId ?? `${chatId}:${text.slice(0, 64)}`); // fallback if update_id absent (shouldn't happen)
   const outcome = await withIdempotency(key, dbIdempotencyRepo(), async () => {
     const auth = await authedGmailFor(userId, e);
@@ -51,6 +58,10 @@ export async function POST(req: Request): Promise<Response> {
     await sendFormatted(bot, chatId, reply);
     return { ok: true as const };
   });
-  if (!outcome.processed) return Response.json({ ok: true, duplicate: true });
+  if (!outcome.processed) {
+    log("worker.dup", { key });
+    return Response.json({ ok: true, duplicate: true });
+  }
+  log("worker.done", { updateId, userId, ms: Date.now() - t0 });
   return Response.json(outcome.result);
 }

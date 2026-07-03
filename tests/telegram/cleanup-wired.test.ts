@@ -34,6 +34,6 @@ it("a scripted agent runs propose_trash then confirm_trash and the email is tras
   const deps: SecretaryDeps = { userId: 1, gmail, memory: inMemoryStore(), llm, convo: fakeConversationRepo(),
     proposals, actionLog: fakeActionLogRepo(), tools: [...readOnlyTools(), ...trashTools()] };
   const reply = await handleMessage("clean my linkedin junk, nuke it all", deps);
-  expect(reply).toBe("Trashed 1.");
+  expect(reply).toContain("Trashed 1."); // may carry an activity footer (· reviewed for trash · trashed)
   expect(gmail.trashedIds!()).toEqual(["a"]);
 });
