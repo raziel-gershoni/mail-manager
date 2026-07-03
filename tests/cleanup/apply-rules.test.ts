@@ -87,5 +87,31 @@ describe("applyActionRulesTool (integration)", () => {
     expect(res.trashed).toBeLessThanOrEqual(TRASH_CAP);
     expect(gmail.trashedIds!().length).toBeLessThanOrEqual(TRASH_CAP);
     expect(getMetaCalls).toBeLessThanOrEqual(TRASH_CAP);
+    expect(res.capped).toBe(true);
+  });
+
+  it("does not mark capped when the id list is within TRASH_CAP and nothing overflows", async () => {
+    const N = 5;
+    const messages: Record<string, any> = {};
+    for (let i = 0; i < N; i++) {
+      messages[`m${i}`] = {
+        id: `m${i}`, threadId: `t${i}`, snippet: "s",
+        payload: { headers: [{ name: "From", value: `sender${i} <s${i}@bulk.com>` }, { name: "Subject", value: "junk" }] },
+      };
+    }
+    const gmail = fakeGmailClient({ historyId: "1", addedSince: {}, messages });
+    const memory = inMemoryStore();
+    memory.upsertRule({ matchValue: "bulk.com", scope: "domain", verdict: "unimportant", description: "bulk", action: "trash" });
+    const log = fakeActionLogRepo();
+    const ctx = {
+      userId: 1, gmail, memory, proposals: fakeProposalRepo(), actionLog: log,
+      llm: fakeAgentLLM(() => ({ kind: "final", text: "" }), () => ""),
+    } as any;
+
+    const ids = Object.keys(messages);
+    const res = await applyActionRulesTool().run({ ids }, ctx) as any;
+
+    expect(res.trashed).toBe(N);
+    expect(res.capped).toBe(false);
   });
 });

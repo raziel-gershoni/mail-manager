@@ -20,16 +20,18 @@ export function proposeTrashTool(): ToolDef {
       parameters: { type: "object", properties: { ids: { type: "array", items: { type: "string" } }, reason: { type: "string" } }, required: ["ids", "reason"] } },
     async run(args, ctx) {
       const dep = requireCleanup(ctx);
-      const ids = ((args.ids as string[]) ?? []).slice(0, TRASH_CAP);
+      const rawIds = (args.ids as string[]) ?? [];
+      const ids = rawIds.slice(0, TRASH_CAP);
       const metas = await mapLimit(ids, GMAIL_FETCH_CONCURRENCY, (id) => ctx.gmail.getMeta(id));
       const candidates: TrashCandidate[] = metas.map((m, i) => {
         const r = riskSignals(m);
         return { id: ids[i]!, from: m.from, subject: m.subject, bulk: r.bulk, transactional: r.transactional };
       });
       const vet = await vetTrashSet(candidates, { llm: dep.llm });
-      const summary = `${vet.autoTrash.length} to trash, ${vet.setAside.length} set aside${vet.capped ? " (capped)" : ""}`;
+      const capped = vet.capped || rawIds.length > TRASH_CAP;
+      const summary = `${vet.autoTrash.length} to trash, ${vet.setAside.length} set aside${capped ? " (capped)" : ""}`;
       const proposal = await dep.proposals.create(ctx.userId, vet.autoTrash, summary);
-      return { proposalId: proposal.id, willTrash: vet.autoTrash.length, setAside: vet.setAside, capped: vet.capped, summary };
+      return { proposalId: proposal.id, willTrash: vet.autoTrash.length, setAside: vet.setAside, capped, summary };
     },
   };
 }
@@ -112,7 +114,8 @@ export function applyActionRulesTool(): ToolDef {
       parameters: { type: "object", properties: { ids: { type: "array", items: { type: "string" } } }, required: ["ids"] } },
     async run(args, ctx) {
       const dep = requireCleanup(ctx);
-      const ids = ((args.ids as string[]) ?? []).slice(0, TRASH_CAP);
+      const rawIds = (args.ids as string[]) ?? [];
+      const ids = rawIds.slice(0, TRASH_CAP);
       const metas = await mapLimit(ids, GMAIL_FETCH_CONCURRENCY, (id) => ctx.gmail.getMeta(id));
       const items = metas.map((m, i) => {
         const rule = ctx.memory.findRuleFor(m.fromEmail, m.fromDomain);
@@ -121,7 +124,7 @@ export function applyActionRulesTool(): ToolDef {
       const b = bucketByAction(items, TRASH_CAP);
       if (b.archive.length) { await dep.actionLog.record(ctx.userId, randomUUID(), b.archive, "archive"); await ctx.gmail.archive(b.archive); }
       if (b.trash.length) { await dep.actionLog.record(ctx.userId, randomUUID(), b.trash, "trash"); await ctx.gmail.trash(b.trash); }
-      return { archived: b.archive.length, trashed: b.trash.length, undecided: b.undecided, capped: b.capped };
+      return { archived: b.archive.length, trashed: b.trash.length, undecided: b.undecided, capped: b.capped || rawIds.length > TRASH_CAP };
     },
   };
 }
