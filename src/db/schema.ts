@@ -92,6 +92,11 @@ export const proposals = pgTable("proposals", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const processedUpdates = pgTable("processed_updates", {
+  updateId: text("update_id").primaryKey(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const actionLog = pgTable("action_log", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id),
