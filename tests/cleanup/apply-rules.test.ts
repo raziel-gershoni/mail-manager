@@ -100,6 +100,34 @@ describe("applyActionRulesTool (integration)", () => {
     expect(res.capped).toBe(true);
   });
 
+  it("guarded (review) senders: reads bodies, trashes junk (logged), returns keepers to flag", async () => {
+    const gmail = fakeGmailClient({
+      historyId: "1", addedSince: {},
+      messages: {
+        gj: { id: "gj", threadId: "t", snippet: "", payload: { headers: [{ name: "From", value: "promo@shop.com" }, { name: "Subject", value: "sale" }, { name: "List-Unsubscribe", value: "<x>" }] } },
+        gk: { id: "gk", threadId: "t", snippet: "", payload: { headers: [{ name: "From", value: "promo@shop.com" }, { name: "Subject", value: "news" }, { name: "List-Unsubscribe", value: "<x>" }] } },
+      },
+      bodies: { gj: "buy now", gk: "your invoice is ready" },
+    });
+    const memory = inMemoryStore();
+    memory.upsertRule({ matchValue: "shop.com", scope: "domain", verdict: "unimportant", description: "shop", action: "review" });
+    const log = fakeActionLogRepo();
+    const llm = {
+      async classifyImportance() { return { important: false, suspicious: false, reason: "" }; },
+      async agentStep() { return { kind: "final", text: "" }; },
+      async writeBrief() { return ""; },
+      async reviewTrash(c: any[]) { return c.map(x => ({ id: x.id, keep: (x.bodyText ?? "").includes("invoice"), reason: "r" })); },
+    } as any;
+    const ctx = { userId: 1, gmail, memory, proposals: fakeProposalRepo(), actionLog: log, llm } as any;
+
+    const res = await applyActionRulesTool().run({ ids: ["gj", "gk"] }, ctx) as any;
+
+    expect(res.guardedTrashed).toBe(1);
+    expect(gmail.trashedIds!()).toEqual(["gj"]);
+    expect(res.guardedKept.map((k: any) => k.id)).toEqual(["gk"]);
+    expect(await log.lastUndoable(1)).not.toBeNull(); // poll-independent: guarded trash is logged/undoable
+  });
+
   it("does not mark capped when the id list is within TRASH_CAP and nothing overflows", async () => {
     const N = 5;
     const messages: Record<string, any> = {};

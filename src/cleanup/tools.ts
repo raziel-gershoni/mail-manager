@@ -5,8 +5,14 @@ import type { TrashCandidate } from "../llm/provider.js";
 import { riskSignals } from "../gmail/risk.js";
 import { vetTrashSet, TRASH_CAP } from "./vet.js";
 import { bucketByAction } from "./apply-rules.js";
+import { guardVet } from "./guard.js";
 import { GMAIL_FETCH_CONCURRENCY } from "../gmail/client.js";
 import { mapLimit } from "../util/concurrency.js";
+
+// Guarded (review) senders read FULL bodies, so cap the per-run body-reads well
+// below TRASH_CAP to stay within budget. Overflow is reported via `capped` for a
+// repeat run — nothing is trashed unread.
+const GUARDED_CLEANUP_CAP = 20;
 
 function requireCleanup(ctx: ToolContext) {
   if (!ctx.proposals || !ctx.actionLog || !ctx.llm) throw new Error("cleanup deps unavailable");
@@ -110,7 +116,7 @@ export function trashMessagesTool(): ToolDef {
 export function applyActionRulesTool(): ToolDef {
   return {
     mutating: true,
-    schema: { name: "apply_action_rules", description: "For the given message ids, auto-archive/trash the ones matching a learned action rule (by exact sender/domain), and return the ids with NO rule grouped by sender so you can ask the owner. Use this for 'clean up my inbox'.",
+    schema: { name: "apply_action_rules", description: "For the given message ids, auto-archive/trash the ones matching a learned action rule (by exact sender/domain), read+judge the ones matching a guarded-trash ('review') rule (trashing junk, returning importable keepers in guardedKept), and return the ids with NO rule grouped by sender so you can ask the owner. Use this for 'clean up my inbox'.",
       parameters: { type: "object", properties: { ids: { type: "array", items: { type: "string" } } }, required: ["ids"] } },
     async run(args, ctx) {
       const dep = requireCleanup(ctx);
@@ -124,7 +130,18 @@ export function applyActionRulesTool(): ToolDef {
       const b = bucketByAction(items, TRASH_CAP);
       if (b.archive.length) { await dep.actionLog.record(ctx.userId, randomUUID(), b.archive, "archive"); await ctx.gmail.archive(b.archive); }
       if (b.trash.length) { await dep.actionLog.record(ctx.userId, randomUUID(), b.trash, "trash"); await ctx.gmail.trash(b.trash); }
-      return { archived: b.archive.length, trashed: b.trash.length, undecided: b.undecided, capped: b.capped || rawIds.length > TRASH_CAP };
+      // Guarded senders: read bodies (capped), trash the junk (logged first), keep the rest.
+      let guardedTrashed = 0;
+      let guardedKept: { id: string; from: string; subject: string; reason: string }[] = [];
+      let guardedCapped = false;
+      if (b.review.length) {
+        const g = await guardVet(b.review, { gmail: ctx.gmail, llm: dep.llm, cap: GUARDED_CLEANUP_CAP });
+        if (g.trash.length) { await dep.actionLog.record(ctx.userId, randomUUID(), g.trash, "trash"); await ctx.gmail.trash(g.trash); }
+        guardedTrashed = g.trash.length;
+        guardedKept = g.keep;
+        guardedCapped = g.capped;
+      }
+      return { archived: b.archive.length, trashed: b.trash.length, guardedTrashed, guardedKept, undecided: b.undecided, capped: b.capped || guardedCapped || rawIds.length > TRASH_CAP };
     },
   };
 }
