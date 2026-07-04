@@ -32,11 +32,15 @@ describe("buildSettingsView", () => {
   it("assembles settings + gmail status + read-only rules", () => {
     const rules = [
       { userId: 1, slug: "sender:x@y.com", description: "", body: "", scope: "sender", matchType: "sender", matchValue: "x@y.com", verdict: "important", action: null },
+      { userId: 1, slug: "domain:linkedin.com", description: "", body: "", scope: "domain", matchType: "domain", matchValue: "linkedin.com", verdict: "unimportant", action: "trash" },
       { userId: 1, slug: "note", description: "n", body: "", scope: "global", matchType: null, matchValue: null, verdict: null, action: null },
     ];
     const view = buildSettingsView(eff, { email: "me@gmail.com", needsReconnect: true }, rules);
     expect(view.gmail).toEqual({ email: "me@gmail.com", connected: true, needsReconnect: true });
-    expect(view.rules).toEqual([{ matchValue: "x@y.com", scope: "sender", verdict: "important" }]); // only match rules
+    expect(view.rules).toEqual([ // only match rules, now carrying scope/verdict/action
+      { matchValue: "x@y.com", scope: "sender", verdict: "important", action: "" },
+      { matchValue: "linkedin.com", scope: "domain", verdict: "unimportant", action: "trash" },
+    ]);
     expect(view.paused).toBe(false);
   });
   it("reports disconnected when there is no account", () => {

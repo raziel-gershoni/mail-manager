@@ -3,7 +3,7 @@ import type { MemoryRow } from "../memory/store.js";
 
 export interface SettingsView extends EffectiveSettings {
   gmail: { email: string | null; connected: boolean; needsReconnect: boolean };
-  rules: Array<{ matchValue: string; scope: string; verdict: string }>;
+  rules: Array<{ matchValue: string; scope: string; verdict: string; action: string }>;
 }
 export interface SettingsPatch { timezone?: string; digestStartHour?: number; digestEndHour?: number; paused?: boolean; }
 
@@ -43,6 +43,6 @@ export function buildSettingsView(
     ...eff,
     gmail: { email: account?.email ?? null, connected: account !== null, needsReconnect: account?.needsReconnect ?? false },
     rules: rules.filter(r => r.matchType !== null && r.matchValue !== null)
-      .map(r => ({ matchValue: r.matchValue as string, scope: r.scope, verdict: r.verdict ?? "" })),
+      .map(r => ({ matchValue: r.matchValue as string, scope: r.scope, verdict: r.verdict ?? "", action: r.action ?? "" })),
   };
 }

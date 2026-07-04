@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 type View = {
   timezone: string; digestStartHour: number; digestEndHour: number; paused: boolean;
   gmail: { email: string | null; connected: boolean; needsReconnect: boolean };
-  rules: Array<{ matchValue: string; scope: string; verdict: string }>;
+  rules: Array<{ matchValue: string; scope: string; verdict: string; action: string }>;
 };
 
 function initData(): string {
@@ -81,7 +81,12 @@ export default function MiniApp() {
       <h3 style={S.h}>Learned rules</h3>
       {view.rules.length === 0 ? <p style={S.dim}>None yet.</p> : (
         <ul style={S.list}>
-          {view.rules.map((r, i) => <li key={i}>{r.matchValue} → {r.verdict}</li>)}
+          {view.rules.map((r, i) => (
+            <li key={i} style={{ marginBottom: 6 }}>
+              {r.matchValue}
+              <span style={S.dim}> — {[r.scope, r.verdict, r.action].filter(Boolean).join(" · ")}</span>
+            </li>
+          ))}
         </ul>
       )}
 
