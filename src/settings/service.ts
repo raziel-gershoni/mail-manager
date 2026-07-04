@@ -39,6 +39,7 @@ export function mergePatch(eff: EffectiveSettings, patch: SettingsPatch): UserSe
 function actionLabel(action: string | null): string {
   if (action === "review") return "guarded trash";
   if (action === "review_archive") return "guarded archive";
+  if (action === "keep") return "keep";
   return action ?? "";
 }
 

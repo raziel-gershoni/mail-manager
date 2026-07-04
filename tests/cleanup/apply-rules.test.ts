@@ -44,6 +44,18 @@ describe("bucketByAction", () => {
     expect(out.review).toEqual(["1"]);
     expect(out.reviewArchive).toEqual(["2"]);
   });
+  it("routes keep items to the keep bucket (left alone, never asked) without consuming the action cap", () => {
+    const out = bucketByAction([
+      { id: "k1", from: "a", subject: "s", action: "keep" },
+      { id: "k2", from: "a", subject: "s", action: "keep" },
+      { id: "t1", from: "b", subject: "s", action: "trash" },
+      { id: "u1", from: "c", subject: "s", action: null },
+    ], 1); // cap of 1 acted; keeps must NOT count against it
+    expect(out.keep).toEqual(["k1", "k2"]);
+    expect(out.trash).toEqual(["t1"]);        // still acted despite cap 1 — keeps didn't consume budget
+    expect(out.capped).toBe(false);
+    expect(out.undecided).toEqual([{ from: "c", subject: "s", ids: ["u1"] }]); // only no-rule senders asked
+  });
 });
 
 describe("applyActionRulesTool (integration)", () => {
@@ -179,6 +191,31 @@ describe("applyActionRulesTool (integration)", () => {
     expect(res.guardedKept.map((k: any) => k.id)).toEqual(["u1"]);
     expect(order).toEqual(["log", "archive"]);       // record before mutate
     expect(await log.lastUndoable(1)).toMatchObject({ action: "archive", messageIds: ["r1"] });
+  });
+
+  it("leaves any already-ruled sender alone (kept, not asked); only no-rule senders are undecided", async () => {
+    const gmail = fakeGmailClient({
+      historyId: "1", addedSince: {},
+      messages: {
+        boss: { id: "boss", threadId: "t", snippet: "s", payload: { headers: [{ name: "From", value: "boss@work.com" }, { name: "Subject", value: "hi" }] } },
+        news: { id: "news", threadId: "t", snippet: "s", payload: { headers: [{ name: "From", value: "news@list.com" }, { name: "Subject", value: "weekly" }] } },
+        stranger: { id: "stranger", threadId: "t", snippet: "s", payload: { headers: [{ name: "From", value: "who@unknown.com" }, { name: "Subject", value: "?" }] } },
+      },
+    });
+    const memory = inMemoryStore();
+    memory.upsertRule({ matchValue: "work.com", scope: "domain", verdict: "important", description: "boss" });                  // verdict only, NO action
+    memory.upsertRule({ matchValue: "list.com", scope: "domain", verdict: "unimportant", description: "leave it", action: "keep" }); // explicit keep
+    const log = fakeActionLogRepo();
+    const ctx = { userId: 1, gmail, memory, proposals: fakeProposalRepo(), actionLog: log, llm: fakeAgentLLM(() => ({ kind: "final", text: "" }), () => "") } as any;
+
+    const res = await applyActionRulesTool().run({ ids: ["boss", "news", "stranger"] }, ctx) as any;
+
+    expect(res.kept).toBe(2);                 // boss (important, no action) + news (keep) both left alone
+    expect(res.trashed).toBe(0);
+    expect(res.archived).toBe(0);
+    expect(gmail.trashedIds!()).toEqual([]);
+    expect(gmail.archivedIds!()).toEqual([]);
+    expect(res.undecided.map((u: any) => u.from)).toEqual(["who@unknown.com"]); // ONLY the unruled sender is asked about
   });
 
   it("does not mark capped when the id list is within TRASH_CAP and nothing overflows", async () => {

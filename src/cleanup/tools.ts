@@ -116,7 +116,7 @@ export function trashMessagesTool(): ToolDef {
 export function applyActionRulesTool(): ToolDef {
   return {
     mutating: true,
-    schema: { name: "apply_action_rules", description: "For the given message ids, auto-archive/trash the ones matching a learned action rule (by exact sender/domain), read+judge the ones matching a guarded rule (guarded-trash 'review' trashes junk, guarded-archive 'review_archive' archives routine; both return importable keepers in guardedKept), and return the ids with NO rule grouped by sender so you can ask the owner. Use this for 'clean up my inbox'.",
+    schema: { name: "apply_action_rules", description: "For the given message ids, auto-archive/trash the ones matching a learned action rule (by exact sender/domain), read+judge the ones matching a guarded rule (guarded-trash 'review' trashes junk, guarded-archive 'review_archive' archives routine; both return importable keepers in guardedKept), leave alone (report in `kept`) any sender the owner has already ruled on (a 'keep' rule, or any importance rule), and return ONLY the ids from senders with NO rule at all, grouped by sender, so you can ask the owner. Use this for 'clean up my inbox'.",
       parameters: { type: "object", properties: { ids: { type: "array", items: { type: "string" } } }, required: ["ids"] } },
     async run(args, ctx) {
       const dep = requireCleanup(ctx);
@@ -125,7 +125,10 @@ export function applyActionRulesTool(): ToolDef {
       const metas = await mapLimit(ids, GMAIL_FETCH_CONCURRENCY, (id) => ctx.gmail.getMeta(id));
       const items = metas.map((m, i) => {
         const rule = ctx.memory.findRuleFor(m.fromEmail, m.fromDomain);
-        return { id: ids[i]!, from: m.from, subject: m.subject, action: rule?.action ?? null };
+        // Any sender the owner has ruled on is "decided": an explicit action acts;
+        // a verdict-only rule (important / don't-care) or an explicit keep means
+        // leave-in-inbox and DON'T ask again. Only senders with no rule are asked.
+        return { id: ids[i]!, from: m.from, subject: m.subject, action: rule ? (rule.action ?? "keep") : null };
       });
       const b = bucketByAction(items, TRASH_CAP);
       if (b.archive.length) { await dep.actionLog.record(ctx.userId, randomUUID(), b.archive, "archive"); await ctx.gmail.archive(b.archive); }
@@ -145,7 +148,7 @@ export function applyActionRulesTool(): ToolDef {
         guardedKept.push(...g.keep);
         guardedCapped = guardedCapped || g.capped;
       }
-      return { archived: b.archive.length, trashed: b.trash.length, guardedTrashed, guardedArchived, guardedKept, undecided: b.undecided, capped: b.capped || guardedCapped || rawIds.length > TRASH_CAP };
+      return { archived: b.archive.length, trashed: b.trash.length, kept: b.keep.length, guardedTrashed, guardedArchived, guardedKept, undecided: b.undecided, capped: b.capped || guardedCapped || rawIds.length > TRASH_CAP };
     },
   };
 }

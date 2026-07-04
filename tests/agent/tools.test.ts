@@ -78,6 +78,11 @@ describe("dispatchTool", () => {
     await dispatchTool("write_memory", { matchValue: "list.com", scope: "domain", verdict: "unimportant", description: "guard-archive list", action: "review_archive" }, c, tools);
     expect(c.memory.findRuleFor("x@list.com", "list.com")?.action).toBe("review_archive");
   });
+  it("write_memory accepts a keep action (leave in inbox, stop asking)", async () => {
+    const c = ctx();
+    await dispatchTool("write_memory", { matchValue: "keepme.com", scope: "domain", verdict: "unimportant", description: "leave it", action: "keep" }, c, tools);
+    expect(c.memory.findRuleFor("x@keepme.com", "keepme.com")?.action).toBe("keep");
+  });
   it("throws on an unknown tool", async () => {
     await expect(dispatchTool("trash", {}, ctx(), tools)).rejects.toThrow(/unknown tool/i);
   });
