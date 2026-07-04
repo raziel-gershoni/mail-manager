@@ -38,6 +38,27 @@ describe("dispatchTool", () => {
     const r = await dispatchTool("count_messages", { query: "from:y.com" }, ctx(), tools) as { query: string; count: number };
     expect(r).toEqual({ query: "from:y.com", count: 1 });
   });
+  it("count_messages counts a batch of queries in one call, order preserved", async () => {
+    const c = {
+      userId: 1,
+      gmail: fakeGmailClient({
+        historyId: "1", addedSince: {}, messages: {},
+        searchResults: { "in:anywhere from:a.com": ["1", "2"], "in:anywhere from:b.com": [] },
+      }),
+      memory: inMemoryStore(),
+    };
+    const r = await dispatchTool("count_messages", { queries: ["in:anywhere from:a.com", "in:anywhere from:b.com"] }, c, tools) as { counts: { query: string; count: number }[] };
+    expect(r.counts).toEqual([
+      { query: "in:anywhere from:a.com", count: 2 },
+      { query: "in:anywhere from:b.com", count: 0 },
+    ]);
+  });
+  it("list_memories exposes each rule's scope, matchValue, verdict, and action", async () => {
+    const c = ctx();
+    c.memory.upsertRule({ matchValue: "linkedin.com", scope: "domain", verdict: "unimportant", description: "li noise", action: "trash" });
+    const r = await dispatchTool("list_memories", {}, c, tools) as Array<Record<string, unknown>>;
+    expect(r[0]).toEqual({ slug: "domain:linkedin.com", scope: "domain", matchValue: "linkedin.com", verdict: "unimportant", action: "trash", description: "li noise" });
+  });
   it("read_messages returns stripped bodies, capped at 10", async () => {
     const r = await dispatchTool("read_messages", { ids: ["a"] }, ctx(), tools) as any[];
     expect(r[0].bodyText).toBe("body");

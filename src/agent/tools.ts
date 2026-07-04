@@ -1,5 +1,6 @@
 // src/agent/tools.ts
 import type { GmailClient } from "../gmail/client.js";
+import { GMAIL_FETCH_CONCURRENCY } from "../gmail/client.js";
 import type { MemoryStore, Verdict } from "../memory/store.js";
 import type { ToolSchema, LLMProvider } from "../llm/provider.js";
 import type { ProposalRepo, ActionLogRepo } from "../cleanup/proposals.js";
@@ -16,6 +17,7 @@ export interface ToolContext {
 export interface ToolDef { schema: ToolSchema; mutating: boolean; run(args: Record<string, unknown>, ctx: ToolContext): Promise<unknown>; }
 
 const READ_LIMIT = 10;
+const COUNT_BATCH_CAP = 50;
 
 export function readOnlyTools(): ToolDef[] {
   return [
@@ -27,9 +29,17 @@ export function readOnlyTools(): ToolDef[] {
     },
     {
       mutating: false,
-      schema: { name: "count_messages", description: "Count how many messages match a Gmail query (e.g. 'in:inbox', 'in:inbox category:promotions', 'from:linkedin.com'). Fast and full-scale — does NOT read message contents. Use this for 'how many...' / 'how big is my inbox' questions instead of search_gmail.",
-        parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
-      async run(args, ctx) { const query = String(args.query ?? ""); return { query, count: await ctx.gmail.countMessages(query) }; },
+      schema: { name: "count_messages", description: "Count how many messages match one or more Gmail queries. Pass `query` for a single count, or `queries` (an array) to count many at once in ONE call — use the array form to audit multiple rules together instead of calling this repeatedly. A bare query excludes trash and spam; add `in:anywhere` to also span archive, trash, and spam. Fast and full-scale — does NOT read message contents. Use this for 'how many...' / 'how big is my inbox' questions instead of search_gmail.",
+        parameters: { type: "object", properties: { query: { type: "string" }, queries: { type: "array", items: { type: "string" } } } } },
+      async run(args, ctx) {
+        if (Array.isArray(args.queries)) {
+          const list = (args.queries as unknown[]).map(String).slice(0, COUNT_BATCH_CAP);
+          const counts = await mapLimit(list, GMAIL_FETCH_CONCURRENCY, async (query) => ({ query, count: await ctx.gmail.countMessages(query) }));
+          return { counts };
+        }
+        const query = String(args.query ?? "");
+        return { query, count: await ctx.gmail.countMessages(query) };
+      },
     },
     {
       mutating: false,
@@ -43,8 +53,8 @@ export function readOnlyTools(): ToolDef[] {
     },
     {
       mutating: false,
-      schema: { name: "list_memories", description: "List the learned preference rules.", parameters: { type: "object", properties: {} } },
-      async run(_args, ctx) { return ctx.memory.list().map(r => ({ slug: r.slug, description: r.description, verdict: r.verdict })); },
+      schema: { name: "list_memories", description: "List the learned preference rules. Each rule includes its scope (sender/domain), matchValue (the address or domain it matches), verdict, and action (trash/archive/none) — use these to audit or double-check rules.", parameters: { type: "object", properties: {} } },
+      async run(_args, ctx) { return ctx.memory.list().map(r => ({ slug: r.slug, scope: r.scope, matchValue: r.matchValue, verdict: r.verdict, action: r.action, description: r.description })); },
     },
     {
       mutating: true,
