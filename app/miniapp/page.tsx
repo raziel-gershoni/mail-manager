@@ -82,9 +82,9 @@ export default function MiniApp() {
       {view.rules.length === 0 ? <p style={S.dim}>None yet.</p> : (
         <ul style={S.list}>
           {view.rules.map((r, i) => (
-            <li key={i} style={{ marginBottom: 6 }}>
-              {r.matchValue}
-              <span style={S.dim}> — {[r.scope, r.verdict, r.action].filter(Boolean).join(" · ")}</span>
+            <li key={i} style={{ marginBottom: 8 }}>
+              <div style={{ overflowWrap: "anywhere" }}>{r.matchValue}</div>
+              <div style={S.dim}>{[r.scope, r.verdict, r.action].filter(Boolean).join(" · ")}</div>
             </li>
           ))}
         </ul>
