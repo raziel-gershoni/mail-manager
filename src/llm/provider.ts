@@ -29,7 +29,11 @@ export function parseReviewJson(text: string, candidateIds: string[]): ReviewVer
   const byId = new Map(arr.filter(v => typeof v.id === "string").map(v => [v.id as string, v]));
   return candidateIds.map(id => {
     const v = byId.get(id);
-    return { id, keep: v?.keep === true, reason: typeof v?.reason === "string" ? v.reason : "" };
+    // An id the model never returned was NOT judged — default to keep. The safe
+    // error is a false keep, never a false trash (a well-formed but incomplete
+    // array must not silently trash an unjudged message).
+    if (!v) return { id, keep: true, reason: "unjudged-rescue" };
+    return { id, keep: v.keep === true, reason: typeof v.reason === "string" ? v.reason : "" };
   });
 }
 

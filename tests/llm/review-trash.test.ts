@@ -3,10 +3,11 @@ import { describe, it, expect } from "vitest";
 import { parseReviewJson, fakeReviewLLM } from "../../src/llm/provider.js";
 
 describe("parseReviewJson", () => {
-  it("maps verdicts by id and defaults missing ids to keep=false", () => {
-    const out = parseReviewJson('[{"id":"a","keep":true,"reason":"looks personal"}]', ["a", "b"]);
+  it("maps verdicts by id; an unjudged (omitted) id fails safe to keep, only explicit keep:false trashes", () => {
+    const out = parseReviewJson('[{"id":"a","keep":true,"reason":"looks personal"},{"id":"c","keep":false,"reason":"junk"}]', ["a", "b", "c"]);
     expect(out.find(v => v.id === "a")).toEqual({ id: "a", keep: true, reason: "looks personal" });
-    expect(out.find(v => v.id === "b")).toEqual({ id: "b", keep: false, reason: "" });
+    expect(out.find(v => v.id === "b")).toEqual({ id: "b", keep: true, reason: "unjudged-rescue" }); // omitted → kept, never trashed unjudged
+    expect(out.find(v => v.id === "c")).toEqual({ id: "c", keep: false, reason: "junk" });           // explicit trash respected
   });
   it("on non-JSON, fails safe by keeping (rescuing) every candidate", () => {
     const out = parseReviewJson("garbage", ["a", "b"]);

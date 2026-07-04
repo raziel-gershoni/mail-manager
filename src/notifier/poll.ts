@@ -40,6 +40,7 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
   const ids = await deps.gmail.listAddedMessageIds(cursor);
   const important: DigestItem[] = [];
   const toCommit: { id: string; reason: string }[] = [];
+  const trashedToCommit: string[] = []; // guarded-trashed ids: seen-recorded at commit, so the "trashed N" report survives a failed send + retry
   const guardedMetas: EmailMeta[] = []; // messages from a guarded (action:"review") sender
   let processed = 0;
   for (const id of ids) {
@@ -60,8 +61,11 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
     }
   }
 
-  // Guarded batch: read full bodies, trash the junk (logged first, seen immediately
-  // so a retry skips them), surface the keepers. Overflow beyond the cap is kept.
+  // Guarded batch: read full bodies, trash the junk (action-log recorded FIRST so
+  // undo always covers it), surface the keepers. Overflow beyond the cap is kept.
+  // The trashed ids are seen-recorded at commit time (not here) so that if the
+  // brief send fails, the retry re-processes them and re-reports the trash rather
+  // than skipping it silently. A retry re-trashes idempotently (Gmail no-op).
   let guardedTrashed = 0;
   const cap = deps.guardedCap ?? GUARDED_POLL_CAP;
   if (guardedMetas.length > 0) {
@@ -69,9 +73,7 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
     if (g.trash.length > 0) {
       await deps.actionLog.record(deps.userId, randomUUID(), g.trash, "trash"); // record before mutating so undo always covers it
       await deps.gmail.trash(g.trash);
-      for (const id of g.trash) {
-        await deps.seen.record(deps.userId, { messageId: id, surfaced: false, verdict: "unimportant", reason: "guarded-trash" });
-      }
+      trashedToCommit.push(...g.trash);
       guardedTrashed = g.trash.length;
     }
     for (const k of g.keep) {
@@ -90,6 +92,11 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
   const commit = async (): Promise<void> => {
     for (const c of toCommit) {
       await deps.seen.record(deps.userId, { messageId: c.id, surfaced: true, verdict: "important", reason: c.reason });
+    }
+    for (const id of trashedToCommit) {
+      // Recorded only now (after the brief is delivered) so a failed send leaves
+      // them un-seen and the retry re-reports the trash instead of dropping it.
+      await deps.seen.record(deps.userId, { messageId: id, surfaced: false, verdict: "unimportant", reason: "guarded-trash" });
     }
     await deps.sync.set(deps.userId, headId);
   };

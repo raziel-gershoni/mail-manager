@@ -120,12 +120,20 @@ describe("applyActionRulesTool (integration)", () => {
     } as any;
     const ctx = { userId: 1, gmail, memory, proposals: fakeProposalRepo(), actionLog: log, llm } as any;
 
+    // capture ordering to prove the action-log is recorded BEFORE the trash
+    const order: string[] = [];
+    const origRecord = log.record.bind(log);
+    log.record = async (...a: any[]) => { order.push("log"); return (origRecord as any)(...a); };
+    const origTrash = gmail.trash.bind(gmail);
+    gmail.trash = async (...a: any[]) => { order.push("trash"); return (origTrash as any)(...a); };
+
     const res = await applyActionRulesTool().run({ ids: ["gj", "gk"] }, ctx) as any;
 
     expect(res.guardedTrashed).toBe(1);
     expect(gmail.trashedIds!()).toEqual(["gj"]);
     expect(res.guardedKept.map((k: any) => k.id)).toEqual(["gk"]);
-    expect(await log.lastUndoable(1)).not.toBeNull(); // poll-independent: guarded trash is logged/undoable
+    expect(order).toEqual(["log", "trash"]); // record before mutate
+    expect(await log.lastUndoable(1)).toMatchObject({ action: "trash", messageIds: ["gj"] }); // undo covers exactly the trashed msg
   });
 
   it("does not mark capped when the id list is within TRASH_CAP and nothing overflows", async () => {

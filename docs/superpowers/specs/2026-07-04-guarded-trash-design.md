@@ -95,15 +95,18 @@ Trivially testable with a fake LLM.
     `guarded-kept: <reason>` (stays in inbox, deferred-committed like any
     surfaced message),
   - **trash:** `actionLog.record(userId, runId, trash, "trash")` **before**
-    `gmail.trash(trash)` (the log-before-mutate invariant), then
-    `seen.record(surfaced:false, verdict:"trashed")` for each so a QStash retry
-    skips them. `guardedTrashed = trash.length`.
+    `gmail.trash(trash)` (the log-before-mutate invariant). The trashed ids are
+    seen-recorded **at commit time** (after the brief is delivered), NOT
+    immediately — so if the send fails, the retry re-processes the window and
+    **re-reports** the trash rather than skipping it silently (a retry re-trashes
+    idempotently). `guardedTrashed = trash.length`.
 - Per-cycle safety cap `GUARDED_POLL_CAP` (= 20) on body-reads: guarded messages
   beyond the cap are **kept + surfaced, never trashed unread** (safe overflow —
   the timeout backstop must never cause silent loss).
-- `PollResult` gains `guardedTrashed: number`. The route appends a line to the
-  brief when `guardedTrashed > 0` (e.g. `_Guarded: trashed N junk from watched
-  senders (undo with "undo")._`). Never silent.
+- `PollResult` gains `guardedTrashed: number`. The route builds its outgoing
+  message via the pure `composePollMessage(brief, guardedTrashed)` helper, which
+  emits the guarded-trash notice even when there is **no** important mail — so a
+  cycle that only trashed guarded junk still notifies the owner. Never silent.
 
 ### 4. Cleanup-time integration (`src/cleanup/apply-rules.ts`, `src/cleanup/tools.ts`)
 

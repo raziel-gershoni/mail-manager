@@ -13,7 +13,7 @@ import { dbTelegramLinkRepo, dbUserDirectory } from "../../../src/db/user-adapte
 import { dbSettingsRepo } from "../../../src/db/settings-adapter.js";
 import { effectiveSettings } from "../../../src/settings/settings.js";
 import { runPoll } from "../../../src/notifier/poll.js";
-import { generateBrief } from "../../../src/notifier/brief.js";
+import { generateBrief, composePollMessage } from "../../../src/notifier/brief.js";
 import { pollAllUsers } from "../../../src/notifier/fanout.js";
 import { sendFormatted } from "../../../src/telegram/send.js";
 import { log } from "../../../src/util/log.js";
@@ -44,28 +44,21 @@ export async function POST(req: Request): Promise<Response> {
         const res = await runPoll({ userId, gmail, store: await dbMemoryStore(userId), llm, sync: dbSyncRepo(), seen: dbSeenRepo(), actionLog: dbActionLogRepo() });
         if (res.firstRun) return;
         const ids = res.important.map(i => i.messageId);
-        // The background poll may have trashed junk from guarded senders — always
-        // report it so nothing is trashed silently.
-        const guardNote = res.guardedTrashed > 0
-          ? `_Guarded: trashed ${res.guardedTrashed} junk from watched senders (say “undo” to restore)._`
-          : "";
-        if (ids.length === 0) {
-          if (guardNote) {
-            await sendFormatted(bot, chatId, guardNote);
-            await dbConversationRepo().appendTurn(userId, { role: "brief", content: guardNote });
+        let brief: string | null = null;
+        if (ids.length > 0) {
+          brief = await generateBrief(ids, { gmail, llm, timezone });
+          if (!brief || brief.trim() === "") {
+            brief = `${ids.length} new important email(s):\n` +
+              res.important.map(i => `• ${i.subject || "(no subject)"} — ${i.from}`).join("\n");
           }
-          await res.commit();
-          log("poll.brief", { userId, important: 0, guardedTrashed: res.guardedTrashed });
-          return;
         }
-        let brief = await generateBrief(ids, { gmail, llm, timezone });
-        if (!brief || brief.trim() === "") {
-          brief = `${ids.length} new important email(s):\n` +
-            res.important.map(i => `• ${i.subject || "(no subject)"} — ${i.from}`).join("\n");
+        // Includes a guarded-trash notice even when there is no important mail, so
+        // the background poll never trashes silently.
+        const message = composePollMessage(brief, res.guardedTrashed);
+        if (message) {
+          await sendFormatted(bot, chatId, message);
+          await dbConversationRepo().appendTurn(userId, { role: "brief", content: message });
         }
-        const message = guardNote ? `${brief}\n\n${guardNote}` : brief;
-        await sendFormatted(bot, chatId, message);
-        await dbConversationRepo().appendTurn(userId, { role: "brief", content: message });
         await res.commit();
         log("poll.brief", { userId, important: ids.length, guardedTrashed: res.guardedTrashed });
       } catch (err) {

@@ -103,26 +103,34 @@ describe("runPoll", () => {
     expect(r.important).toEqual([]);             // a was skipped, not re-surfaced
   });
 
-  it("guarded senders: trashes junk (logged before mutate, seen immediately) and surfaces the keeper", async () => {
+  it("guarded senders: records action-log BEFORE trashing, defers seen so the report survives a failed send, surfaces the keeper", async () => {
     const d = guardedDeps();
+    // capture call ordering to prove record-before-mutate (undo must always cover the trash)
+    const order: string[] = [];
+    const origRecord = d.actionLog.record.bind(d.actionLog);
+    d.actionLog.record = async (...a: any[]) => { order.push("log"); return (origRecord as any)(...a); };
+    const origTrash = d.gmail.trash.bind(d.gmail);
+    d.gmail.trash = async (...a: any[]) => { order.push("trash"); return (origTrash as any)(...a); };
+
     await d.sync.set(1, "100");
     const r = await runPoll(d);
 
     // junk trashed, keeper untouched
     expect(d.gmail.trashedIds!()).toEqual(["gjunk"]);
     expect(r.guardedTrashed).toBe(1);
+    expect(order).toEqual(["log", "trash"]); // action-log recorded BEFORE the trash
 
-    // action-log recorded so undo covers the poll-time trash
-    const last = await d.actionLog.lastUndoable(1);
-    expect(last?.action).toBe("trash");
-    expect(last?.messageIds).toEqual(["gjunk"]);
+    // undo covers exactly the trashed message
+    expect(await d.actionLog.lastUndoable(1)).toMatchObject({ action: "trash", messageIds: ["gjunk"] });
 
-    // trashed msg is seen immediately (QStash-retry-safe); keeper + jane are surfaced
-    expect(await d.seen.has(1, "gjunk")).toBe(true);
-    expect(r.important.map(i => i.messageId).sort()).toEqual(["gkeep", "jane"]);
-    // keeper deferred until brief delivery
+    // Deferral: NOTHING is seen-recorded before commit — so if the brief send fails,
+    // the retry re-processes the window and re-reports the trash (never silent).
+    expect(await d.seen.has(1, "gjunk")).toBe(false);
     expect(await d.seen.has(1, "gkeep")).toBe(false);
+    expect(r.important.map(i => i.messageId).sort()).toEqual(["gkeep", "jane"]);
+
     await r.commit();
+    expect(await d.seen.has(1, "gjunk")).toBe(true);  // trashed msg recorded seen only after delivery
     expect(await d.seen.has(1, "gkeep")).toBe(true);
   });
 
