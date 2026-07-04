@@ -3,6 +3,7 @@ import { runPoll } from "../../src/notifier/poll.js";
 import { fakeGmailClient } from "../../src/gmail/client.js";
 import { inMemoryStore } from "../../src/memory/store.js";
 import { fakeLLM } from "../../src/llm/provider.js";
+import { fakeActionLogRepo } from "../../src/cleanup/proposals.js";
 import { fakeSyncRepo, fakeSeenRepo } from "../../src/notifier/sync.js";
 
 function deps(over: Partial<any> = {}) {
@@ -20,7 +21,39 @@ function deps(over: Partial<any> = {}) {
     llm: fakeLLM(i => ({ important: i.email.fromEmail === "jane@x.com", suspicious:false, reason:"x" })),
     sync: fakeSyncRepo(),
     seen: fakeSeenRepo(),
+    actionLog: fakeActionLogRepo(),
     ...over,
+  };
+}
+
+// A poll scenario with a guarded (action:"review") rule for shop.com: two bulk
+// messages from that sender (one junk, one that reads important) plus a normal
+// important message. reviewTrash keeps iff the body mentions an invoice.
+function guardedDeps() {
+  const store = inMemoryStore();
+  store.upsertRule({ matchValue: "shop.com", scope: "domain", verdict: "unimportant", description: "shop", action: "review" });
+  return {
+    userId: 1,
+    store,
+    gmail: fakeGmailClient({
+      historyId: "200",
+      addedSince: { "100": ["gjunk", "gkeep", "jane"] },
+      messages: {
+        gjunk: { id: "gjunk", threadId: "t", snippet: "", payload: { headers: [{ name: "From", value: "promo@shop.com" }, { name: "Subject", value: "50% off" }, { name: "List-Unsubscribe", value: "<x>" }] } },
+        gkeep: { id: "gkeep", threadId: "t", snippet: "", payload: { headers: [{ name: "From", value: "promo@shop.com" }, { name: "Subject", value: "newsletter" }, { name: "List-Unsubscribe", value: "<x>" }] } },
+        jane: { id: "jane", threadId: "t", snippet: "", payload: { headers: [{ name: "From", value: "jane@x.com" }, { name: "Subject", value: "Lunch" }] } },
+      },
+      bodies: { gjunk: "buy now", gkeep: "your invoice is attached", jane: "hi" },
+    }),
+    llm: {
+      async classifyImportance(i: any) { return { important: i.email.fromEmail === "jane@x.com", suspicious: false, reason: "x" }; },
+      async agentStep() { return { kind: "final", text: "" }; },
+      async writeBrief() { return ""; },
+      async reviewTrash(cands: any[]) { return cands.map(c => ({ id: c.id, keep: (c.bodyText ?? "").includes("invoice"), reason: "r" })); },
+    } as any,
+    sync: fakeSyncRepo(),
+    seen: fakeSeenRepo(),
+    actionLog: fakeActionLogRepo(),
   };
 }
 
@@ -68,5 +101,40 @@ describe("runPoll", () => {
     const r = await runPoll(d);
     expect(r.processed).toBe(1);                 // only b processed
     expect(r.important).toEqual([]);             // a was skipped, not re-surfaced
+  });
+
+  it("guarded senders: trashes junk (logged before mutate, seen immediately) and surfaces the keeper", async () => {
+    const d = guardedDeps();
+    await d.sync.set(1, "100");
+    const r = await runPoll(d);
+
+    // junk trashed, keeper untouched
+    expect(d.gmail.trashedIds!()).toEqual(["gjunk"]);
+    expect(r.guardedTrashed).toBe(1);
+
+    // action-log recorded so undo covers the poll-time trash
+    const last = await d.actionLog.lastUndoable(1);
+    expect(last?.action).toBe("trash");
+    expect(last?.messageIds).toEqual(["gjunk"]);
+
+    // trashed msg is seen immediately (QStash-retry-safe); keeper + jane are surfaced
+    expect(await d.seen.has(1, "gjunk")).toBe(true);
+    expect(r.important.map(i => i.messageId).sort()).toEqual(["gkeep", "jane"]);
+    // keeper deferred until brief delivery
+    expect(await d.seen.has(1, "gkeep")).toBe(false);
+    await r.commit();
+    expect(await d.seen.has(1, "gkeep")).toBe(true);
+  });
+
+  it("guarded overflow beyond the cap is kept + surfaced, never trashed unread", async () => {
+    const d = { ...guardedDeps(), guardedCap: 1 };
+    await d.sync.set(1, "100");
+    const r = await runPoll(d);
+
+    // only the first guarded id is judged (and trashed); the second is overflow → kept, not trashed
+    expect(d.gmail.trashedIds!()).toEqual(["gjunk"]);
+    expect(r.guardedTrashed).toBe(1);
+    expect(r.important.map(i => i.messageId).sort()).toEqual(["gkeep", "jane"]);
+    expect(r.important.find(i => i.messageId === "gkeep")?.reason).toMatch(/overflow/i);
   });
 });

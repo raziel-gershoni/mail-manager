@@ -7,6 +7,7 @@ import { isInvalidGrant, reconnectNudgeText } from "../../../src/oauth/reconnect
 import { googleGmailClient } from "../../../src/gmail/client.js";
 import { geminiProvider } from "../../../src/llm/gemini.js";
 import { dbMemoryStore, dbSeenRepo, dbSyncRepo } from "../../../src/db/adapters.js";
+import { dbActionLogRepo } from "../../../src/db/cleanup-adapters.js";
 import { dbConversationRepo } from "../../../src/db/conversation-adapter.js";
 import { dbTelegramLinkRepo, dbUserDirectory } from "../../../src/db/user-adapters.js";
 import { dbSettingsRepo } from "../../../src/db/settings-adapter.js";
@@ -40,19 +41,33 @@ export async function POST(req: Request): Promise<Response> {
       try {
         const auth = await authedGmailFor(userId, e);
         const gmail = googleGmailClient(auth);
-        const res = await runPoll({ userId, gmail, store: await dbMemoryStore(userId), llm, sync: dbSyncRepo(), seen: dbSeenRepo() });
+        const res = await runPoll({ userId, gmail, store: await dbMemoryStore(userId), llm, sync: dbSyncRepo(), seen: dbSeenRepo(), actionLog: dbActionLogRepo() });
         if (res.firstRun) return;
         const ids = res.important.map(i => i.messageId);
-        if (ids.length === 0) { await res.commit(); return; }
+        // The background poll may have trashed junk from guarded senders — always
+        // report it so nothing is trashed silently.
+        const guardNote = res.guardedTrashed > 0
+          ? `_Guarded: trashed ${res.guardedTrashed} junk from watched senders (say “undo” to restore)._`
+          : "";
+        if (ids.length === 0) {
+          if (guardNote) {
+            await sendFormatted(bot, chatId, guardNote);
+            await dbConversationRepo().appendTurn(userId, { role: "brief", content: guardNote });
+          }
+          await res.commit();
+          log("poll.brief", { userId, important: 0, guardedTrashed: res.guardedTrashed });
+          return;
+        }
         let brief = await generateBrief(ids, { gmail, llm, timezone });
         if (!brief || brief.trim() === "") {
           brief = `${ids.length} new important email(s):\n` +
             res.important.map(i => `• ${i.subject || "(no subject)"} — ${i.from}`).join("\n");
         }
-        await sendFormatted(bot, chatId, brief);
-        await dbConversationRepo().appendTurn(userId, { role: "brief", content: brief });
+        const message = guardNote ? `${brief}\n\n${guardNote}` : brief;
+        await sendFormatted(bot, chatId, message);
+        await dbConversationRepo().appendTurn(userId, { role: "brief", content: message });
         await res.commit();
-        log("poll.brief", { userId, important: ids.length });
+        log("poll.brief", { userId, important: ids.length, guardedTrashed: res.guardedTrashed });
       } catch (err) {
         if (isInvalidGrant(err)) {
           log("poll.reconnect", { userId });
