@@ -116,7 +116,7 @@ export default function MiniApp() {
         <li style={S.dim}>Summary: ~{fmt(view.context.summaryTokens)}</li>
         <li style={S.dim}>Recent turns ({view.context.windowTurns}): ~{fmt(view.context.windowTokens)}</li>
       </ul>
-      <p style={S.dim}>History auto-compacts once it passes ~{fmt(view.context.compactAtTokens)} tokens.</p>
+      <p style={S.dim}>Rough estimate (excludes tool definitions). Older turns fold into the summary once the recent turns pass ~{fmt(view.context.compactAtTokens)} tokens.</p>
       <button style={S.btn} onClick={clearContext}>Clear conversation</button>
       <p style={S.dim}>Wipes chat history only — your learned rules stay.</p>
 
