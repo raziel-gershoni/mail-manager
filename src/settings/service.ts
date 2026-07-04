@@ -34,6 +34,12 @@ export function mergePatch(eff: EffectiveSettings, patch: SettingsPatch): UserSe
   };
 }
 
+// Storage keeps the terse action value ("review"); the settings UI shows a
+// friendlier label for the guarded-trash action.
+function actionLabel(action: string | null): string {
+  return action === "review" ? "guarded trash" : (action ?? "");
+}
+
 export function buildSettingsView(
   eff: EffectiveSettings,
   account: { email: string; needsReconnect: boolean } | null,
@@ -43,6 +49,6 @@ export function buildSettingsView(
     ...eff,
     gmail: { email: account?.email ?? null, connected: account !== null, needsReconnect: account?.needsReconnect ?? false },
     rules: rules.filter(r => r.matchType !== null && r.matchValue !== null)
-      .map(r => ({ matchValue: r.matchValue as string, scope: r.scope, verdict: r.verdict ?? "", action: r.action ?? "" })),
+      .map(r => ({ matchValue: r.matchValue as string, scope: r.scope, verdict: r.verdict ?? "", action: actionLabel(r.action) })),
   };
 }

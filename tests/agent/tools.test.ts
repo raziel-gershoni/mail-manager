@@ -68,6 +68,11 @@ describe("dispatchTool", () => {
     await dispatchTool("write_memory", { matchValue: "n@linkedin.com", scope: "sender", verdict: "unimportant", description: "linkedin noise" }, c, tools);
     expect(c.memory.findRuleFor("n@linkedin.com", "linkedin.com")?.verdict).toBe("unimportant");
   });
+  it("write_memory accepts a guarded-trash (review) action", async () => {
+    const c = ctx();
+    await dispatchTool("write_memory", { matchValue: "shop.com", scope: "domain", verdict: "unimportant", description: "guard shop", action: "review" }, c, tools);
+    expect(c.memory.findRuleFor("x@shop.com", "shop.com")?.action).toBe("review");
+  });
   it("throws on an unknown tool", async () => {
     await expect(dispatchTool("trash", {}, ctx(), tools)).rejects.toThrow(/unknown tool/i);
   });

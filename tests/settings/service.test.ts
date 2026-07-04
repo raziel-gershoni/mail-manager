@@ -33,13 +33,15 @@ describe("buildSettingsView", () => {
     const rules = [
       { userId: 1, slug: "sender:x@y.com", description: "", body: "", scope: "sender", matchType: "sender", matchValue: "x@y.com", verdict: "important", action: null },
       { userId: 1, slug: "domain:linkedin.com", description: "", body: "", scope: "domain", matchType: "domain", matchValue: "linkedin.com", verdict: "unimportant", action: "trash" },
+      { userId: 1, slug: "domain:shop.com", description: "", body: "", scope: "domain", matchType: "domain", matchValue: "shop.com", verdict: "unimportant", action: "review" },
       { userId: 1, slug: "note", description: "n", body: "", scope: "global", matchType: null, matchValue: null, verdict: null, action: null },
     ];
     const view = buildSettingsView(eff, { email: "me@gmail.com", needsReconnect: true }, rules);
     expect(view.gmail).toEqual({ email: "me@gmail.com", connected: true, needsReconnect: true });
-    expect(view.rules).toEqual([ // only match rules, now carrying scope/verdict/action
+    expect(view.rules).toEqual([ // only match rules, carrying scope/verdict/action; "review" shows as "guarded trash"
       { matchValue: "x@y.com", scope: "sender", verdict: "important", action: "" },
       { matchValue: "linkedin.com", scope: "domain", verdict: "unimportant", action: "trash" },
+      { matchValue: "shop.com", scope: "domain", verdict: "unimportant", action: "guarded trash" },
     ]);
     expect(view.paused).toBe(false);
   });
