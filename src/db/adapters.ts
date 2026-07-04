@@ -20,16 +20,17 @@ export async function dbMemoryStore(userId: number): Promise<MemoryStore & { flu
     },
     list() { return [...local]; },
     upsertSenderRule(email, verdict): MemoryRow {
-      const slug = `sender:${email}`;
-      const description = `sender ${email} is ${verdict}`;
+      const value = email.toLowerCase();
+      const slug = `sender:${value}`;
+      const description = `sender ${value} is ${verdict}`;
       const existing = local.find(r => r.slug === slug);
-      const row: MemoryRow = { userId, slug, description, body: "", scope: "sender", matchType: "sender", matchValue: email, verdict, action: existing?.action ?? null };
+      const row: MemoryRow = { userId, slug, description, body: "", scope: "sender", matchType: "sender", matchValue: value, verdict, action: existing?.action ?? null };
       const idx = local.findIndex(r => r.slug === slug);
       if (idx >= 0) local[idx] = row; else local.push(row);
       // Importance-only upsert: omit `action` from the update set so an existing
       // learned cleanup action is never clobbered by a plain importance rule.
       const writePromise = db().insert(schema.memories).values({ userId, slug, description, body: "", scope: "sender",
-        matchType: "sender", matchValue: email, verdict, updatedAt: new Date() })
+        matchType: "sender", matchValue: value, verdict, updatedAt: new Date() })
         .onConflictDoUpdate({ target: [schema.memories.userId, schema.memories.slug],
           set: { verdict, description, updatedAt: new Date() } });
       // Queue the ORIGINAL promise so flush() can observe a rejection. The no-op
@@ -40,13 +41,14 @@ export async function dbMemoryStore(userId: number): Promise<MemoryStore & { flu
       return row;
     },
     upsertRule({ matchValue, scope, verdict, description, action }): MemoryRow {
-      const slug = `${scope}:${matchValue}`;
+      const value = matchValue.toLowerCase();
+      const slug = `${scope}:${value}`;
       const existing = local.find(r => r.slug === slug);
-      const row: MemoryRow = { userId, slug, description, body: "", scope, matchType: scope, matchValue, verdict, action: action ?? existing?.action ?? null };
+      const row: MemoryRow = { userId, slug, description, body: "", scope, matchType: scope, matchValue: value, verdict, action: action ?? existing?.action ?? null };
       const idx = local.findIndex(r => r.slug === slug);
       if (idx >= 0) local[idx] = row; else local.push(row);
       const writePromise = db().insert(schema.memories).values({ userId, slug, description, body: "", scope,
-        matchType: scope, matchValue, verdict, action: action ?? existing?.action ?? null, updatedAt: new Date() })
+        matchType: scope, matchValue: value, verdict, action: action ?? existing?.action ?? null, updatedAt: new Date() })
         .onConflictDoUpdate({ target: [schema.memories.userId, schema.memories.slug],
           set: { verdict, description, action: action ?? existing?.action ?? null, updatedAt: new Date() } });
       pending.push(writePromise);
