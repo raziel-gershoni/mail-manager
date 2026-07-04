@@ -1,0 +1,37 @@
+import type { GmailClient } from "../gmail/client.js";
+import { GMAIL_FETCH_CONCURRENCY } from "../gmail/client.js";
+import type { LLMProvider, TrashCandidate } from "../llm/provider.js";
+import { riskSignals } from "../gmail/risk.js";
+import { vetTrashSet } from "./vet.js";
+import { mapLimit } from "../util/concurrency.js";
+
+export interface GuardKeep { id: string; from: string; subject: string; reason: string; }
+export interface GuardResult { trash: string[]; keep: GuardKeep[]; capped: boolean; }
+
+// Pure judgment for guarded-trash senders: read each message's FULL body, judge
+// keep-vs-trash (biased toward keep — non-bulk and transactional are kept without
+// the LLM; the rest are body-reviewed with a keep-on-uncertainty default), and
+// return what to trash and what to keep. Does NOT mutate, log, or surface —
+// callers (poll loop, apply_action_rules) own those side effects. `cap` bounds
+// the number of body reads per call; overflow is reported via `capped` so the
+// caller can defer it (nothing is trashed unread).
+export async function guardVet(
+  ids: string[],
+  deps: { gmail: GmailClient; llm: LLMProvider; cap: number },
+): Promise<GuardResult> {
+  const capped = ids.length > deps.cap;
+  const use = ids.slice(0, deps.cap);
+  if (use.length === 0) return { trash: [], keep: [], capped };
+  const fulls = await mapLimit(use, GMAIL_FETCH_CONCURRENCY, (id) => deps.gmail.readFull(id));
+  const candidates: TrashCandidate[] = fulls.map(f => {
+    const r = riskSignals(f.meta);
+    return { id: f.meta.id, from: f.meta.from, subject: f.meta.subject, bulk: r.bulk, transactional: r.transactional, bodyText: f.bodyText };
+  });
+  const vet = await vetTrashSet(candidates, { llm: deps.llm }); // ids already capped above
+  const metaById = new Map(fulls.map(f => [f.meta.id, f.meta]));
+  const keep: GuardKeep[] = vet.setAside.map(s => {
+    const m = metaById.get(s.id);
+    return { id: s.id, from: m?.from ?? "", subject: m?.subject ?? "", reason: s.reason };
+  });
+  return { trash: vet.autoTrash, keep, capped };
+}
