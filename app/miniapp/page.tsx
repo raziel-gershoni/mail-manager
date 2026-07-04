@@ -96,17 +96,19 @@ export default function MiniApp() {
         </span>
       </div>
 
-      <h3 style={S.h}>Learned rules</h3>
-      {view.rules.length === 0 ? <p style={S.dim}>None yet.</p> : (
-        <ul style={S.list}>
-          {view.rules.map((r, i) => (
-            <li key={i} style={{ marginBottom: 8 }}>
-              <div style={{ overflowWrap: "anywhere" }}>{r.matchValue}</div>
-              <div style={S.dim}>{[r.scope, r.verdict, r.action].filter(Boolean).join(" · ")}</div>
-            </li>
-          ))}
-        </ul>
-      )}
+      <details style={S.details}>
+        <summary style={S.summary}>Learned rules ({view.rules.length})</summary>
+        {view.rules.length === 0 ? <p style={S.dim}>None yet.</p> : (
+          <ul style={S.list}>
+            {view.rules.map((r, i) => (
+              <li key={i} style={{ marginBottom: 8 }}>
+                <div style={{ overflowWrap: "anywhere" }}>{r.matchValue}</div>
+                <div style={S.dim}>{[r.scope, r.verdict, r.action].filter(Boolean).join(" · ")}</div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </details>
 
       <h3 style={S.h}>Context</h3>
       <p style={S.dim}>Estimated size of your next message to the assistant.</p>
@@ -133,4 +135,6 @@ const S: Record<string, React.CSSProperties> = {
   btn: { padding: "4px 10px", background: "var(--tg-theme-button-color, #2ea6ff)", color: "var(--tg-theme-button-text-color, #fff)", border: "none", borderRadius: 6, cursor: "pointer" },
   list: { paddingLeft: 18 },
   dim: { color: "var(--tg-theme-hint-color, #888)", fontSize: 13 },
+  details: { margin: "12px 0", borderBottom: "1px solid var(--tg-theme-hint-color, #eee)", paddingBottom: 8 },
+  summary: { margin: "8px 0", fontSize: "1.05em", fontWeight: 600, cursor: "pointer" },
 };
