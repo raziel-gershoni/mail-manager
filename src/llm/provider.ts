@@ -12,7 +12,7 @@ export interface ToolCall { name: string; args: Record<string, unknown>; thought
 export type AgentStep = { kind: "tool_calls"; calls: ToolCall[] } | { kind: "final"; text: string };
 export interface BriefEmail { from: string; subject: string; bodyText: string; }
 
-export interface TrashCandidate { id: string; from: string; subject: string; bulk: boolean; transactional: boolean; }
+export interface TrashCandidate { id: string; from: string; subject: string; bulk: boolean; transactional: boolean; bodyText?: string; }
 export interface ReviewVerdict { id: string; keep: boolean; reason: string; }
 
 export interface LLMProvider {
