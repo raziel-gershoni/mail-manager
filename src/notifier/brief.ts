@@ -23,14 +23,15 @@ export async function generateBrief(
 }
 
 // Compose the poll's outgoing Telegram message from the important-mail brief and
-// the guarded-trash count. Returns null when there is nothing to send. The
-// guarded-trash notice is included whenever the poll trashed junk — so a cycle
-// that ONLY trashed guarded junk (no important mail) still notifies the owner.
-// The poll must never trash silently.
-export function composePollMessage(brief: string | null, guardedTrashed: number): string | null {
-  const guardNote = guardedTrashed > 0
-    ? `_Guarded: trashed ${guardedTrashed} junk from watched senders (say “undo” to restore)._`
-    : "";
+// the guarded-action counts. Returns null when there is nothing to send. The
+// guarded notice is included whenever the poll acted on any mail — so a cycle that
+// ONLY trashed/archived from guarded senders (no important mail) still notifies
+// the owner. The poll must never act silently.
+export function composePollMessage(brief: string | null, guardedTrashed: number, guardedArchived: number): string | null {
+  const acts: string[] = [];
+  if (guardedTrashed > 0) acts.push(`trashed ${guardedTrashed} junk`);
+  if (guardedArchived > 0) acts.push(`archived ${guardedArchived} routine`);
+  const guardNote = acts.length ? `_Guarded: ${acts.join(", ")} from watched senders (say “undo” to restore)._` : "";
   const parts = [brief && brief.trim() ? brief : "", guardNote].filter(Boolean);
   return parts.length ? parts.join("\n\n") : null;
 }

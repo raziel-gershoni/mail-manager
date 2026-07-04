@@ -52,15 +52,15 @@ export async function POST(req: Request): Promise<Response> {
               res.important.map(i => `• ${i.subject || "(no subject)"} — ${i.from}`).join("\n");
           }
         }
-        // Includes a guarded-trash notice even when there is no important mail, so
-        // the background poll never trashes silently.
-        const message = composePollMessage(brief, res.guardedTrashed);
+        // Includes a guarded-action notice even when there is no important mail, so
+        // the background poll never trashes/archives silently.
+        const message = composePollMessage(brief, res.guardedTrashed, res.guardedArchived);
         if (message) {
           await sendFormatted(bot, chatId, message);
           await dbConversationRepo().appendTurn(userId, { role: "brief", content: message });
         }
         await res.commit();
-        log("poll.brief", { userId, important: ids.length, guardedTrashed: res.guardedTrashed });
+        log("poll.brief", { userId, important: ids.length, guardedTrashed: res.guardedTrashed, guardedArchived: res.guardedArchived });
       } catch (err) {
         if (isInvalidGrant(err)) {
           log("poll.reconnect", { userId });

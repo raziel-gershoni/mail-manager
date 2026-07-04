@@ -25,6 +25,7 @@ export interface PollResult {
   important: DigestItem[];
   processed: number;
   guardedTrashed: number;
+  guardedArchived: number;
   commit: () => Promise<void>;
 }
 
@@ -35,20 +36,22 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
   const cursor = await deps.sync.get(deps.userId);
   if (cursor === null) {
     await deps.sync.set(deps.userId, headId);
-    return { firstRun: true, important: [], processed: 0, guardedTrashed: 0, commit: async () => {} };
+    return { firstRun: true, important: [], processed: 0, guardedTrashed: 0, guardedArchived: 0, commit: async () => {} };
   }
   const ids = await deps.gmail.listAddedMessageIds(cursor);
   const important: DigestItem[] = [];
   const toCommit: { id: string; reason: string }[] = [];
-  const trashedToCommit: string[] = []; // guarded-trashed ids: seen-recorded at commit, so the "trashed N" report survives a failed send + retry
-  const guardedMetas: EmailMeta[] = []; // messages from a guarded (action:"review") sender
+  const actedToCommit: string[] = []; // guarded-acted (trashed/archived) ids: seen-recorded at commit, so the report survives a failed send + retry
+  const guardedTrash: EmailMeta[] = [];   // action:"review" — judged, then junk trashed
+  const guardedArchive: EmailMeta[] = []; // action:"review_archive" — judged, then routine archived
   let processed = 0;
   for (const id of ids) {
     if (await deps.seen.has(deps.userId, id)) continue;
     processed++;
     const email = await deps.gmail.getMeta(id);
     const rule = deps.store.findRuleFor(email.fromEmail, email.fromDomain);
-    if (rule?.action === "review") { guardedMetas.push(email); continue; } // judged in a batch below
+    if (rule?.action === "review") { guardedTrash.push(email); continue; }           // judged in a batch below
+    if (rule?.action === "review_archive") { guardedArchive.push(email); continue; } // judged in a batch below
     const outcome = await classifyEmail(email, { store: deps.store, llm: deps.llm });
     if (outcome.important) {
       // Defer marking-seen + cursor advance until the brief is delivered.
@@ -61,28 +64,30 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
     }
   }
 
-  // Guarded batch: read full bodies, trash the junk (action-log recorded FIRST so
-  // undo always covers it), surface the keepers. Overflow beyond the cap is kept.
-  // The trashed ids are seen-recorded at commit time (not here) so that if the
-  // brief send fails, the retry re-processes them and re-reports the trash rather
-  // than skipping it silently. A retry re-trashes idempotently (Gmail no-op).
-  let guardedTrashed = 0;
+  // Guarded batches: read full bodies, ACT on the junk/routine (action-log recorded
+  // FIRST so undo always covers it), surface the keepers. review → trash,
+  // review_archive → archive. Overflow beyond the cap is kept, never acted unread.
+  // Acted ids are seen-recorded at commit time (not here) so that if the brief send
+  // fails, the retry re-processes them and re-reports rather than skipping silently.
+  // A retry re-acts idempotently (Gmail trash/removeLabel are no-ops if applied).
+  let guardedTrashed = 0, guardedArchived = 0;
   const cap = deps.guardedCap ?? GUARDED_POLL_CAP;
-  if (guardedMetas.length > 0) {
-    const g = await guardVet(guardedMetas.map(m => m.id), { gmail: deps.gmail, llm: deps.llm, cap });
-    if (g.trash.length > 0) {
-      await deps.actionLog.record(deps.userId, randomUUID(), g.trash, "trash"); // record before mutating so undo always covers it
-      await deps.gmail.trash(g.trash);
-      trashedToCommit.push(...g.trash);
-      guardedTrashed = g.trash.length;
+  for (const [group, verb] of [[guardedTrash, "trash"], [guardedArchive, "archive"]] as const) {
+    if (group.length === 0) continue;
+    const g = await guardVet(group.map(m => m.id), { gmail: deps.gmail, llm: deps.llm, cap });
+    if (g.act.length > 0) {
+      await deps.actionLog.record(deps.userId, randomUUID(), g.act, verb); // record before mutating so undo always covers it
+      if (verb === "trash") await deps.gmail.trash(g.act); else await deps.gmail.archive(g.act);
+      actedToCommit.push(...g.act);
+      if (verb === "trash") guardedTrashed += g.act.length; else guardedArchived += g.act.length;
     }
     for (const k of g.keep) {
       important.push({ messageId: k.id, from: k.from, subject: k.subject, reason: `guarded-kept: ${k.reason}` });
       toCommit.push({ id: k.id, reason: `guarded-kept: ${k.reason}` });
     }
     if (g.capped) {
-      // Beyond the per-cycle cap: never trash unread. Keep + surface for review.
-      for (const m of guardedMetas.slice(cap)) {
+      // Beyond the per-cycle cap: never act unread. Keep + surface for review.
+      for (const m of group.slice(cap)) {
         important.push({ messageId: m.id, from: m.from, subject: m.subject, reason: "guarded-overflow: kept for review" });
         toCommit.push({ id: m.id, reason: "guarded-overflow" });
       }
@@ -93,12 +98,12 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
     for (const c of toCommit) {
       await deps.seen.record(deps.userId, { messageId: c.id, surfaced: true, verdict: "important", reason: c.reason });
     }
-    for (const id of trashedToCommit) {
+    for (const id of actedToCommit) {
       // Recorded only now (after the brief is delivered) so a failed send leaves
-      // them un-seen and the retry re-reports the trash instead of dropping it.
-      await deps.seen.record(deps.userId, { messageId: id, surfaced: false, verdict: "unimportant", reason: "guarded-trash" });
+      // them un-seen and the retry re-reports the action instead of dropping it.
+      await deps.seen.record(deps.userId, { messageId: id, surfaced: false, verdict: "unimportant", reason: "guarded-acted" });
     }
     await deps.sync.set(deps.userId, headId);
   };
-  return { firstRun: false, important, processed, guardedTrashed, commit };
+  return { firstRun: false, important, processed, guardedTrashed, guardedArchived, commit };
 }

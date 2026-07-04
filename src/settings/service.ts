@@ -37,7 +37,9 @@ export function mergePatch(eff: EffectiveSettings, patch: SettingsPatch): UserSe
 // Storage keeps the terse action value ("review"); the settings UI shows a
 // friendlier label for the guarded-trash action.
 function actionLabel(action: string | null): string {
-  return action === "review" ? "guarded trash" : (action ?? "");
+  if (action === "review") return "guarded trash";
+  if (action === "review_archive") return "guarded archive";
+  return action ?? "";
 }
 
 export function buildSettingsView(

@@ -116,7 +116,7 @@ export function trashMessagesTool(): ToolDef {
 export function applyActionRulesTool(): ToolDef {
   return {
     mutating: true,
-    schema: { name: "apply_action_rules", description: "For the given message ids, auto-archive/trash the ones matching a learned action rule (by exact sender/domain), read+judge the ones matching a guarded-trash ('review') rule (trashing junk, returning importable keepers in guardedKept), and return the ids with NO rule grouped by sender so you can ask the owner. Use this for 'clean up my inbox'.",
+    schema: { name: "apply_action_rules", description: "For the given message ids, auto-archive/trash the ones matching a learned action rule (by exact sender/domain), read+judge the ones matching a guarded rule (guarded-trash 'review' trashes junk, guarded-archive 'review_archive' archives routine; both return importable keepers in guardedKept), and return the ids with NO rule grouped by sender so you can ask the owner. Use this for 'clean up my inbox'.",
       parameters: { type: "object", properties: { ids: { type: "array", items: { type: "string" } } }, required: ["ids"] } },
     async run(args, ctx) {
       const dep = requireCleanup(ctx);
@@ -130,18 +130,22 @@ export function applyActionRulesTool(): ToolDef {
       const b = bucketByAction(items, TRASH_CAP);
       if (b.archive.length) { await dep.actionLog.record(ctx.userId, randomUUID(), b.archive, "archive"); await ctx.gmail.archive(b.archive); }
       if (b.trash.length) { await dep.actionLog.record(ctx.userId, randomUUID(), b.trash, "trash"); await ctx.gmail.trash(b.trash); }
-      // Guarded senders: read bodies (capped), trash the junk (logged first), keep the rest.
-      let guardedTrashed = 0;
-      let guardedKept: { id: string; from: string; subject: string; reason: string }[] = [];
-      let guardedCapped = false;
-      if (b.review.length) {
-        const g = await guardVet(b.review, { gmail: ctx.gmail, llm: dep.llm, cap: GUARDED_CLEANUP_CAP });
-        if (g.trash.length) { await dep.actionLog.record(ctx.userId, randomUUID(), g.trash, "trash"); await ctx.gmail.trash(g.trash); }
-        guardedTrashed = g.trash.length;
-        guardedKept = g.keep;
-        guardedCapped = g.capped;
+      // Guarded senders: read bodies (capped), then ACT on the junk (logged first)
+      // and keep the rest. review → trash, review_archive → archive.
+      let guardedTrashed = 0, guardedArchived = 0, guardedCapped = false;
+      const guardedKept: { id: string; from: string; subject: string; reason: string }[] = [];
+      for (const [bucket, verb] of [[b.review, "trash"], [b.reviewArchive, "archive"]] as const) {
+        if (!bucket.length) continue;
+        const g = await guardVet(bucket, { gmail: ctx.gmail, llm: dep.llm, cap: GUARDED_CLEANUP_CAP });
+        if (g.act.length) {
+          await dep.actionLog.record(ctx.userId, randomUUID(), g.act, verb); // record before mutating so undo always covers it
+          if (verb === "trash") await ctx.gmail.trash(g.act); else await ctx.gmail.archive(g.act);
+          if (verb === "trash") guardedTrashed += g.act.length; else guardedArchived += g.act.length;
+        }
+        guardedKept.push(...g.keep);
+        guardedCapped = guardedCapped || g.capped;
       }
-      return { archived: b.archive.length, trashed: b.trash.length, guardedTrashed, guardedKept, undecided: b.undecided, capped: b.capped || guardedCapped || rawIds.length > TRASH_CAP };
+      return { archived: b.archive.length, trashed: b.trash.length, guardedTrashed, guardedArchived, guardedKept, undecided: b.undecided, capped: b.capped || guardedCapped || rawIds.length > TRASH_CAP };
     },
   };
 }

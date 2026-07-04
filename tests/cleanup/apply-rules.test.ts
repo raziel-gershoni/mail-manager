@@ -36,6 +36,14 @@ describe("bucketByAction", () => {
     expect(out.trash).toEqual(["1"]);
     expect(out.archive).toEqual([]);
   });
+  it("routes review_archive items to the reviewArchive bucket, separate from review", () => {
+    const out = bucketByAction([
+      { id: "1", from: "a", subject: "s", action: "review" },
+      { id: "2", from: "b", subject: "s", action: "review_archive" },
+    ], 200);
+    expect(out.review).toEqual(["1"]);
+    expect(out.reviewArchive).toEqual(["2"]);
+  });
 });
 
 describe("applyActionRulesTool (integration)", () => {
@@ -134,6 +142,43 @@ describe("applyActionRulesTool (integration)", () => {
     expect(res.guardedKept.map((k: any) => k.id)).toEqual(["gk"]);
     expect(order).toEqual(["log", "trash"]); // record before mutate
     expect(await log.lastUndoable(1)).toMatchObject({ action: "trash", messageIds: ["gj"] }); // undo covers exactly the trashed msg
+  });
+
+  it("guarded archive (review_archive): archives routine (logged before archive), keeps the important one", async () => {
+    const gmail = fakeGmailClient({
+      historyId: "1", addedSince: {},
+      messages: {
+        r1: { id: "r1", threadId: "t", snippet: "", payload: { headers: [{ name: "From", value: "news@list.com" }, { name: "Subject", value: "weekly" }, { name: "List-Unsubscribe", value: "<x>" }] } },
+        u1: { id: "u1", threadId: "t", snippet: "", payload: { headers: [{ name: "From", value: "news@list.com" }, { name: "Subject", value: "alert" }, { name: "List-Unsubscribe", value: "<x>" }] } },
+      },
+      bodies: { r1: "just news", u1: "your invoice is ready" },
+    });
+    const memory = inMemoryStore();
+    memory.upsertRule({ matchValue: "list.com", scope: "domain", verdict: "unimportant", description: "list", action: "review_archive" });
+    const log = fakeActionLogRepo();
+    const llm = {
+      async classifyImportance() { return { important: false, suspicious: false, reason: "" }; },
+      async agentStep() { return { kind: "final", text: "" }; },
+      async writeBrief() { return ""; },
+      async reviewTrash(c: any[]) { return c.map(x => ({ id: x.id, keep: (x.bodyText ?? "").includes("invoice"), reason: "r" })); },
+    } as any;
+    const ctx = { userId: 1, gmail, memory, proposals: fakeProposalRepo(), actionLog: log, llm } as any;
+
+    const order: string[] = [];
+    const origRecord = log.record.bind(log);
+    log.record = async (...a: any[]) => { order.push("log"); return (origRecord as any)(...a); };
+    const origArchive = gmail.archive.bind(gmail);
+    gmail.archive = async (...a: any[]) => { order.push("archive"); return (origArchive as any)(...a); };
+
+    const res = await applyActionRulesTool().run({ ids: ["r1", "u1"] }, ctx) as any;
+
+    expect(res.guardedArchived).toBe(1);
+    expect(res.guardedTrashed).toBe(0);
+    expect(gmail.archivedIds!()).toEqual(["r1"]);   // routine archived, not trashed
+    expect(gmail.trashedIds!()).toEqual([]);
+    expect(res.guardedKept.map((k: any) => k.id)).toEqual(["u1"]);
+    expect(order).toEqual(["log", "archive"]);       // record before mutate
+    expect(await log.lastUndoable(1)).toMatchObject({ action: "archive", messageIds: ["r1"] });
   });
 
   it("does not mark capped when the id list is within TRASH_CAP and nothing overflows", async () => {

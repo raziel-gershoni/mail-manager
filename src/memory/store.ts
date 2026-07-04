@@ -1,5 +1,5 @@
 export type Verdict = "important" | "unimportant";
-export type RuleAction = "trash" | "archive" | "review";
+export type RuleAction = "trash" | "archive" | "review" | "review_archive";
 export interface RuleMatch { slug: string; verdict: Verdict; action: RuleAction | null; }
 export interface MemoryIndexEntry { slug: string; description: string; scope: string; }
 export interface MemoryRow {

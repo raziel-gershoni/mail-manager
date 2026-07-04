@@ -25,7 +25,7 @@ const llm = fakeReviewLLM((cands: TrashCandidate[]) =>
 describe("guardVet", () => {
   it("trashes junk, keeps the body-important and the non-bulk ones", async () => {
     const r = await guardVet(["junk", "keep", "personal"], { gmail: gmail(), llm, cap: 10 });
-    expect(r.trash).toEqual(["junk"]);
+    expect(r.act).toEqual(["junk"]);
     expect(r.keep.map(k => k.id).sort()).toEqual(["keep", "personal"]);
     expect(r.keep.find(k => k.id === "keep")?.reason).toContain("invoice");
     expect(r.capped).toBe(false);
@@ -33,10 +33,10 @@ describe("guardVet", () => {
   it("caps body reads and reports capped when there are more than the cap", async () => {
     const r = await guardVet(["junk", "keep", "personal"], { gmail: gmail(), llm, cap: 2 });
     expect(r.capped).toBe(true);
-    expect([...r.trash, ...r.keep.map(k => k.id)].sort()).toEqual(["junk", "keep"]); // only first 2 processed
+    expect([...r.act, ...r.keep.map(k => k.id)].sort()).toEqual(["junk", "keep"]); // only first 2 processed
   });
   it("returns empty for no ids", async () => {
     const r = await guardVet([], { gmail: gmail(), llm, cap: 10 });
-    expect(r).toEqual({ trash: [], keep: [], capped: false });
+    expect(r).toEqual({ act: [], keep: [], capped: false });
   });
 });

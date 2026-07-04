@@ -58,10 +58,10 @@ export function readOnlyTools(): ToolDef[] {
     },
     {
       mutating: true,
-      schema: { name: "write_memory", description: "Create/update a learned rule from the owner's instruction. action 'trash'/'archive' act unconditionally; action 'review' is guarded trash — matching mail is read and judged, junk trashed, anything important kept and flagged.",
-        parameters: { type: "object", properties: { matchValue: { type: "string" }, scope: { type: "string", enum: ["sender", "domain"] }, verdict: { type: "string", enum: ["important", "unimportant"] }, description: { type: "string" }, action: { type: "string", enum: ["trash", "archive", "review"] } }, required: ["matchValue", "scope", "verdict", "description"] } },
+      schema: { name: "write_memory", description: "Create/update a learned rule from the owner's instruction. action 'trash'/'archive' act unconditionally; action 'review' is guarded trash (read + judge, junk trashed, important kept & flagged); action 'review_archive' is guarded archive (read + judge, routine archived out of inbox, important kept & flagged).",
+        parameters: { type: "object", properties: { matchValue: { type: "string" }, scope: { type: "string", enum: ["sender", "domain"] }, verdict: { type: "string", enum: ["important", "unimportant"] }, description: { type: "string" }, action: { type: "string", enum: ["trash", "archive", "review", "review_archive"] } }, required: ["matchValue", "scope", "verdict", "description"] } },
       async run(args, ctx) {
-        return ctx.memory.upsertRule({ matchValue: String(args.matchValue), scope: args.scope as "sender" | "domain", verdict: args.verdict as Verdict, description: String(args.description), action: args.action as "trash" | "archive" | "review" | undefined });
+        return ctx.memory.upsertRule({ matchValue: String(args.matchValue), scope: args.scope as "sender" | "domain", verdict: args.verdict as Verdict, description: String(args.description), action: args.action as "trash" | "archive" | "review" | "review_archive" | undefined });
       },
     },
     {

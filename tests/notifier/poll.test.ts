@@ -134,6 +134,51 @@ describe("runPoll", () => {
     expect(await d.seen.has(1, "gkeep")).toBe(true);
   });
 
+  it("guarded archive: archives routine (logged before archive), keeps the important one in the inbox", async () => {
+    const store = inMemoryStore();
+    store.upsertRule({ matchValue: "list.com", scope: "domain", verdict: "unimportant", description: "list", action: "review_archive" });
+    const d = {
+      userId: 1, store,
+      gmail: fakeGmailClient({
+        historyId: "200",
+        addedSince: { "100": ["routine", "urgent"] },
+        messages: {
+          routine: { id: "routine", threadId: "t", snippet: "", payload: { headers: [{ name: "From", value: "news@list.com" }, { name: "Subject", value: "weekly" }, { name: "List-Unsubscribe", value: "<x>" }] } },
+          urgent: { id: "urgent", threadId: "t", snippet: "", payload: { headers: [{ name: "From", value: "news@list.com" }, { name: "Subject", value: "alert" }, { name: "List-Unsubscribe", value: "<x>" }] } },
+        },
+        bodies: { routine: "just news", urgent: "your account was locked, action required" },
+      }),
+      llm: {
+        async classifyImportance() { return { important: false, suspicious: false, reason: "x" }; },
+        async agentStep() { return { kind: "final", text: "" }; },
+        async writeBrief() { return ""; },
+        async reviewTrash(cands: any[]) { return cands.map(c => ({ id: c.id, keep: (c.bodyText ?? "").includes("locked"), reason: "r" })); },
+      } as any,
+      sync: fakeSyncRepo(), seen: fakeSeenRepo(), actionLog: fakeActionLogRepo(),
+    };
+    const order: string[] = [];
+    const origRecord = d.actionLog.record.bind(d.actionLog);
+    d.actionLog.record = async (...a: any[]) => { order.push("log"); return (origRecord as any)(...a); };
+    const origArchive = d.gmail.archive.bind(d.gmail);
+    d.gmail.archive = async (...a: any[]) => { order.push("archive"); return (origArchive as any)(...a); };
+
+    await d.sync.set(1, "100");
+    const r = await runPoll(d);
+
+    expect(d.gmail.archivedIds!()).toEqual(["routine"]); // routine archived, not trashed
+    expect(d.gmail.trashedIds!()).toEqual([]);
+    expect(r.guardedArchived).toBe(1);
+    expect(r.guardedTrashed).toBe(0);
+    expect(order).toEqual(["log", "archive"]); // action-log recorded BEFORE the archive
+    expect(await d.actionLog.lastUndoable(1)).toMatchObject({ action: "archive", messageIds: ["routine"] });
+    expect(r.important.map(i => i.messageId)).toEqual(["urgent"]); // important kept in inbox + surfaced
+
+    // deferral: acted id not seen until commit (report survives a failed send)
+    expect(await d.seen.has(1, "routine")).toBe(false);
+    await r.commit();
+    expect(await d.seen.has(1, "routine")).toBe(true);
+  });
+
   it("guarded overflow beyond the cap is kept + surfaced, never trashed unread", async () => {
     const d = { ...guardedDeps(), guardedCap: 1 };
     await d.sync.set(1, "100");

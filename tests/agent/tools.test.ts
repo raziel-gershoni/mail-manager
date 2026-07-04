@@ -73,6 +73,11 @@ describe("dispatchTool", () => {
     await dispatchTool("write_memory", { matchValue: "shop.com", scope: "domain", verdict: "unimportant", description: "guard shop", action: "review" }, c, tools);
     expect(c.memory.findRuleFor("x@shop.com", "shop.com")?.action).toBe("review");
   });
+  it("write_memory accepts a guarded-archive (review_archive) action", async () => {
+    const c = ctx();
+    await dispatchTool("write_memory", { matchValue: "list.com", scope: "domain", verdict: "unimportant", description: "guard-archive list", action: "review_archive" }, c, tools);
+    expect(c.memory.findRuleFor("x@list.com", "list.com")?.action).toBe("review_archive");
+  });
   it("throws on an unknown tool", async () => {
     await expect(dispatchTool("trash", {}, ctx(), tools)).rejects.toThrow(/unknown tool/i);
   });

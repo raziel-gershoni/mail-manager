@@ -6,7 +6,9 @@ import { vetTrashSet } from "./vet.js";
 import { mapLimit } from "../util/concurrency.js";
 
 export interface GuardKeep { id: string; from: string; subject: string; reason: string; }
-export interface GuardResult { trash: string[]; keep: GuardKeep[]; capped: boolean; }
+// `act` = the ids to act on (the caller trashes OR archives them, per the rule);
+// `keep` = the ids to keep in the inbox and surface.
+export interface GuardResult { act: string[]; keep: GuardKeep[]; capped: boolean; }
 
 // Pure judgment for guarded-trash senders: read each message's FULL body, judge
 // keep-vs-trash (biased toward keep — non-bulk and transactional are kept without
@@ -21,7 +23,7 @@ export async function guardVet(
 ): Promise<GuardResult> {
   const capped = ids.length > deps.cap;
   const use = ids.slice(0, deps.cap);
-  if (use.length === 0) return { trash: [], keep: [], capped };
+  if (use.length === 0) return { act: [], keep: [], capped };
   const fulls = await mapLimit(use, GMAIL_FETCH_CONCURRENCY, (id) => deps.gmail.readFull(id));
   const candidates: TrashCandidate[] = fulls.map(f => {
     const r = riskSignals(f.meta);
@@ -33,5 +35,5 @@ export async function guardVet(
     const m = metaById.get(s.id);
     return { id: s.id, from: m?.from ?? "", subject: m?.subject ?? "", reason: s.reason };
   });
-  return { trash: vet.autoTrash, keep, capped };
+  return { act: vet.autoTrash, keep, capped };
 }
