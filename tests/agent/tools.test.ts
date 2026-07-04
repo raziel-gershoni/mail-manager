@@ -9,7 +9,8 @@ function ctx() {
     gmail: fakeGmailClient({
       historyId: "1", addedSince: {},
       messages: { a: { id: "a", threadId: "t", snippet: "s", payload: { headers: [{ name: "From", value: "x@y.com" }, { name: "Subject", value: "Hi" }] } } },
-      searchResults: { "from:y.com": ["a"] }, bodies: { a: "<p>body</p>" },
+      // count_messages passes the query through as-is; search_gmail scopes it to the inbox
+      searchResults: { "from:y.com": ["a"], "in:inbox from:y.com": ["a"] }, bodies: { a: "<p>body</p>" },
     }),
     memory: inMemoryStore(),
   };

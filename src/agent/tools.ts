@@ -19,13 +19,22 @@ export interface ToolDef { schema: ToolSchema; mutating: boolean; run(args: Reco
 const READ_LIMIT = 10;
 const COUNT_BATCH_CAP = 50;
 
+// Free-text searches default to the INBOX. An explicit location scope in the
+// query (in: / label:) disables the default, so the agent can still widen to
+// in:anywhere ("have I ever heard from X?") or target another label.
+export function scopeSearchToInbox(query: string): string {
+  const q = query.trim();
+  if (/(^|\s)(in|label):/i.test(q)) return q;
+  return q ? `in:inbox ${q}` : "in:inbox";
+}
+
 export function readOnlyTools(): ToolDef[] {
   return [
     {
       mutating: false,
-      schema: { name: "search_gmail", description: "Search the inbox with a Gmail query. Returns message metadata (no bodies).",
+      schema: { name: "search_gmail", description: "Search the owner's mail with a Gmail query; returns message metadata (no bodies). Searches the INBOX by default — to look beyond it, include an in: operator (e.g. in:anywhere = all mail incl. archived/trash/spam; in:sent; in:trash).",
         parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
-      async run(args, ctx) { return ctx.gmail.search(String(args.query ?? "")); },
+      async run(args, ctx) { return ctx.gmail.search(scopeSearchToInbox(String(args.query ?? ""))); },
     },
     {
       mutating: false,
