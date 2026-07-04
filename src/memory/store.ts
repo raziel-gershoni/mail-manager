@@ -1,5 +1,6 @@
 export type Verdict = "important" | "unimportant";
-export interface RuleMatch { slug: string; verdict: Verdict; action: "trash" | "archive" | null; }
+export type RuleAction = "trash" | "archive" | "review";
+export interface RuleMatch { slug: string; verdict: Verdict; action: RuleAction | null; }
 export interface MemoryIndexEntry { slug: string; description: string; scope: string; }
 export interface MemoryRow {
   userId: number; slug: string; description: string; body: string;
@@ -11,7 +12,7 @@ export interface MemoryStore {
   index(): MemoryIndexEntry[];
   list(): MemoryRow[];
   upsertSenderRule(fromEmail: string, verdict: Verdict): MemoryRow;
-  upsertRule(input: { matchValue: string; scope: "sender" | "domain"; verdict: Verdict; description: string; action?: "trash" | "archive" }): MemoryRow;
+  upsertRule(input: { matchValue: string; scope: "sender" | "domain"; verdict: Verdict; description: string; action?: RuleAction }): MemoryRow;
   deleteBySlug(slug: string): void;
 }
 
@@ -24,7 +25,7 @@ export function matchRuleIn(rows: MemoryRow[], fromEmail: string, fromDomain: st
   const domain = fromDomain.toLowerCase();
   const sender = rows.find(r => r.matchType === "sender" && r.matchValue?.toLowerCase() === email && r.verdict);
   const hit = sender ?? rows.find(r => r.matchType === "domain" && r.matchValue?.toLowerCase() === domain && r.verdict);
-  return hit ? { slug: hit.slug, verdict: hit.verdict as Verdict, action: (hit.action as "trash" | "archive" | null) ?? null } : null;
+  return hit ? { slug: hit.slug, verdict: hit.verdict as Verdict, action: (hit.action as RuleAction | null) ?? null } : null;
 }
 
 export function inMemoryStore(seed: MemoryRow[] = [], userId = 1): MemoryStore {

@@ -26,6 +26,16 @@ describe("bucketByAction", () => {
     expect(out.trash.length).toBe(3);
     expect(out.capped).toBe(true);
   });
+  it("routes review-action items to their own bucket (never blindly trashed), counted against the cap", () => {
+    const out = bucketByAction([
+      { id: "1", from: "a", subject: "s", action: "trash" },
+      { id: "2", from: "b", subject: "s", action: "review" },
+      { id: "3", from: "c", subject: "s", action: "review" },
+    ], 200);
+    expect(out.review).toEqual(["2", "3"]);
+    expect(out.trash).toEqual(["1"]);
+    expect(out.archive).toEqual([]);
+  });
 });
 
 describe("applyActionRulesTool (integration)", () => {

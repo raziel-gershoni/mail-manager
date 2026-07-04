@@ -1,8 +1,8 @@
-export interface ActionItem { id: string; from: string; subject: string; action: "trash" | "archive" | null; }
-export interface CleanupBuckets { archive: string[]; trash: string[]; undecided: { from: string; subject: string; ids: string[] }[]; capped: boolean; }
+export interface ActionItem { id: string; from: string; subject: string; action: "trash" | "archive" | "review" | null; }
+export interface CleanupBuckets { archive: string[]; trash: string[]; review: string[]; undecided: { from: string; subject: string; ids: string[] }[]; capped: boolean; }
 
 export function bucketByAction(items: ActionItem[], cap: number): CleanupBuckets {
-  const archive: string[] = [], trash: string[] = [];
+  const archive: string[] = [], trash: string[] = [], review: string[] = [];
   const undecidedMap = new Map<string, { from: string; subject: string; ids: string[] }>();
   let acted = 0, capped = false;
   for (const it of items) {
@@ -12,8 +12,10 @@ export function bucketByAction(items: ActionItem[], cap: number): CleanupBuckets
       continue;
     }
     if (acted >= cap) { capped = true; continue; } // overflow left for the next run
-    if (it.action === "archive") archive.push(it.id); else trash.push(it.id);
+    if (it.action === "archive") archive.push(it.id);
+    else if (it.action === "review") review.push(it.id); // guarded: judged before any trashing
+    else trash.push(it.id);
     acted++;
   }
-  return { archive, trash, undecided: [...undecidedMap.values()], capped };
+  return { archive, trash, review, undecided: [...undecidedMap.values()], capped };
 }
