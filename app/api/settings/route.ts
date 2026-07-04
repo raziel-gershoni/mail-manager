@@ -6,8 +6,11 @@ import { dbTelegramLinkRepo, dbUserDirectory } from "../../../src/db/user-adapte
 import { dbSettingsRepo } from "../../../src/db/settings-adapter.js";
 import { dbGoogleAccountRepo } from "../../../src/db/google-account-adapter.js";
 import { dbMemoryStore } from "../../../src/db/adapters.js";
+import { dbConversationRepo } from "../../../src/db/conversation-adapter.js";
 import { effectiveSettings } from "../../../src/settings/settings.js";
 import { buildSettingsView, validateSettingsPatch, mergePatch } from "../../../src/settings/service.js";
+import { contextUsage } from "../../../src/context/assemble.js";
+import { SYSTEM_PROMPT } from "../../../src/telegram/bot.js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,8 +29,10 @@ export async function GET(req: Request): Promise<Response> {
   if (userId === null) return new Response("unauthorized", { status: 401 });
   const eff = effectiveSettings(await dbSettingsRepo().get(userId), e.OWNER_TZ);
   const account = await dbGoogleAccountRepo().getStatus(userId);
-  const rules = (await dbMemoryStore(userId)).list();
-  return Response.json(buildSettingsView(eff, account, rules));
+  const store = await dbMemoryStore(userId);
+  const state = await dbConversationRepo().load(userId);
+  const usage = contextUsage(SYSTEM_PROMPT, store.index(), state);
+  return Response.json(buildSettingsView(eff, account, store.list(), usage));
 }
 
 export async function POST(req: Request): Promise<Response> {

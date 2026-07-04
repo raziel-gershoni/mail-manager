@@ -5,7 +5,10 @@ type View = {
   timezone: string; digestStartHour: number; digestEndHour: number; paused: boolean;
   gmail: { email: string | null; connected: boolean; needsReconnect: boolean };
   rules: Array<{ matchValue: string; scope: string; verdict: string; action: string }>;
+  context: { totalTokens: number; systemTokens: number; summaryTokens: number; windowTokens: number; windowTurns: number; compactAtTokens: number };
 };
+
+const fmt = (n: number) => n.toLocaleString();
 
 function initData(): string {
   if (typeof window === "undefined") return "";
@@ -19,11 +22,16 @@ export default function MiniApp() {
   const [status, setStatus] = useState<string>("Loading…");
   const headers = { "x-telegram-init-data": initData(), "content-type": "application/json" };
 
+  async function loadView() {
+    try {
+      const r = await fetch("/api/settings", { headers });
+      if (!r.ok) throw new Error(String(r.status));
+      setView(await r.json());
+      setStatus("");
+    } catch { setStatus("Couldn’t load settings. Open this from the bot’s menu button."); }
+  }
   useEffect(() => {
-    fetch("/api/settings", { headers })
-      .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((v: View) => { setView(v); setStatus(""); })
-      .catch(() => setStatus("Couldn’t load settings. Open this from the bot’s menu button."));
+    loadView();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -42,6 +50,16 @@ export default function MiniApp() {
       const tg = (window as unknown as { Telegram?: { WebApp?: { openLink?: (u: string) => void } } }).Telegram?.WebApp;
       if (tg?.openLink) tg.openLink(url); else window.open(url, "_blank");
     } catch { setStatus("Reconnect failed"); }
+  }
+  async function clearContext() {
+    if (!window.confirm("Clear the conversation history? Your learned rules are kept.")) return;
+    setStatus("Clearing…");
+    try {
+      const r = await fetch("/api/settings/clear-context", { method: "POST", headers });
+      if (!r.ok) { setStatus("Clear failed"); return; }
+      await loadView();
+      setStatus("Conversation cleared ✓");
+    } catch { setStatus("Clear failed"); }
   }
 
   if (!view) return <main style={S.main}><p>{status}</p></main>;
@@ -89,6 +107,18 @@ export default function MiniApp() {
           ))}
         </ul>
       )}
+
+      <h3 style={S.h}>Context</h3>
+      <p style={S.dim}>Estimated size of your next message to the assistant.</p>
+      <ul style={S.list}>
+        <li>Total: <b>≈ {fmt(view.context.totalTokens)}</b> tokens</li>
+        <li style={S.dim}>System + rules: ~{fmt(view.context.systemTokens)}</li>
+        <li style={S.dim}>Summary: ~{fmt(view.context.summaryTokens)}</li>
+        <li style={S.dim}>Recent turns ({view.context.windowTurns}): ~{fmt(view.context.windowTokens)}</li>
+      </ul>
+      <p style={S.dim}>History auto-compacts once it passes ~{fmt(view.context.compactAtTokens)} tokens.</p>
+      <button style={S.btn} onClick={clearContext}>Clear conversation</button>
+      <p style={S.dim}>Wipes chat history only — your learned rules stay.</p>
 
       <p style={S.dim}>{status}</p>
     </main>

@@ -33,6 +33,30 @@ export function needsCompaction(state: ConversationState, limit = COMPACT_TOKENS
   return tokens > limit;
 }
 
+export interface ContextUsage {
+  totalTokens: number;    // everything the next call carries (system + rules + summary + window), minus the new message
+  systemTokens: number;   // fixed overhead: system prompt + learned rules
+  summaryTokens: number;  // compacted older history
+  windowTokens: number;   // recent turns
+  windowTurns: number;
+  compactAtTokens: number; // history compacts once the window passes this (COMPACT_TOKENS)
+}
+
+// Estimate the standing context the next agent call will send. Uses the same
+// chars/4 heuristic as the compaction trigger — approximate, labelled as such.
+export function contextUsage(systemPrompt: string, memoryIndex: MemoryIndexEntry[], state: ConversationState): ContextUsage {
+  const rulesText = memoryIndex.length ? memoryIndex.map(m => `- ${m.description}`).join("\n") : "(none yet)";
+  const systemTokens = estimateTokens(systemPrompt) + estimateTokens(rulesText);
+  const summaryTokens = estimateTokens(state.summary);
+  const windowTokens = state.window.reduce((n, t) => n + estimateTokens(t.content), 0);
+  return {
+    totalTokens: systemTokens + summaryTokens + windowTokens,
+    systemTokens, summaryTokens, windowTokens,
+    windowTurns: state.window.length,
+    compactAtTokens: COMPACT_TOKENS,
+  };
+}
+
 export async function compactState(
   state: ConversationState,
   summarize: (older: Turn[], prev: string) => Promise<string>,

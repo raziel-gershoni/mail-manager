@@ -1,9 +1,11 @@
 import type { EffectiveSettings, UserSettingsRow } from "./settings.js";
 import type { MemoryRow } from "../memory/store.js";
+import type { ContextUsage } from "../context/assemble.js";
 
 export interface SettingsView extends EffectiveSettings {
   gmail: { email: string | null; connected: boolean; needsReconnect: boolean };
   rules: Array<{ matchValue: string; scope: string; verdict: string; action: string }>;
+  context: ContextUsage;
 }
 export interface SettingsPatch { timezone?: string; digestStartHour?: number; digestEndHour?: number; paused?: boolean; }
 
@@ -47,11 +49,13 @@ export function buildSettingsView(
   eff: EffectiveSettings,
   account: { email: string; needsReconnect: boolean } | null,
   rules: MemoryRow[],
+  context: ContextUsage,
 ): SettingsView {
   return {
     ...eff,
     gmail: { email: account?.email ?? null, connected: account !== null, needsReconnect: account?.needsReconnect ?? false },
     rules: rules.filter(r => r.matchType !== null && r.matchValue !== null)
       .map(r => ({ matchValue: r.matchValue as string, scope: r.scope, verdict: r.verdict ?? "", action: actionLabel(r.action) })),
+    context,
   };
 }

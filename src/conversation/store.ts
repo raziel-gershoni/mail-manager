@@ -5,6 +5,7 @@ export interface ConversationRepo {
   load(userId: number): Promise<ConversationState>;
   appendTurn(userId: number, turn: Turn): Promise<void>;
   replaceState(userId: number, state: ConversationState): Promise<void>;
+  clear(userId: number): Promise<void>; // wipe conversation history entirely (rules are NOT touched — they live in the memory store)
 }
 
 export function fakeConversationRepo(): ConversationRepo {
@@ -14,5 +15,6 @@ export function fakeConversationRepo(): ConversationRepo {
     async load(u) { const s = get(u); return { summary: s.summary, window: s.window.map(t => ({ ...t })) }; },
     async appendTurn(u, t) { const s = get(u); m.set(u, { summary: s.summary, window: [...s.window, { ...t }] }); },
     async replaceState(u, state) { m.set(u, { summary: state.summary, window: state.window.map(t => ({ ...t })) }); },
+    async clear(u) { m.delete(u); },
   };
 }

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { buildAgentMessages, needsCompaction, compactState, COMPACT_TOKENS } from "../../src/context/assemble.js";
+import { buildAgentMessages, needsCompaction, compactState, contextUsage, COMPACT_TOKENS } from "../../src/context/assemble.js";
+import { estimateTokens } from "../../src/context/tokens.js";
 
 const memIdx = [{ slug: "g:lease", description: "flag anything about the lease", scope: "global" }];
 
@@ -21,6 +22,24 @@ describe("needsCompaction", () => {
     expect(needsCompaction({ summary: "", window: [{ role: "user", content: "hi" }] })).toBe(false);
     const big = { summary: "", window: [{ role: "user" as const, content: "x".repeat(COMPACT_TOKENS * 4 + 8) }] };
     expect(needsCompaction(big)).toBe(true);
+  });
+});
+
+describe("contextUsage", () => {
+  it("breaks down system+rules, summary, and window tokens with a matching total", () => {
+    const state = { summary: "older stuff", window: [{ role: "user" as const, content: "hello there" }, { role: "assistant" as const, content: "hi" }] };
+    const u = contextUsage("You are a secretary.", memIdx, state);
+    expect(u.systemTokens).toBe(estimateTokens("You are a secretary.") + estimateTokens("- flag anything about the lease"));
+    expect(u.summaryTokens).toBe(estimateTokens("older stuff"));
+    expect(u.windowTokens).toBe(estimateTokens("hello there") + estimateTokens("hi"));
+    expect(u.windowTurns).toBe(2);
+    expect(u.totalTokens).toBe(u.systemTokens + u.summaryTokens + u.windowTokens);
+    expect(u.compactAtTokens).toBe(COMPACT_TOKENS);
+  });
+  it("counts (none yet) for rules when the memory index is empty", () => {
+    const u = contextUsage("sys", [], { summary: "", window: [] });
+    expect(u.systemTokens).toBe(estimateTokens("sys") + estimateTokens("(none yet)"));
+    expect(u.windowTurns).toBe(0);
   });
 });
 

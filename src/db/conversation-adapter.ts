@@ -22,5 +22,13 @@ export function dbConversationRepo(): ConversationRepo {
         .onConflictDoUpdate({ target: schema.conversations.userId, set: { runningSummary: state.summary, updatedAt: new Date() } });
       // window trimming is best-effort; raw rows are retained for audit, load() re-windows by WINDOW_ROWS.
     },
+    async clear(userId) {
+      // A true reset: delete the raw message rows (load() re-windows from them, so
+      // clearing only the summary would leave the window intact) AND reset the summary.
+      // Learned rules live in a separate table and are untouched.
+      await db().delete(schema.messages).where(eq(schema.messages.userId, userId));
+      await db().insert(schema.conversations).values({ userId, runningSummary: "" })
+        .onConflictDoUpdate({ target: schema.conversations.userId, set: { runningSummary: "", updatedAt: new Date() } });
+    },
   };
 }

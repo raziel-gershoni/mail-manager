@@ -38,8 +38,10 @@ describe("buildSettingsView", () => {
       { userId: 1, slug: "domain:leave.com", description: "", body: "", scope: "domain", matchType: "domain", matchValue: "leave.com", verdict: "unimportant", action: "keep" },
       { userId: 1, slug: "note", description: "n", body: "", scope: "global", matchType: null, matchValue: null, verdict: null, action: null },
     ];
-    const view = buildSettingsView(eff, { email: "me@gmail.com", needsReconnect: true }, rules);
+    const usage = { totalTokens: 1200, systemTokens: 800, summaryTokens: 100, windowTokens: 300, windowTurns: 4, compactAtTokens: 40000 };
+    const view = buildSettingsView(eff, { email: "me@gmail.com", needsReconnect: true }, rules, usage);
     expect(view.gmail).toEqual({ email: "me@gmail.com", connected: true, needsReconnect: true });
+    expect(view.context).toEqual(usage); // context usage is passed through to the view
     expect(view.rules).toEqual([ // only match rules; review → "guarded trash", review_archive → "guarded archive", keep → "keep"
       { matchValue: "x@y.com", scope: "sender", verdict: "important", action: "" },
       { matchValue: "linkedin.com", scope: "domain", verdict: "unimportant", action: "trash" },
@@ -50,6 +52,7 @@ describe("buildSettingsView", () => {
     expect(view.paused).toBe(false);
   });
   it("reports disconnected when there is no account", () => {
-    expect(buildSettingsView(eff, null, []).gmail).toEqual({ email: null, connected: false, needsReconnect: false });
+    const usage = { totalTokens: 0, systemTokens: 0, summaryTokens: 0, windowTokens: 0, windowTurns: 0, compactAtTokens: 40000 };
+    expect(buildSettingsView(eff, null, [], usage).gmail).toEqual({ email: null, connected: false, needsReconnect: false });
   });
 });

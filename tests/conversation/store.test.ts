@@ -30,4 +30,13 @@ describe("fakeConversationRepo", () => {
     await r.appendTurn(1, { role: "user", content: "user1-data" });
     expect(await r.load(2)).toEqual({ summary: "", window: [] });
   });
+  it("clear wipes a user's history back to empty, leaving other users intact", async () => {
+    const r = fakeConversationRepo();
+    await r.appendTurn(1, { role: "user", content: "a" });
+    await r.replaceState(1, { summary: "earlier", window: [{ role: "assistant", content: "x" }] });
+    await r.appendTurn(2, { role: "user", content: "b" });
+    await r.clear(1);
+    expect(await r.load(1)).toEqual({ summary: "", window: [] });
+    expect((await r.load(2)).window).toEqual([{ role: "user", content: "b" }]);
+  });
 });
