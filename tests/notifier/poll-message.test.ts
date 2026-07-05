@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { composePollMessage } from "../../src/notifier/brief.js";
 
-const act = (o: Partial<{ processed: number; surfaced: number; trashed: number; archived: number }>) =>
-  ({ processed: 0, surfaced: 0, trashed: 0, archived: 0, ...o });
+const act = (o: Partial<{ processed: number; surfaced: number; trashed: number; archived: number; unruled: string[] }>) =>
+  ({ processed: 0, surfaced: 0, trashed: 0, archived: 0, unruled: [], ...o });
 
 describe("composePollMessage", () => {
   it("sends a heartbeat when no mail arrived", () => {
@@ -20,5 +20,16 @@ describe("composePollMessage", () => {
   });
   it("brief with no guarded actions shows just the new count", () => {
     expect(composePollMessage("your brief", act({ processed: 2, surfaced: 2 }))).toBe("your brief\n\n_📬 2 new_");
+  });
+  it("flags un-ruled senders left in the inbox so the owner can teach a rule", () => {
+    const m = composePollMessage(null, act({ processed: 1, unruled: ["Lee Amiga <leea@italent.co.il>"] }));
+    expect(m).toContain("📬 1 new · nothing important");
+    expect(m).toMatch(/New sender you haven't ruled: Lee Amiga <leea@italent\.co\.il>/);
+    expect(m).toMatch(/keep\/archive\/trash/);
+  });
+  it("caps the un-ruled sender list and counts the overflow", () => {
+    const m = composePollMessage(null, act({ processed: 8, unruled: ["a", "b", "c", "d", "e", "f", "g"] }));
+    expect(m).toContain("a, b, c, d, e +2 more");
+    expect(m).toMatch(/New senders you haven't ruled/); // plural
   });
 });

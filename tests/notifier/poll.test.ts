@@ -94,6 +94,13 @@ describe("runPoll", () => {
     expect(await d.sync.get(1)).toBe("200");
   });
 
+  it("collects un-ruled unimportant senders (left in inbox) for the report", async () => {
+    const d = deps(); // a=jane@x.com (important, surfaced), b=n@linkedin.com (unimportant, no rule → un-ruled)
+    await d.sync.set(1, "100");
+    const r = await runPoll(d);
+    expect(r.unruled).toEqual(["n@linkedin.com"]); // only the un-ruled sender left in the inbox; the important one is surfaced, not flagged
+  });
+
   it("skips messages already seen", async () => {
     const d = deps();
     await d.sync.set(1, "100");

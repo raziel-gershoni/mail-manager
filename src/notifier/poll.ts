@@ -27,6 +27,7 @@ export interface PollResult {
   processed: number;
   guardedTrashed: number;
   guardedArchived: number;
+  unruled: string[]; // senders left in the inbox that have no rule yet (deduped) — surfaced so the owner can teach one
   commit: () => Promise<void>;
 }
 
@@ -37,7 +38,7 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
   const cursor = await deps.sync.get(deps.userId);
   if (cursor === null) {
     await deps.sync.set(deps.userId, headId);
-    return { firstRun: true, important: [], processed: 0, guardedTrashed: 0, guardedArchived: 0, commit: async () => {} };
+    return { firstRun: true, important: [], processed: 0, guardedTrashed: 0, guardedArchived: 0, unruled: [], commit: async () => {} };
   }
   const ids = await deps.gmail.listAddedMessageIds(cursor);
   const important: DigestItem[] = [];
@@ -45,6 +46,7 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
   const actedToCommit: string[] = []; // guarded-acted (trashed/archived) ids: seen-recorded at commit, so the report survives a failed send + retry
   const guardedTrash: EmailMeta[] = [];   // action:"review" — judged, then junk trashed
   const guardedArchive: EmailMeta[] = []; // action:"review_archive" — judged, then routine archived
+  const unruledSenders = new Map<string, string>(); // fromEmail → display "from"; senders with no rule, left in inbox
   let processed = 0;
   for (const id of ids) {
     if (await deps.seen.has(deps.userId, id)) continue;
@@ -63,6 +65,8 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
       // Not surfaced to the user, so recording now is safe and avoids re-classifying on retry.
       const verdict = outcome.suspicious ? "suspicious" : "unimportant";
       await deps.seen.record(deps.userId, { messageId: id, surfaced: false, verdict, reason: outcome.reason });
+      // No rule matched (source "llm") → this is an un-ruled sender left in the inbox; flag it so the owner can teach a rule.
+      if (outcome.source === "llm") unruledSenders.set(email.fromEmail, email.from);
       log("poll.msg", { userId: deps.userId, ...logMeta(email), verdict, source: outcome.source, reason: outcome.reason, action: "left" });
     }
   }
@@ -115,5 +119,5 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
     }
     await deps.sync.set(deps.userId, headId);
   };
-  return { firstRun: false, important, processed, guardedTrashed, guardedArchived, commit };
+  return { firstRun: false, important, processed, guardedTrashed, guardedArchived, unruled: [...unruledSenders.values()], commit };
 }

@@ -22,12 +22,13 @@ export async function generateBrief(
   return deps.llm.writeBrief(emails, dateContext(new Date(), deps.timezone ?? "UTC"));
 }
 
-export interface PollActivity { processed: number; surfaced: number; trashed: number; archived: number; }
+export interface PollActivity { processed: number; surfaced: number; trashed: number; archived: number; unruled: string[]; }
 
 // Compose the poll's outgoing Telegram message from the important-mail brief and
 // the cycle's activity. ALWAYS returns a message for a real (non-first) cycle: a
 // heartbeat when no mail arrived, otherwise a report of what it did — even when
-// nothing was important. (The owner asked for a report every check.)
+// nothing was important. (The owner asked for a report every check.) When mail was
+// left from senders with no rule yet, they're flagged so the owner can teach one.
 export function composePollMessage(brief: string | null, a: PollActivity): string {
   if (a.processed === 0) return "🟢 No new mail this check.";
   const bits: string[] = [];
@@ -36,7 +37,11 @@ export function composePollMessage(brief: string | null, a: PollActivity): strin
   const left = Math.max(0, a.processed - a.surfaced - a.trashed - a.archived);
   if (bits.length && left > 0) bits.push(`${left} left in inbox`); // show the split only when something was acted on
   const summary = bits.length ? ` · ${bits.join(" · ")}` : "";
-  return brief && brief.trim()
+  const head = brief && brief.trim()
     ? `${brief}\n\n_📬 ${a.processed} new${summary}_`
     : `📬 ${a.processed} new · nothing important${summary}`;
+  if (a.unruled.length === 0) return head;
+  const names = a.unruled.slice(0, 5).join(", ");
+  const more = a.unruled.length > 5 ? ` +${a.unruled.length - 5} more` : "";
+  return `${head}\n🆕 New sender${a.unruled.length > 1 ? "s" : ""} you haven't ruled: ${names}${more} — reply keep/archive/trash to teach a rule.`;
 }
