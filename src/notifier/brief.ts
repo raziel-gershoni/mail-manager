@@ -22,16 +22,21 @@ export async function generateBrief(
   return deps.llm.writeBrief(emails, dateContext(new Date(), deps.timezone ?? "UTC"));
 }
 
+export interface PollActivity { processed: number; surfaced: number; trashed: number; archived: number; }
+
 // Compose the poll's outgoing Telegram message from the important-mail brief and
-// the guarded-action counts. Returns null when there is nothing to send. The
-// guarded notice is included whenever the poll acted on any mail — so a cycle that
-// ONLY trashed/archived from guarded senders (no important mail) still notifies
-// the owner. The poll must never act silently.
-export function composePollMessage(brief: string | null, guardedTrashed: number, guardedArchived: number): string | null {
-  const acts: string[] = [];
-  if (guardedTrashed > 0) acts.push(`trashed ${guardedTrashed} junk`);
-  if (guardedArchived > 0) acts.push(`archived ${guardedArchived} routine`);
-  const guardNote = acts.length ? `_Guarded: ${acts.join(", ")} from watched senders (say “undo” to restore)._` : "";
-  const parts = [brief && brief.trim() ? brief : "", guardNote].filter(Boolean);
-  return parts.length ? parts.join("\n\n") : null;
+// the cycle's activity. ALWAYS returns a message for a real (non-first) cycle: a
+// heartbeat when no mail arrived, otherwise a report of what it did — even when
+// nothing was important. (The owner asked for a report every check.)
+export function composePollMessage(brief: string | null, a: PollActivity): string {
+  if (a.processed === 0) return "🟢 No new mail this check.";
+  const bits: string[] = [];
+  if (a.trashed > 0) bits.push(`trashed ${a.trashed}`);
+  if (a.archived > 0) bits.push(`archived ${a.archived}`);
+  const left = Math.max(0, a.processed - a.surfaced - a.trashed - a.archived);
+  if (bits.length && left > 0) bits.push(`${left} left in inbox`); // show the split only when something was acted on
+  const summary = bits.length ? ` · ${bits.join(" · ")}` : "";
+  return brief && brief.trim()
+    ? `${brief}\n\n_📬 ${a.processed} new${summary}_`
+    : `📬 ${a.processed} new · nothing important${summary}`;
 }

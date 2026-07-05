@@ -52,15 +52,16 @@ export async function POST(req: Request): Promise<Response> {
               res.important.map(i => `• ${i.subject || "(no subject)"} — ${i.from}`).join("\n");
           }
         }
-        // Includes a guarded-action notice even when there is no important mail, so
-        // the background poll never trashes/archives silently.
-        const message = composePollMessage(brief, res.guardedTrashed, res.guardedArchived);
-        if (message) {
-          await sendFormatted(bot, chatId, message);
-          await dbConversationRepo().appendTurn(userId, { role: "brief", content: message });
-        }
+        // Report every cycle (heartbeat when nothing arrived; activity otherwise).
+        // Only genuinely-important mail buzzes the phone — routine reports and
+        // heartbeats go as silent notifications, and only real briefs are stored
+        // in the conversation (so 48 heartbeats/day don't bloat the context).
+        const hasImportant = res.important.length > 0;
+        const message = composePollMessage(brief, { processed: res.processed, surfaced: res.important.length, trashed: res.guardedTrashed, archived: res.guardedArchived });
+        await sendFormatted(bot, chatId, message, { silent: !hasImportant });
+        if (hasImportant) await dbConversationRepo().appendTurn(userId, { role: "brief", content: message });
         await res.commit();
-        log("poll.brief", { userId, important: ids.length, guardedTrashed: res.guardedTrashed, guardedArchived: res.guardedArchived });
+        log("poll.brief", { userId, important: ids.length, processed: res.processed, guardedTrashed: res.guardedTrashed, guardedArchived: res.guardedArchived });
       } catch (err) {
         if (isInvalidGrant(err)) {
           log("poll.reconnect", { userId });
