@@ -17,7 +17,7 @@ import { dbSettingsRepo } from "../../../src/db/settings-adapter.js";
 import { effectiveSettings } from "../../../src/settings/settings.js";
 import { withIdempotency } from "../../../src/queue/idempotency.js";
 import { dbIdempotencyRepo } from "../../../src/db/idempotency-adapter.js";
-import { log } from "../../../src/util/log.js";
+import { log, logPreview } from "../../../src/util/log.js";
 import { Bot } from "grammy";
 
 export const runtime = "nodejs";
@@ -36,7 +36,7 @@ export async function POST(req: Request): Promise<Response> {
     log("worker.skip", { reason: "bad_payload", updateId });
     return Response.json({ ok: true, skipped: true });
   }
-  log("worker.recv", { updateId, fromId, chatId, textLen: text.length });
+  log("worker.recv", { updateId, fromId, chatId, textLen: text.length, text: logPreview(text, 1000) });
   const userId = await resolveUserForTelegram(e.TELEGRAM_OWNER_ID, fromId, chatId, dbTelegramLinkRepo(), dbUserDirectory());
   if (userId === null) {
     log("worker.skip", { reason: "unauthorized", updateId, fromId });
@@ -55,6 +55,7 @@ export async function POST(req: Request): Promise<Response> {
     });
     await store.flush();
     const bot = new Bot(e.TELEGRAM_BOT_TOKEN);
+    log("worker.reply", { updateId, userId, replyLen: reply.length, reply: logPreview(reply, 1200) });
     await sendFormatted(bot, chatId, reply);
     return { ok: true as const };
   });

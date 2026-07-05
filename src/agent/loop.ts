@@ -19,15 +19,37 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | typeof TIMED_OUT
   return Promise.race([p, new Promise<typeof TIMED_OUT>(r => setTimeout(() => r(TIMED_OUT), ms))]);
 }
 
-// Small, log-safe summary of a tool result (never dumps message bodies/secrets).
+// Log-safe projection of one tool-result item: keeps who/what + a short preview,
+// never the full body. (read_messages items carry `bodyText`; only a truncated
+// preview of it is logged.)
+function projectItem(it: unknown): unknown {
+  if (!it || typeof it !== "object") return it;
+  const o = it as Record<string, unknown>;
+  if (!("from" in o) && !("subject" in o) && !("id" in o)) return it;
+  const p: Record<string, unknown> = {};
+  for (const k of ["id", "from", "subject", "verdict", "action", "reason"]) if (k in o) p[k] = o[k];
+  if (typeof o.snippet === "string") p.snippet = o.snippet.slice(0, 160);
+  if (typeof o.bodyText === "string") p.preview = o.bodyText.slice(0, 200); // truncated; never the full 40k body
+  return p;
+}
+
+// Log-safe summary of a tool result: detail email-like arrays (search/read) with
+// senders/subjects; count-only for the rest. Never dumps full bodies or secrets.
 function summarize(result: unknown): unknown {
-  if (Array.isArray(result)) return { n: result.length };
+  if (Array.isArray(result)) {
+    const first = result[0] as Record<string, unknown> | undefined;
+    if (first && typeof first === "object" && ("from" in first || "subject" in first)) {
+      return { n: result.length, items: result.slice(0, 25).map(projectItem) };
+    }
+    return { n: result.length };
+  }
   if (result && typeof result === "object") {
     const o = result as Record<string, unknown>;
     const out: Record<string, unknown> = {};
-    for (const k of ["ok", "count", "archived", "trashed", "skipped", "gated", "willTrash", "capped", "error", "proposalId", "restored"]) {
+    for (const k of ["ok", "count", "query", "counts", "archived", "trashed", "kept", "guardedTrashed", "guardedArchived", "skipped", "gated", "willTrash", "setAside", "undecided", "capped", "error", "proposalId", "restored"]) {
       if (k in o) out[k] = o[k];
     }
+    if (Array.isArray(o.guardedKept)) out.guardedKept = (o.guardedKept as unknown[]).map(projectItem);
     return Object.keys(out).length ? out : { keys: Object.keys(o) };
   }
   return result;

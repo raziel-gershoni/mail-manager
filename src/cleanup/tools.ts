@@ -8,6 +8,7 @@ import { bucketByAction } from "./apply-rules.js";
 import { guardVet } from "./guard.js";
 import { GMAIL_FETCH_CONCURRENCY } from "../gmail/client.js";
 import { mapLimit } from "../util/concurrency.js";
+import { log } from "../util/log.js";
 
 // Guarded (review) senders read FULL bodies, so cap the per-run body-reads well
 // below TRASH_CAP to stay within budget. Overflow is reported via `capped` for a
@@ -57,6 +58,7 @@ export function confirmTrashTool(): ToolDef {
       await dep.actionLog.record(ctx.userId, runId, proposal.messageIds, "trash"); // record first so undo covers it
       await dep.proposals.markConfirmed(ctx.userId, id);                   // burn the proposal before the failure-prone trash
       await ctx.gmail.trash(proposal.messageIds);
+      log("cleanup.confirm_trash", { userId: ctx.userId, runId, n: proposal.messageIds.length, ids: proposal.messageIds.slice(0, 100) });
       return { ok: true, trashed: proposal.messageIds.length, runId };
     },
   };
@@ -91,6 +93,7 @@ export function archiveMessagesTool(): ToolDef {
       const runId = randomUUID();
       await dep.actionLog.record(ctx.userId, runId, ids, "archive");
       await ctx.gmail.archive(ids);
+      log("cleanup.archive_messages", { userId: ctx.userId, runId, n: ids.length, ids: ids.slice(0, 100), reason: args.reason });
       return { ok: true, archived: ids.length, runId };
     },
   };
@@ -108,6 +111,7 @@ export function trashMessagesTool(): ToolDef {
       const runId = randomUUID();
       await dep.actionLog.record(ctx.userId, runId, ids, "trash"); // record before mutating so undo always covers it
       await ctx.gmail.trash(ids);
+      log("cleanup.trash_messages", { userId: ctx.userId, runId, n: ids.length, ids: ids.slice(0, 100), reason: args.reason });
       return { ok: true, trashed: ids.length, runId };
     },
   };
@@ -131,6 +135,7 @@ export function applyActionRulesTool(): ToolDef {
         return { id: ids[i]!, from: m.from, subject: m.subject, action: rule ? (rule.action ?? "keep") : null };
       });
       const b = bucketByAction(items, TRASH_CAP);
+      log("cleanup.apply", { userId: ctx.userId, total: items.length, decided: items.map(it => ({ id: it.id, from: it.from, subject: it.subject, action: it.action ?? "ask-owner" })).slice(0, 80) });
       if (b.archive.length) { await dep.actionLog.record(ctx.userId, randomUUID(), b.archive, "archive"); await ctx.gmail.archive(b.archive); }
       if (b.trash.length) { await dep.actionLog.record(ctx.userId, randomUUID(), b.trash, "trash"); await ctx.gmail.trash(b.trash); }
       // Guarded senders: read bodies (capped), then ACT on the junk (logged first)
@@ -146,6 +151,8 @@ export function applyActionRulesTool(): ToolDef {
           if (verb === "trash") guardedTrashed += g.act.length; else guardedArchived += g.act.length;
         }
         guardedKept.push(...g.keep);
+        for (const id of g.act) log("cleanup.guarded", { userId: ctx.userId, id, action: verb === "trash" ? "trashed" : "archived" });
+        for (const k of g.keep) log("cleanup.guarded", { userId: ctx.userId, id: k.id, from: k.from, subject: k.subject, reason: k.reason, action: "kept" });
         guardedCapped = guardedCapped || g.capped;
       }
       return { archived: b.archive.length, trashed: b.trash.length, kept: b.keep.length, guardedTrashed, guardedArchived, guardedKept, undecided: b.undecided, capped: b.capped || guardedCapped || rawIds.length > TRASH_CAP };
