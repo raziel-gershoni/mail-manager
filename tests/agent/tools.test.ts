@@ -35,23 +35,23 @@ describe("dispatchTool", () => {
     const r = await dispatchTool("search_gmail", { query: "from:y.com" }, ctx(), tools) as any[];
     expect(r[0].id).toBe("a");
   });
-  it("count_messages returns a fast count without reading contents", async () => {
+  it("count_messages scopes a bare query to the inbox", async () => {
     const r = await dispatchTool("count_messages", { query: "from:y.com" }, ctx(), tools) as { query: string; count: number };
-    expect(r).toEqual({ query: "from:y.com", count: 1 });
+    expect(r).toEqual({ query: "in:inbox from:y.com", count: 1 }); // bare query defaulted to the inbox
   });
-  it("count_messages counts a batch of queries in one call, order preserved", async () => {
+  it("count_messages counts a batch, scoping bare queries to inbox but respecting explicit in:anywhere", async () => {
     const c = {
       userId: 1,
       gmail: fakeGmailClient({
         historyId: "1", addedSince: {}, messages: {},
-        searchResults: { "in:anywhere from:a.com": ["1", "2"], "in:anywhere from:b.com": [] },
+        searchResults: { "in:anywhere from:a.com": ["1", "2"], "in:inbox from:b.com": ["9"] },
       }),
       memory: inMemoryStore(),
     };
-    const r = await dispatchTool("count_messages", { queries: ["in:anywhere from:a.com", "in:anywhere from:b.com"] }, c, tools) as { counts: { query: string; count: number }[] };
+    const r = await dispatchTool("count_messages", { queries: ["in:anywhere from:a.com", "from:b.com"] }, c, tools) as { counts: { query: string; count: number }[] };
     expect(r.counts).toEqual([
-      { query: "in:anywhere from:a.com", count: 2 },
-      { query: "in:anywhere from:b.com", count: 0 },
+      { query: "in:anywhere from:a.com", count: 2 }, // explicit in:anywhere respected
+      { query: "in:inbox from:b.com", count: 1 },    // bare query scoped to inbox
     ]);
   });
   it("list_memories exposes each rule's scope, matchValue, verdict, and action", async () => {

@@ -38,15 +38,15 @@ export function readOnlyTools(): ToolDef[] {
     },
     {
       mutating: false,
-      schema: { name: "count_messages", description: "Count how many messages match one or more Gmail queries. Pass `query` for a single count, or `queries` (an array) to count many at once in ONE call — use the array form to audit multiple rules together instead of calling this repeatedly. A bare query excludes trash and spam; add `in:anywhere` to also span archive, trash, and spam. Fast and full-scale — does NOT read message contents. Use this for 'how many...' / 'how big is my inbox' questions instead of search_gmail.",
+      schema: { name: "count_messages", description: "Count how many messages match one or more Gmail queries. Pass `query` for a single count, or `queries` (an array) to count many at once in ONE call — use the array form to check many rules together instead of calling this repeatedly. Counts the INBOX by default — add an in: operator to widen (in:anywhere = all mail incl. archived/trash/spam; use it only to check whether a rule matches ANY mail at all). Fast and full-scale — does NOT read message contents. Use this for 'how many...' / 'how big is my inbox' questions instead of search_gmail.",
         parameters: { type: "object", properties: { query: { type: "string" }, queries: { type: "array", items: { type: "string" } } } } },
       async run(args, ctx) {
         if (Array.isArray(args.queries)) {
-          const list = (args.queries as unknown[]).map(String).slice(0, COUNT_BATCH_CAP);
+          const list = (args.queries as unknown[]).map(String).slice(0, COUNT_BATCH_CAP).map(scopeSearchToInbox);
           const counts = await mapLimit(list, GMAIL_FETCH_CONCURRENCY, async (query) => ({ query, count: await ctx.gmail.countMessages(query) }));
           return { counts };
         }
-        const query = String(args.query ?? "");
+        const query = scopeSearchToInbox(String(args.query ?? ""));
         return { query, count: await ctx.gmail.countMessages(query) };
       },
     },
