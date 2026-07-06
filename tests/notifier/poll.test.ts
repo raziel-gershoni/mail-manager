@@ -57,6 +57,34 @@ function guardedDeps() {
   };
 }
 
+// A poll scenario with a PLAIN (unguarded) trash rule for shop.com. The message
+// body reads "important" — so if the plain path wrongly went through guardVet
+// (whose fake reviewTrash keeps everything here), it would be KEPT. Asserting it
+// is trashed proves the plain path acts outright with no body-read.
+function plainTrashDeps(action: "trash" | "archive" = "trash") {
+  const store = inMemoryStore();
+  store.upsertRule({ matchValue: "shop.com", scope: "domain", verdict: "unimportant", description: "shop", action });
+  return {
+    userId: 1, store,
+    gmail: fakeGmailClient({
+      historyId: "200",
+      addedSince: { "100": ["p1", "jane"] },
+      messages: {
+        p1: { id: "p1", threadId: "t", snippet: "", payload: { headers: [{ name: "From", value: "promo@shop.com" }, { name: "Subject", value: "sale" }] } },
+        jane: { id: "jane", threadId: "t", snippet: "", payload: { headers: [{ name: "From", value: "jane@x.com" }, { name: "Subject", value: "Lunch" }] } },
+      },
+      bodies: { p1: "your invoice is attached — very important", jane: "hi" },
+    }),
+    llm: {
+      async classifyImportance(i: any) { return { important: i.email.fromEmail === "jane@x.com", suspicious: false, reason: "x" }; },
+      async agentStep() { return { kind: "final", text: "" }; },
+      async writeBrief() { return ""; },
+      async reviewTrash(cands: any[]) { return cands.map(c => ({ id: c.id, keep: true, reason: "would-keep" })); }, // guardVet WOULD keep everything
+    } as any,
+    sync: fakeSyncRepo(), seen: fakeSeenRepo(), actionLog: fakeActionLogRepo(),
+  };
+}
+
 describe("runPoll", () => {
   it("first run sets the cursor and notifies nothing", async () => {
     const d = deps();
@@ -203,6 +231,42 @@ describe("runPoll", () => {
     expect(await d.seen.has(1, "routine")).toBe(false);
     await r.commit();
     expect(await d.seen.has(1, "routine")).toBe(true);
+  });
+
+  it("plain trash rule: trashes outright with no body-read (bypasses guardVet), logs before trashing, defers seen, doesn't surface", async () => {
+    const d = plainTrashDeps("trash");
+    const order: string[] = [];
+    const origRecord = d.actionLog.record.bind(d.actionLog);
+    d.actionLog.record = async (...a: any[]) => { order.push("log"); return (origRecord as any)(...a); };
+    const origTrash = d.gmail.trash.bind(d.gmail);
+    d.gmail.trash = async (...a: any[]) => { order.push("trash"); return (origTrash as any)(...a); };
+
+    await d.sync.set(1, "100");
+    const r = await runPoll(d);
+
+    expect(d.gmail.trashedIds!()).toEqual(["p1"]);       // trashed despite an "important"-reading body → no body read
+    expect(r.plainTrashed).toBe(1);
+    expect(r.guardedTrashed).toBe(0);                     // this was NOT the guarded path
+    expect(order).toEqual(["log", "trash"]);             // undo recorded before the mutation
+    expect(await d.actionLog.lastUndoable(1)).toMatchObject({ action: "trash", messageIds: ["p1"] });
+    expect(r.important.map(i => i.messageId)).toEqual(["jane"]); // trashed sender not surfaced; jane still important
+
+    expect(await d.seen.has(1, "p1")).toBe(false);        // deferred until commit (report survives a failed send)
+    await r.commit();
+    expect(await d.seen.has(1, "p1")).toBe(true);
+  });
+
+  it("plain archive rule: archives outright (logged before archive), never trashes", async () => {
+    const d = plainTrashDeps("archive");
+    await d.sync.set(1, "100");
+    const r = await runPoll(d);
+
+    expect(d.gmail.archivedIds!()).toEqual(["p1"]);
+    expect(d.gmail.trashedIds!()).toEqual([]);
+    expect(r.plainArchived).toBe(1);
+    expect(r.plainTrashed).toBe(0);
+    expect(await d.actionLog.lastUndoable(1)).toMatchObject({ action: "archive", messageIds: ["p1"] });
+    expect(r.important.map(i => i.messageId)).toEqual(["jane"]);
   });
 
   it("guarded overflow beyond the cap is kept + surfaced, never trashed unread", async () => {

@@ -57,11 +57,13 @@ export async function POST(req: Request): Promise<Response> {
         // heartbeats go as silent notifications, and only real briefs are stored
         // in the conversation (so 48 heartbeats/day don't bloat the context).
         const hasImportant = res.important.length > 0;
-        const message = composePollMessage(brief, { processed: res.processed, surfaced: res.important.length, trashed: res.guardedTrashed, archived: res.guardedArchived, unruled: res.unruled });
+        const trashed = res.guardedTrashed + res.plainTrashed;
+        const archived = res.guardedArchived + res.plainArchived;
+        const message = composePollMessage(brief, { processed: res.processed, surfaced: res.important.length, trashed, archived, unruled: res.unruled });
         await sendFormatted(bot, chatId, message, { silent: !hasImportant });
         if (hasImportant) await dbConversationRepo().appendTurn(userId, { role: "brief", content: message });
         await res.commit();
-        log("poll.brief", { userId, important: ids.length, processed: res.processed, guardedTrashed: res.guardedTrashed, guardedArchived: res.guardedArchived });
+        log("poll.brief", { userId, important: ids.length, processed: res.processed, guardedTrashed: res.guardedTrashed, guardedArchived: res.guardedArchived, plainTrashed: res.plainTrashed, plainArchived: res.plainArchived });
       } catch (err) {
         if (isInvalidGrant(err)) {
           log("poll.reconnect", { userId });

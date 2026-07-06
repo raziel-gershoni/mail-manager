@@ -28,6 +28,8 @@ export interface PollResult {
   processed: number;
   guardedTrashed: number;
   guardedArchived: number;
+  plainTrashed: number;   // action:"trash" rules — trashed outright by the poll (no body read)
+  plainArchived: number;  // action:"archive" rules — archived outright by the poll (no body read)
   unruled: string[]; // senders left in the inbox that have no rule yet (deduped) — surfaced so the owner can teach one
   commit: () => Promise<void>;
 }
@@ -39,14 +41,16 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
   const cursor = await deps.sync.get(deps.userId);
   if (cursor === null) {
     await deps.sync.set(deps.userId, headId);
-    return { firstRun: true, important: [], processed: 0, guardedTrashed: 0, guardedArchived: 0, unruled: [], commit: async () => {} };
+    return { firstRun: true, important: [], processed: 0, guardedTrashed: 0, guardedArchived: 0, plainTrashed: 0, plainArchived: 0, unruled: [], commit: async () => {} };
   }
   const ids = await deps.gmail.listAddedMessageIds(cursor);
   const important: DigestItem[] = [];
   const toCommit: { id: string; reason: string }[] = [];
-  const actedToCommit: string[] = []; // guarded-acted (trashed/archived) ids: seen-recorded at commit, so the report survives a failed send + retry
+  const actedToCommit: string[] = []; // auto-acted (guarded OR plain trashed/archived) ids: seen-recorded at commit, so the report survives a failed send + retry
   const guardedTrash: EmailMeta[] = [];   // action:"review" — judged, then junk trashed
   const guardedArchive: EmailMeta[] = []; // action:"review_archive" — judged, then routine archived
+  const plainTrash: EmailMeta[] = [];     // action:"trash" — trashed outright, no body read
+  const plainArchive: EmailMeta[] = [];   // action:"archive" — archived outright, no body read
   const unruledSenders = new Map<string, string>(); // fromEmail → display "from"; senders with no rule, left in inbox
   let processed = 0;
   for (const id of ids) {
@@ -66,6 +70,8 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
     const rule = deps.store.findRuleFor(email.fromEmail, email.fromDomain);
     if (rule?.action === "review") { guardedTrash.push(email); log("poll.msg", { userId: deps.userId, ...logMeta(email), rule: "review", action: "guarded-queued" }); continue; }
     if (rule?.action === "review_archive") { guardedArchive.push(email); log("poll.msg", { userId: deps.userId, ...logMeta(email), rule: "review_archive", action: "guarded-queued" }); continue; }
+    if (rule?.action === "trash") { plainTrash.push(email); log("poll.msg", { userId: deps.userId, ...logMeta(email), rule: "trash", action: "plain-queued" }); continue; }
+    if (rule?.action === "archive") { plainArchive.push(email); log("poll.msg", { userId: deps.userId, ...logMeta(email), rule: "archive", action: "plain-queued" }); continue; }
     const outcome = await classifyEmail(email, { store: deps.store, llm: deps.llm });
     if (outcome.important) {
       // Defer marking-seen + cursor advance until the brief is delivered.
@@ -119,6 +125,22 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
     }
   }
 
+  // Plain (unguarded) rules: the sender was explicitly ruled trash/archive, so act
+  // outright — no body read, no LLM. One batchModify call per verb. Undo is recorded
+  // FIRST (so it always covers the mutation), and acted ids are deferred to commit
+  // (same as guarded) so a failed brief send re-reports rather than dropping silently.
+  // Retries are idempotent (Gmail add/removeLabel is a no-op if already applied).
+  let plainTrashed = 0, plainArchived = 0;
+  for (const [group, verb] of [[plainTrash, "trash"], [plainArchive, "archive"]] as const) {
+    if (group.length === 0) continue;
+    const actIds = group.map(m => m.id);
+    await deps.actionLog.record(deps.userId, randomUUID(), actIds, verb); // record before mutating so undo always covers it
+    if (verb === "trash") await deps.gmail.trash(actIds); else await deps.gmail.archive(actIds);
+    actedToCommit.push(...actIds);
+    if (verb === "trash") plainTrashed += actIds.length; else plainArchived += actIds.length;
+    for (const m of group) log("poll.acted", { userId: deps.userId, ...logMeta(m), rule: verb, action: verb === "trash" ? "trashed" : "archived" });
+  }
+
   const commit = async (): Promise<void> => {
     for (const c of toCommit) {
       await deps.seen.record(deps.userId, { messageId: c.id, surfaced: true, verdict: "important", reason: c.reason });
@@ -126,9 +148,9 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
     for (const id of actedToCommit) {
       // Recorded only now (after the brief is delivered) so a failed send leaves
       // them un-seen and the retry re-reports the action instead of dropping it.
-      await deps.seen.record(deps.userId, { messageId: id, surfaced: false, verdict: "unimportant", reason: "guarded-acted" });
+      await deps.seen.record(deps.userId, { messageId: id, surfaced: false, verdict: "unimportant", reason: "auto-acted" });
     }
     await deps.sync.set(deps.userId, headId);
   };
-  return { firstRun: false, important, processed, guardedTrashed, guardedArchived, unruled: [...unruledSenders.values()], commit };
+  return { firstRun: false, important, processed, guardedTrashed, guardedArchived, plainTrashed, plainArchived, unruled: [...unruledSenders.values()], commit };
 }
