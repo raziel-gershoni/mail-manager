@@ -7,6 +7,7 @@ import type { ActionLogRepo } from "../cleanup/proposals.js";
 import type { SyncStateRepo, SeenRepo } from "./sync.js";
 import { classifyEmail } from "./classify.js";
 import { guardVet } from "../cleanup/guard.js";
+import { isNotFound } from "../gmail/errors.js";
 import { log, logMeta } from "../util/log.js";
 
 export interface DigestItem { messageId: string; from: string; subject: string; reason: string; }
@@ -50,8 +51,18 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
   let processed = 0;
   for (const id of ids) {
     if (await deps.seen.has(deps.userId, id)) continue;
+    let email: EmailMeta;
+    try {
+      email = await deps.gmail.getMeta(id);
+    } catch (err) {
+      // history.list referenced this message, but it was deleted/removed before we
+      // could fetch it → messages.get 404s. Skip it: one dead message must not abort
+      // the whole poll, which would leave the cursor un-advanced and re-404 every
+      // cycle until it ages out of the history window (a silent, days-long stall).
+      if (isNotFound(err)) { log("poll.msg", { userId: deps.userId, id, action: "skipped-gone" }); continue; }
+      throw err;
+    }
     processed++;
-    const email = await deps.gmail.getMeta(id);
     const rule = deps.store.findRuleFor(email.fromEmail, email.fromDomain);
     if (rule?.action === "review") { guardedTrash.push(email); log("poll.msg", { userId: deps.userId, ...logMeta(email), rule: "review", action: "guarded-queued" }); continue; }
     if (rule?.action === "review_archive") { guardedArchive.push(email); log("poll.msg", { userId: deps.userId, ...logMeta(email), rule: "review_archive", action: "guarded-queued" }); continue; }

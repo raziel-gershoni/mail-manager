@@ -101,6 +101,25 @@ describe("runPoll", () => {
     expect(r.unruled).toEqual(["n@linkedin.com"]); // only the un-ruled sender left in the inbox; the important one is surfaced, not flagged
   });
 
+  it("skips a message that 404s (deleted after history listed) instead of aborting, and still advances the cursor", async () => {
+    const d = deps(); // a=jane@x.com (important), b=n@linkedin.com (unimportant)
+    await d.sync.set(1, "100");
+    const orig = d.gmail.getMeta.bind(d.gmail);
+    d.gmail.getMeta = async (id: string) => {
+      if (id === "a") { const e: any = new Error("Requested entity was not found."); e.code = 404; e.status = 404; throw e; }
+      return (orig as any)(id);
+    };
+    const r = await runPoll(d);
+
+    // The 404'd message is skipped (not surfaced, not counted, no throw); b still processes.
+    expect(r.important).toEqual([]);
+    expect(r.processed).toBe(1);          // only b was actually fetched; the phantom doesn't inflate the count
+    expect(await d.seen.has(1, "a")).toBe(false); // nothing recorded for the gone message
+
+    await r.commit();
+    expect(await d.sync.get(1)).toBe("200"); // cursor advanced despite the dead message — no stall
+  });
+
   it("skips messages already seen", async () => {
     const d = deps();
     await d.sync.set(1, "100");
