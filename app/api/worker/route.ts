@@ -1,7 +1,7 @@
 // app/api/worker/route.ts
 import { env } from "../../../src/config/env.js";
 import { verifyQStash } from "../../../src/queue/qstash.js";
-import { authedGmailFor } from "../../../src/oauth/google.js";
+import { authedGmailFor, isNoGoogleAccount } from "../../../src/oauth/google.js";
 import { googleGmailClient } from "../../../src/gmail/client.js";
 import { geminiProvider } from "../../../src/llm/gemini.js";
 import { dbMemoryStore } from "../../../src/db/adapters.js";
@@ -18,6 +18,7 @@ import { effectiveSettings } from "../../../src/settings/settings.js";
 import { withIdempotency } from "../../../src/queue/idempotency.js";
 import { dbIdempotencyRepo } from "../../../src/db/idempotency-adapter.js";
 import { log, logPreview } from "../../../src/util/log.js";
+import { t } from "../../../src/i18n/index.js";
 import { Bot } from "grammy";
 
 export const runtime = "nodejs";
@@ -44,9 +45,23 @@ export async function POST(req: Request): Promise<Response> {
   }
   const key = String(updateId ?? `${chatId}:${text.slice(0, 64)}`); // fallback if update_id absent (shouldn't happen)
   const outcome = await withIdempotency(key, dbIdempotencyRepo(), async () => {
-    const auth = await authedGmailFor(userId, e);
-    const store = await dbMemoryStore(userId);
+    // Settings first so `language` is available even if Gmail isn't connected yet.
     const settings = effectiveSettings(await dbSettingsRepo().get(userId), e.OWNER_TZ);
+    const bot = new Bot(e.TELEGRAM_BOT_TOKEN);
+    let auth;
+    try {
+      auth = await authedGmailFor(userId, e);
+    } catch (err) {
+      // A linked-but-not-yet-connected user (e.g. a freshly provisioned second user):
+      // nudge them to connect their Gmail instead of erroring into a silent retry loop.
+      if (isNoGoogleAccount(err)) {
+        log("worker.no_account", { updateId, userId });
+        await sendFormatted(bot, chatId, t(settings.language, "connect_nudge"));
+        return { ok: true as const };
+      }
+      throw err;
+    }
+    const store = await dbMemoryStore(userId);
     const reply = await handleMessage(text, {
       userId, gmail: googleGmailClient(auth), memory: store,
       llm: geminiProvider(e.GEMINI_API_KEY), convo: dbConversationRepo(),
@@ -54,7 +69,6 @@ export async function POST(req: Request): Promise<Response> {
       tools: [...readOnlyTools(), ...trashTools()], timezone: settings.timezone, language: settings.language,
     });
     await store.flush();
-    const bot = new Bot(e.TELEGRAM_BOT_TOKEN);
     log("worker.reply", { updateId, userId, replyLen: reply.length, reply: logPreview(reply, 1200) });
     await sendFormatted(bot, chatId, reply);
     return { ok: true as const };

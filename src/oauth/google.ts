@@ -50,6 +50,12 @@ export async function exchangeAndStore(env: Env, code: string, userId: number): 
   return { email };
 }
 
+// True for the error authedGmailFor throws when a (linked) user hasn't yet
+// connected their Gmail — e.g. a just-provisioned second user who hasn't consented.
+export function isNoGoogleAccount(err: unknown): boolean {
+  return err instanceof Error && /no google account linked/i.test(err.message);
+}
+
 export async function authedGmailFor(userId: number, env: Env): Promise<OAuth2Client> {
   const [acct] = await db().select().from(schema.googleAccounts).where(eq(schema.googleAccounts.userId, userId)).limit(1);
   if (!acct) throw new Error("no google account linked");
