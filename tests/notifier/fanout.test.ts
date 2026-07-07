@@ -6,7 +6,7 @@ import type { EffectiveSettings } from "../../src/settings/settings.js";
 const OWNER = 555;
 const IN_WINDOW = new Date("2026-07-02T12:00:00Z"); // noon UTC
 const on = (over: Partial<EffectiveSettings> = {}): EffectiveSettings =>
-  ({ timezone: "UTC", digestStartHour: 8, digestEndHour: 22, paused: false, ...over });
+  ({ timezone: "UTC", digestStartHour: 8, digestEndHour: 22, paused: false, language: "en", ...over });
 
 describe("pollAllUsers", () => {
   it("bootstraps the owner link, then polls each in-window user at their chat + timezone", async () => {

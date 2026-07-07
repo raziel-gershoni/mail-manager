@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { buildSettingsView, validateSettingsPatch, mergePatch } from "../../src/settings/service.js";
 import type { EffectiveSettings } from "../../src/settings/settings.js";
 
-const eff: EffectiveSettings = { timezone: "UTC", digestStartHour: 0, digestEndHour: 24, paused: false };
+const eff: EffectiveSettings = { timezone: "UTC", digestStartHour: 0, digestEndHour: 24, paused: false, language: "en" };
 
 describe("validateSettingsPatch", () => {
   it("accepts a valid partial patch", () => {
@@ -20,11 +20,20 @@ describe("validateSettingsPatch", () => {
   it("allows digestEndHour 24 (always-on end)", () => {
     expect(validateSettingsPatch({ digestEndHour: 24 })).toEqual({ digestEndHour: 24 });
   });
+  it("accepts language en|he and rejects others", () => {
+    expect(validateSettingsPatch({ language: "he" })).toEqual({ language: "he" });
+    expect(validateSettingsPatch({ language: "en" })).toEqual({ language: "en" });
+    expect(validateSettingsPatch({ language: "fr" })).toHaveProperty("error");
+    expect(validateSettingsPatch({ language: 3 })).toHaveProperty("error");
+  });
 });
 
 describe("mergePatch", () => {
   it("overlays only provided fields onto the effective settings", () => {
-    expect(mergePatch(eff, { paused: true })).toEqual({ timezone: "UTC", digestStartHour: 0, digestEndHour: 24, paused: true });
+    expect(mergePatch(eff, { paused: true })).toEqual({ timezone: "UTC", digestStartHour: 0, digestEndHour: 24, paused: true, language: "en" });
+  });
+  it("overlays language when provided", () => {
+    expect(mergePatch(eff, { language: "he" }).language).toBe("he");
   });
 });
 

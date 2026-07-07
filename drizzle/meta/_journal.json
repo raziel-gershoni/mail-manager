@@ -57,6 +57,13 @@
       "when": 1783086463733,
       "tag": "0007_heavy_the_renegades",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1783428036115,
+      "tag": "0008_grey_tarot",
+      "breakpoints": true
     }
   ]
 }

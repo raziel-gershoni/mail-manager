@@ -35,6 +35,7 @@ export const userSettings = pgTable("user_settings", {
   digestStartHour: integer("digest_start_hour").notNull().default(0),
   digestEndHour: integer("digest_end_hour").notNull().default(24),   // 0–24 = always-on
   paused: boolean("paused").notNull().default(false),
+  language: text("language"),                                  // null → "en"
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
