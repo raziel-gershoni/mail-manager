@@ -50,7 +50,7 @@ export async function POST(req: Request): Promise<Response> {
           brief = await generateBrief(ids, { gmail, llm, timezone, language });
           if (!brief || brief.trim() === "") {
             brief = `${t(language, "poll_fallback_head", { n: ids.length })}\n` +
-              res.important.map(i => `• ${i.subject || "(no subject)"} — ${i.from}`).join("\n");
+              res.important.map(i => `• ${i.subject || t(language, "poll_no_subject")} — ${i.from}`).join("\n");
           }
         }
         // Report every cycle (heartbeat when nothing arrived; activity otherwise).

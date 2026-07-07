@@ -52,6 +52,7 @@ const en = {
     "🆕 New senders you haven't ruled: {names}{more} — reply keep/archive/trash to teach a rule.",
   poll_more: " +{n} more",
   poll_fallback_head: "{n} new important email(s):",
+  poll_no_subject: "(no subject)",
 
   // Action labels (settings view)
   action_guarded_trash: "guarded trash",
@@ -145,6 +146,7 @@ export const messages: Record<"en" | "he", Record<MsgKey, string>> = {
       "🆕 שולחים חדשים שעוד לא הגדרת להם כלל: {names}{more} — השב/י keep/archive/trash כדי ללמד כלל.",
     poll_more: " ועוד {n}",
     poll_fallback_head: "{n} מיילים חדשים וחשובים:",
+    poll_no_subject: "(ללא נושא)",
 
     // Action labels
     action_guarded_trash: "זריקה עם בקרה",

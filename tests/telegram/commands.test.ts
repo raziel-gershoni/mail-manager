@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { handleMessage, INTRO, type SecretaryDeps } from "../../src/telegram/bot.js";
+import { handleMessage, type SecretaryDeps } from "../../src/telegram/bot.js";
+import { t } from "../../src/i18n/index.js";
+
+const INTRO = t("en", "intro");
 import { fakeConversationRepo } from "../../src/conversation/store.js";
 import { readOnlyTools } from "../../src/agent/tools.js";
 import { fakeGmailClient } from "../../src/gmail/client.js";

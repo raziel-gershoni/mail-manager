@@ -11,6 +11,12 @@ describe("i18n", () => {
   it("every he value is non-empty", () => {
     for (const k of Object.keys(messages.en)) expect((messages.he as Record<string, string>)[k]!.length).toBeGreaterThan(0);
   });
+  it("he keeps the same {placeholders} as en (no silently dropped params)", () => {
+    const ph = (s: string) => (s.match(/\{[a-z]+\}/gi) ?? []).sort();
+    for (const k of Object.keys(messages.en)) {
+      expect(ph((messages.he as Record<string, string>)[k]!)).toEqual(ph((messages.en as Record<string, string>)[k]!));
+    }
+  });
   it("interpolates {params}", () => {
     expect(t("en", "poll_new", { n: 3 })).toContain("3");
     expect(t("he", "poll_new", { n: 7 })).toContain("7");
