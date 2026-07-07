@@ -7,6 +7,7 @@ type View = {
   gmail: { email: string | null; connected: boolean; needsReconnect: boolean };
   rules: Array<{ matchValue: string; scope: string; verdict: string; action: string }>;
   context: { totalTokens: number; systemTokens: number; summaryTokens: number; windowTokens: number; windowTurns: number; compactAtTokens: number };
+  isOwner: boolean;
 };
 
 const fmt = (n: number) => n.toLocaleString();
@@ -21,6 +22,11 @@ const HOURS = Array.from({ length: 25 }, (_, i) => i); // 0..24
 export default function MiniApp() {
   const [view, setView] = useState<View | null>(null);
   const [status, setStatus] = useState<string>(t("en", "mini_loading"));
+  const [provId, setProvId] = useState("");
+  const [provLang, setProvLang] = useState<Lang>("he");
+  const [provBusy, setProvBusy] = useState(false);
+  const [provUrl, setProvUrl] = useState("");
+  const [provCopied, setProvCopied] = useState(false);
   const headers = { "x-telegram-init-data": initData(), "content-type": "application/json" };
   const lang: Lang = view?.language ?? "en";
 
@@ -71,6 +77,23 @@ export default function MiniApp() {
       await loadView();
       setStatus(t(lang, "mini_cleared"));
     } catch { setStatus(t(lang, "mini_clear_failed")); }
+  }
+
+  async function provision() {
+    setProvUrl(""); setProvCopied(false);
+    const idNum = Number(provId);
+    if (!Number.isInteger(idNum) || provId.trim() === "") { setStatus(t(lang, "mini_provision_bad_id")); return; }
+    setProvBusy(true);
+    try {
+      const r = await fetch("/api/admin/provision-user", { method: "POST", headers, body: JSON.stringify({ telegramUserId: idNum, language: provLang }) });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) { setStatus(data.error ? `${t(lang, "mini_provision_failed")}: ${data.error}` : t(lang, "mini_provision_failed")); return; }
+      setProvUrl(data.consentUrl); setStatus("");
+    } catch { setStatus(t(lang, "mini_provision_failed")); }
+    finally { setProvBusy(false); }
+  }
+  async function copyProvUrl() {
+    try { await navigator.clipboard.writeText(provUrl); setProvCopied(true); } catch { /* clipboard blocked */ }
   }
 
   if (!view) return <main dir={dir(lang)} style={S.main}><p>{status}</p></main>;
@@ -141,6 +164,36 @@ export default function MiniApp() {
       <p style={S.dim}>{t(lang, "mini_context_note", { n: fmt(view.context.compactAtTokens) })}</p>
       <button style={S.btn} onClick={clearContext}>{t(lang, "mini_clear_conversation")}</button>
       <p style={S.dim}>{t(lang, "mini_clear_conversation_desc")}</p>
+
+      {view.isOwner && (
+        <>
+          <h3 style={S.h}>{t(lang, "mini_provision_title")}</h3>
+          <p style={S.dim}>{t(lang, "mini_provision_desc")}</p>
+          <label style={S.row}>{t(lang, "mini_provision_tgid")}
+            <input style={S.input} inputMode="numeric" dir="ltr" value={provId}
+              onChange={e => setProvId(e.target.value)} placeholder="762715667" />
+          </label>
+          <label style={S.row}>{t(lang, "mini_language")}
+            <select value={provLang} onChange={e => setProvLang(e.target.value as Lang)}>
+              <option value="he">עברית</option>
+              <option value="en">English</option>
+            </select>
+          </label>
+          <button style={S.btn} onClick={provision} disabled={provBusy}>
+            {provBusy ? t(lang, "mini_provision_creating") : t(lang, "mini_provision_create")}
+          </button>
+          {provUrl && (
+            <div style={{ marginTop: 10 }}>
+              <p style={S.dim}>{t(lang, "mini_provision_created")}</p>
+              <input style={{ ...S.input, width: "100%", maxWidth: "none" }} dir="ltr" readOnly value={provUrl}
+                onFocus={e => e.currentTarget.select()} />
+              <button style={{ ...S.btn, marginTop: 8 }} onClick={copyProvUrl}>
+                {provCopied ? t(lang, "mini_provision_copied") : t(lang, "mini_provision_copy")}
+              </button>
+            </div>
+          )}
+        </>
+      )}
 
       <p style={S.dim}>{status}</p>
     </main>

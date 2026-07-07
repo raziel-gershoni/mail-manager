@@ -92,6 +92,16 @@ const en = {
   mini_clear_conversation_desc: "Wipes chat history only — rules and settings are kept.",
   mini_tokens: "tokens",
   mini_context_note: "Rough estimate (excludes tool definitions). Older turns fold into the summary once the recent turns pass ~{n} tokens.",
+  mini_provision_title: "Add a user",
+  mini_provision_desc: "Creates a Google consent link to send them — they connect their own Gmail (valid 60 min).",
+  mini_provision_tgid: "Telegram user ID",
+  mini_provision_create: "Create consent link",
+  mini_provision_creating: "Creating…",
+  mini_provision_created: "✅ Created — send them this link:",
+  mini_provision_copy: "Copy link",
+  mini_provision_copied: "Copied ✓",
+  mini_provision_bad_id: "Telegram user ID must be a whole number.",
+  mini_provision_failed: "Couldn't create the link",
 } as const;
 
 export type MsgKey = keyof typeof en;
@@ -186,5 +196,15 @@ export const messages: Record<"en" | "he", Record<MsgKey, string>> = {
     mini_clear_conversation_desc: "מוחק רק את היסטוריית הצ'אט — הכללים וההגדרות נשמרים.",
     mini_tokens: "טוקנים",
     mini_context_note: "הערכה גסה (לא כולל הגדרות כלים). תורות ישנים מתקפלים לתוך הסיכום כשהתורות האחרונים עוברים ~{n} טוקנים.",
+    mini_provision_title: "הוספת משתמש",
+    mini_provision_desc: "יוצר קישור אישור של גוגל לשליחה אליהם — הם מחברים את הג'ימייל שלהם (תקף 60 דקות).",
+    mini_provision_tgid: "מזהה משתמש טלגרם",
+    mini_provision_create: "צור קישור אישור",
+    mini_provision_creating: "יוצר…",
+    mini_provision_created: "✅ נוצר — שלח/י להם את הקישור:",
+    mini_provision_copy: "העתק קישור",
+    mini_provision_copied: "הועתק ✓",
+    mini_provision_bad_id: "מזהה משתמש טלגרם חייב להיות מספר שלם.",
+    mini_provision_failed: "לא ניתן ליצור את הקישור",
   },
 };
