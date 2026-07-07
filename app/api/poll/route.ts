@@ -17,6 +17,7 @@ import { generateBrief, composePollMessage } from "../../../src/notifier/brief.j
 import { pollAllUsers } from "../../../src/notifier/fanout.js";
 import { sendFormatted } from "../../../src/telegram/send.js";
 import { log } from "../../../src/util/log.js";
+import { t } from "../../../src/i18n/index.js";
 import { Bot } from "grammy";
 
 export const runtime = "nodejs";
@@ -37,7 +38,7 @@ export async function POST(req: Request): Promise<Response> {
     directory: dbUserDirectory(),
     now: new Date(),
     settingsFor: async (userId) => effectiveSettings(await settingsRepo.get(userId), e.OWNER_TZ),
-    pollUser: async (userId, chatId, timezone) => {
+    pollUser: async (userId, chatId, timezone, language) => {
       try {
         const auth = await authedGmailFor(userId, e);
         const gmail = googleGmailClient(auth);
@@ -46,9 +47,9 @@ export async function POST(req: Request): Promise<Response> {
         const ids = res.important.map(i => i.messageId);
         let brief: string | null = null;
         if (ids.length > 0) {
-          brief = await generateBrief(ids, { gmail, llm, timezone });
+          brief = await generateBrief(ids, { gmail, llm, timezone, language });
           if (!brief || brief.trim() === "") {
-            brief = `${ids.length} new important email(s):\n` +
+            brief = `${t(language, "poll_fallback_head", { n: ids.length })}\n` +
               res.important.map(i => `• ${i.subject || "(no subject)"} — ${i.from}`).join("\n");
           }
         }
@@ -59,7 +60,7 @@ export async function POST(req: Request): Promise<Response> {
         const hasImportant = res.important.length > 0;
         const trashed = res.guardedTrashed + res.plainTrashed;
         const archived = res.guardedArchived + res.plainArchived;
-        const message = composePollMessage(brief, { processed: res.processed, surfaced: res.important.length, trashed, archived, unruled: res.unruled });
+        const message = composePollMessage(brief, { processed: res.processed, surfaced: res.important.length, trashed, archived, unruled: res.unruled }, language);
         await sendFormatted(bot, chatId, message, { silent: !hasImportant });
         if (hasImportant) await dbConversationRepo().appendTurn(userId, { role: "brief", content: message });
         await res.commit();
@@ -68,7 +69,7 @@ export async function POST(req: Request): Promise<Response> {
         if (isInvalidGrant(err)) {
           log("poll.reconnect", { userId });
           const newlyFlagged = await dbGoogleAccountRepo().markNeedsReconnect(userId);
-          if (newlyFlagged) await sendFormatted(bot, chatId, reconnectNudgeText());
+          if (newlyFlagged) await sendFormatted(bot, chatId, reconnectNudgeText(undefined, language));
           return; // handled; do not advance the cursor (res.commit only runs on success above)
         }
         throw err; // let the fan-out isolate and count other errors

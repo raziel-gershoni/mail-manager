@@ -10,7 +10,7 @@ export interface FanoutDeps {
   directory: UserDirectory;
   now: Date;
   settingsFor: (userId: number) => Promise<EffectiveSettings>;
-  pollUser: (userId: number, chatId: number, timezone: string) => Promise<void>;
+  pollUser: (userId: number, chatId: number, timezone: string, language: EffectiveSettings["language"]) => Promise<void>;
 }
 
 export async function pollAllUsers(deps: FanoutDeps): Promise<{ polled: number; skipped: number; gated: number; errored: number }> {
@@ -22,7 +22,7 @@ export async function pollAllUsers(deps: FanoutDeps): Promise<{ polled: number; 
     if (!link) { skipped++; continue; }                                // no chat to deliver to
     const s = await deps.settingsFor(userId);
     if (s.paused || !isWithinDigestWindow(deps.now, s.timezone, s.digestStartHour, s.digestEndHour)) { gated++; continue; }
-    try { await deps.pollUser(userId, link.chatId, s.timezone); polled++; }
+    try { await deps.pollUser(userId, link.chatId, s.timezone, s.language); polled++; }
     catch (e) { errored++; console.error(`poll failed for user ${userId}`, e); }
   }
   return { polled, skipped, gated, errored };

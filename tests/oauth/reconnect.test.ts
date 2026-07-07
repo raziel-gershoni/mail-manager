@@ -32,6 +32,11 @@ describe("reconnectNudgeText", () => {
     expect(reconnectNudgeText("a@b.com")).toContain("a@b.com");
     expect(reconnectNudgeText()).not.toContain("(");
   });
+  it("renders in Hebrew when asked", () => {
+    const he = reconnectNudgeText("a@b.com", "he");
+    expect(he).toContain("a@b.com");
+    expect(he).toMatch(/ג'ימייל/);
+  });
 });
 
 describe("fakeOAuthStateRepo", () => {

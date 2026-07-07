@@ -1,4 +1,6 @@
 // Pure helpers + repo interfaces for token re-connect handling.
+import { t, type Lang } from "../i18n/index.js";
+
 export const OAUTH_STATE_TTL_MS = 15 * 60 * 1000;
 
 export function isInvalidGrant(error: unknown): boolean {
@@ -13,8 +15,8 @@ export function isStateFresh(createdAt: Date, now: Date, ttlMs: number = OAUTH_S
   return now.getTime() - createdAt.getTime() < ttlMs;
 }
 
-export function reconnectNudgeText(email?: string): string {
-  return `⚠️ I lost access to your Gmail${email ? ` (${email})` : ""}. Please reconnect it to keep getting briefs.`;
+export function reconnectNudgeText(email?: string, lang: Lang = "en"): string {
+  return t(lang, "reconnect_nudge", { email: email ? ` (${email})` : "" });
 }
 
 export interface OAuthStateRepo {

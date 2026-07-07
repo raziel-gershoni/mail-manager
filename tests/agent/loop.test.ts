@@ -81,6 +81,11 @@ describe("runAgentTurn", () => {
     const res = await runAgentTurn([{ role: "user", content: "audit rules" }], { llm, tools: readOnlyTools(), ctx: ctx() });
     expect(res.text).toMatch(/ran out of time|narrow it down/i); // safety-net message, not a thrown error
   });
+  it("returns the safety-net reply in the user's language (he)", async () => {
+    const llm = { agentStep: () => Promise.reject(new Error("504")) } as unknown as import("../../src/llm/provider.js").LLMProvider;
+    const res = await runAgentTurn([{ role: "user", content: "x" }], { llm, tools: readOnlyTools(), ctx: ctx(), language: "he" });
+    expect(res.text).toMatch(/נגמר לי הזמן/); // Hebrew safety-net
+  });
   it("emits structured logs for tool calls and the final", async () => {
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
     try {

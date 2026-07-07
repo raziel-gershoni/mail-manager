@@ -3,6 +3,7 @@ import type { LLMProvider } from "../llm/provider.js";
 import type { ToolDef, ToolContext } from "./tools.js";
 import { dispatchTool } from "./tools.js";
 import { log } from "../util/log.js";
+import { t, type Lang } from "../i18n/index.js";
 
 export const MAX_TOOL_ITERS = 10;
 // Wall-clock budgets keep a single turn under Vercel's 60s worker cap: stop *planning*
@@ -61,7 +62,7 @@ function summarize(result: unknown): unknown {
 
 export async function runAgentTurn(
   messages: AgentMessage[],
-  deps: { llm: LLMProvider; tools: ToolDef[]; ctx: ToolContext; maxIters?: number; budgetMs?: number },
+  deps: { llm: LLMProvider; tools: ToolDef[]; ctx: ToolContext; maxIters?: number; budgetMs?: number; language?: Lang },
 ): Promise<AgentResult> {
   const max = deps.maxIters ?? MAX_TOOL_ITERS;
   const budget = deps.budgetMs ?? AGENT_BUDGET_MS;
@@ -127,5 +128,5 @@ export async function runAgentTurn(
   } catch (e) {
     log("agent.forced_final_error", { error: e instanceof Error ? e.message : String(e) });
   }
-  return { text: "Sorry — I looked but ran out of time on that one. Could you narrow it down — e.g. give me the sender's email address?", toolNote: used.join(",") || "none" };
+  return { text: t(deps.language ?? "en", "safety_net"), toolNote: used.join(",") || "none" };
 }
