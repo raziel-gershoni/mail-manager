@@ -27,6 +27,7 @@ export const oauthStates = pgTable("oauth_states", {
   state: text("state").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  expiresAt: timestamp("expires_at"),   // null → fall back to createdAt + OAUTH_STATE_TTL_MS
 });
 
 export const userSettings = pgTable("user_settings", {

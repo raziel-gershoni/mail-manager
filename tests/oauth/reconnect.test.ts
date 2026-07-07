@@ -47,12 +47,20 @@ describe("fakeOAuthStateRepo", () => {
     expect(await repo.consume("s1", now)).toBe(7);
     expect(await repo.consume("s1", now)).toBeNull();           // already consumed
   });
-  it("consume returns null for an expired state (and still deletes it)", async () => {
+  it("consume returns null for an expired state via the createdAt TTL (and still deletes it)", async () => {
     const repo = fakeOAuthStateRepo();
-    await repo.create("s2", 7, new Date("2026-07-02T12:00:00Z"));
+    await repo.create("s2", 7, undefined, new Date("2026-07-02T12:00:00Z")); // no explicit expiry → createdAt TTL
     const late = new Date("2026-07-02T12:00:00Z").getTime() + OAUTH_STATE_TTL_MS + 1000;
     expect(await repo.consume("s2", new Date(late))).toBeNull();
     expect(await repo.consume("s2", new Date(late))).toBeNull(); // gone
+  });
+  it("honors an explicit expiresAt over the createdAt TTL", async () => {
+    const repo = fakeOAuthStateRepo();
+    const now = new Date("2026-07-07T10:00:00Z");
+    await repo.create("s3", 9, new Date(now.getTime() + 3_600_000)); // expires in 1h
+    expect(await repo.consume("s3", new Date(now.getTime() + 1_800_000))).toBe(9);   // 30m → fresh
+    await repo.create("s4", 9, new Date(now.getTime() + 3_600_000));
+    expect(await repo.consume("s4", new Date(now.getTime() + 3_700_000))).toBeNull(); // 62m → expired
   });
   it("consume returns null for an unknown state", async () => {
     expect(await fakeOAuthStateRepo().consume("nope", new Date())).toBeNull();

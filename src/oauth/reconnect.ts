@@ -2,6 +2,9 @@
 import { t, type Lang } from "../i18n/index.js";
 
 export const OAUTH_STATE_TTL_MS = 15 * 60 * 1000;
+// Provisioning consent links are sent out-of-band to a second user, so they get a
+// longer window than the reconnect flow's implicit 15-min createdAt TTL.
+export const PROVISION_STATE_TTL_MS = 60 * 60 * 1000;
 
 export function isInvalidGrant(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -20,7 +23,9 @@ export function reconnectNudgeText(email?: string, lang: Lang = "en"): string {
 }
 
 export interface OAuthStateRepo {
-  create(state: string, userId: number): Promise<void>;
+  // `expiresAt` (when set) is an absolute expiry; when omitted, freshness falls back
+  // to the implicit createdAt + OAUTH_STATE_TTL_MS (the reconnect flow).
+  create(state: string, userId: number, expiresAt?: Date): Promise<void>;
   consume(state: string, now: Date): Promise<number | null>; // one-time: deletes the row; returns userId only if fresh
 }
 
@@ -31,15 +36,16 @@ export interface GoogleAccountRepo {
   getStatus(userId: number): Promise<{ email: string; needsReconnect: boolean } | null>;
 }
 
-export function fakeOAuthStateRepo(): OAuthStateRepo & { create(state: string, userId: number, createdAt?: Date): Promise<void> } {
-  const rows = new Map<string, { userId: number; createdAt: Date }>();
+export function fakeOAuthStateRepo(): OAuthStateRepo & { create(state: string, userId: number, expiresAt?: Date, createdAt?: Date): Promise<void> } {
+  const rows = new Map<string, { userId: number; createdAt: Date; expiresAt?: Date }>();
   return {
-    async create(state: string, userId: number, createdAt: Date = new Date("2026-07-02T12:00:00Z")) { rows.set(state, { userId, createdAt }); },
+    async create(state: string, userId: number, expiresAt?: Date, createdAt: Date = new Date("2026-07-02T12:00:00Z")) { rows.set(state, { userId, createdAt, expiresAt }); },
     async consume(state, now) {
       const row = rows.get(state);
       rows.delete(state);                            // one-time use, deleted regardless of freshness
       if (!row) return null;
-      return isStateFresh(row.createdAt, now) ? row.userId : null;
+      const fresh = row.expiresAt ? now.getTime() < row.expiresAt.getTime() : isStateFresh(row.createdAt, now);
+      return fresh ? row.userId : null;
     },
   };
 }

@@ -23,6 +23,12 @@ export async function ensureBootstrapUser(): Promise<number> {
   return user?.id ?? (await db().insert(schema.users).values({}).returning())[0]!.id;
 }
 
+// Always creates a NEW user row (unlike ensureBootstrapUser, which reuses the first).
+// Used to provision a second user.
+export async function createUser(): Promise<number> {
+  return (await db().insert(schema.users).values({}).returning())[0]!.id;
+}
+
 export async function exchangeAndStore(env: Env, code: string, userId: number): Promise<{ email: string }> {
   const client = oauthClient(env);
   const { tokens } = await client.getToken(code);
