@@ -102,6 +102,11 @@ const en = {
   mini_provision_copied: "Copied ✓",
   mini_provision_bad_id: "Telegram user ID must be a whole number.",
   mini_provision_failed: "Couldn't create the link",
+  oauth_connected: "✅ Connected {email} — opening the bot…",
+  oauth_connected_manual: "✅ Connected {email}. Open Telegram and return to the bot.",
+  oauth_open_bot: "Open the bot",
+  oauth_expired: "⏳ This connect link has expired. Ask the owner to send you a new one.",
+  oauth_failed: "⚠️ Couldn't connect your Gmail. Ask the owner for a new link.",
 } as const;
 
 export type MsgKey = keyof typeof en;
@@ -206,5 +211,10 @@ export const messages: Record<"en" | "he", Record<MsgKey, string>> = {
     mini_provision_copied: "הועתק ✓",
     mini_provision_bad_id: "מזהה משתמש טלגרם חייב להיות מספר שלם.",
     mini_provision_failed: "לא ניתן ליצור את הקישור",
+    oauth_connected: "✅ חובר {email} — פותח את הבוט…",
+    oauth_connected_manual: "✅ חובר {email}. פתח/י את טלגרם וחזור/חזרי לבוט.",
+    oauth_open_bot: "פתח/י את הבוט",
+    oauth_expired: "⏳ קישור החיבור פג. בקש/י מהבעלים לשלוח קישור חדש.",
+    oauth_failed: "⚠️ לא ניתן לחבר את הג'ימייל. בקש/י מהבעלים קישור חדש.",
   },
 };
