@@ -66,6 +66,21 @@ describe("runAgentTurn", () => {
     const res = await runAgentTurn([{ role: "user", content: "x" }], { llm, tools: readOnlyTools(), ctx: ctx(), maxIters: 5, budgetMs: 30 });
     expect(res.text).toBe("best effort"); // budget (30ms) exhausted immediately → forced final answer, not the apology
   });
+  it("recovers when a planning call throws (e.g. Gemini 504): forces a final answer instead of propagating the error", async () => {
+    // The tool-planning call rejects (504); the tool-free forced-final call succeeds.
+    const llm = { agentStep: (_msgs: unknown, schemas: unknown[]) =>
+      Array.isArray(schemas) && schemas.length === 0
+        ? Promise.resolve({ kind: "final", text: "best effort after error" })
+        : Promise.reject(new Error("504 DEADLINE_EXCEEDED")) } as unknown as import("../../src/llm/provider.js").LLMProvider;
+    const res = await runAgentTurn([{ role: "user", content: "audit rules" }], { llm, tools: readOnlyTools(), ctx: ctx() });
+    expect(res.text).toBe("best effort after error"); // did NOT throw; fell through to the forced final
+  });
+  it("never throws to the caller when EVERY model call errors: returns the safety-net reply", async () => {
+    // Persistent 504 on both the planning call and the forced-final → the owner still gets a message.
+    const llm = { agentStep: () => Promise.reject(new Error("504 DEADLINE_EXCEEDED")) } as unknown as import("../../src/llm/provider.js").LLMProvider;
+    const res = await runAgentTurn([{ role: "user", content: "audit rules" }], { llm, tools: readOnlyTools(), ctx: ctx() });
+    expect(res.text).toMatch(/ran out of time|narrow it down/i); // safety-net message, not a thrown error
+  });
   it("emits structured logs for tool calls and the final", async () => {
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
     try {

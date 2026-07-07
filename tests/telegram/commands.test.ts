@@ -40,6 +40,9 @@ describe("handleMessage /start and /help", () => {
     expect(await handleMessage("  /START@MyMailBot  ", deps())).toBe(INTRO);
   });
   it("a normal message still goes to the agent (LLM invoked)", async () => {
-    await expect(handleMessage("what's new?", deps())).rejects.toThrow(/should NOT be called/);
+    // The agent IS reached (agentStep throws) — but the loop now catches model errors and
+    // returns the safety-net reply instead of propagating, so the owner always gets an answer.
+    // Getting this message (not INTRO) proves the agent path was taken.
+    expect(await handleMessage("what's new?", deps())).toMatch(/ran out of time|narrow it down/i);
   });
 });

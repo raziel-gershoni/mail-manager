@@ -16,6 +16,10 @@ export interface AgentResult { text: string; toolNote: string; }
 const TIMED_OUT = Symbol("timeout");
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | typeof TIMED_OUT> {
   // The underlying promise keeps running if the timeout wins; we just stop awaiting it.
+  // Swallow its eventual settlement so an abandoned (timed-out) call that later rejects
+  // — e.g. a Gemini 504 arriving after we've already moved on — doesn't surface as an
+  // unhandled promise rejection. (Attaching this handler doesn't affect the race below.)
+  p.catch(() => {});
   return Promise.race([p, new Promise<typeof TIMED_OUT>(r => setTimeout(() => r(TIMED_OUT), ms))]);
 }
 
@@ -70,7 +74,18 @@ export async function runAgentTurn(
     const remaining = budget - (Date.now() - start);
     if (remaining < 3000) { stop = "budget"; break; }
     const stepStart = Date.now();
-    const step = await withTimeout(deps.llm.agentStep(convo, schemas), remaining);
+    let step: Awaited<ReturnType<typeof deps.llm.agentStep>> | typeof TIMED_OUT;
+    try {
+      step = await withTimeout(deps.llm.agentStep(convo, schemas), remaining);
+    } catch (err) {
+      // The model call REJECTED (e.g. Gemini 504 DEADLINE_EXCEEDED on a heavy turn).
+      // withTimeout only converts the *timeout* branch into a sentinel — a thrown
+      // rejection would otherwise escape the loop, skip the forced-final safety net,
+      // and leave the owner with no reply at all (worker throws → silent QStash retry).
+      // Fall through to the forced-final path so the owner ALWAYS gets an answer.
+      log("agent.step_error", { iter: i, ms: Date.now() - stepStart, error: err instanceof Error ? err.message : String(err) });
+      stop = "error"; break;
+    }
     const stepMs = Date.now() - stepStart;
     if (step === TIMED_OUT) { log("agent.step_timeout", { iter: i, ms: stepMs }); stop = "budget"; break; }
     if (step.kind === "final") {
