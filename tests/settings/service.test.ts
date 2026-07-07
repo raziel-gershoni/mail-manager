@@ -60,6 +60,10 @@ describe("buildSettingsView", () => {
     ]);
     expect(view.paused).toBe(false);
   });
+  it("carries language into the view so the client can localize", () => {
+    const usage = { totalTokens: 0, systemTokens: 0, summaryTokens: 0, windowTokens: 0, windowTurns: 0, compactAtTokens: 40000 };
+    expect(buildSettingsView({ ...eff, language: "he" }, null, [], usage).language).toBe("he");
+  });
   it("reports disconnected when there is no account", () => {
     const usage = { totalTokens: 0, systemTokens: 0, summaryTokens: 0, windowTokens: 0, windowTurns: 0, compactAtTokens: 40000 };
     expect(buildSettingsView(eff, null, [], usage).gmail).toEqual({ email: null, connected: false, needsReconnect: false });

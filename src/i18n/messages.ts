@@ -89,6 +89,8 @@ const en = {
   mini_recent_turns: "Recent turns",
   mini_clear_conversation: "Clear conversation",
   mini_clear_conversation_desc: "Wipes chat history only — rules and settings are kept.",
+  mini_tokens: "tokens",
+  mini_context_note: "Rough estimate (excludes tool definitions). Older turns fold into the summary once the recent turns pass ~{n} tokens.",
 } as const;
 
 export type MsgKey = keyof typeof en;
@@ -180,5 +182,7 @@ export const messages: Record<"en" | "he", Record<MsgKey, string>> = {
     mini_recent_turns: "תורות אחרונים",
     mini_clear_conversation: "נקה שיחה",
     mini_clear_conversation_desc: "מוחק רק את היסטוריית הצ'אט — הכללים וההגדרות נשמרים.",
+    mini_tokens: "טוקנים",
+    mini_context_note: "הערכה גסה (לא כולל הגדרות כלים). תורות ישנים מתקפלים לתוך הסיכום כשהתורות האחרונים עוברים ~{n} טוקנים.",
   },
 };
