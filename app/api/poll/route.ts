@@ -15,6 +15,8 @@ import { effectiveSettings } from "../../../src/settings/settings.js";
 import { runPoll } from "../../../src/notifier/poll.js";
 import { activityItemsFrom } from "../../../src/notifier/activity.js";
 import { dbActivityRepo } from "../../../src/db/activity-adapter.js";
+import { buildDigestRefs } from "../../../src/notifier/refs.js";
+import { dbDigestRefRepo } from "../../../src/db/refs-adapter.js";
 import { generateBrief, composePollMessage } from "../../../src/notifier/brief.js";
 import { pollAllUsers } from "../../../src/notifier/fanout.js";
 import { sendFormatted } from "../../../src/telegram/send.js";
@@ -63,17 +65,24 @@ export async function POST(req: Request): Promise<Response> {
         const trashed = res.guardedTrashed + res.plainTrashed;
         const archived = res.guardedArchived + res.plainArchived;
         const message = composePollMessage(brief, { processed: res.processed, surfaced: res.important.length, trashed, archived, unruled: res.unruled }, language);
-        await sendFormatted(bot, chatId, message, { silent: !hasImportant });
+        const sentId = await sendFormatted(bot, chatId, message, { silent: !hasImportant });
         // Only genuinely-important briefs are stored in the conversation context.
         // Routine activity is NOT auto-stored — it goes to the activity log instead
         // (queryable on demand via the recent_activity tool), keeping context lean.
         if (hasImportant) await dbConversationRepo().appendTurn(userId, { role: "brief", content: message });
         await res.commit();
-        // Record what this cycle did to the activity log (side table, not context) so the
-        // owner can pull it up on demand via recent_activity. Runs after a successful send
-        // + commit so a retried cycle doesn't double-log.
-        const activityItems = activityItemsFrom(res.acted, res.unruled);
-        if (activityItems.length > 0) await dbActivityRepo().record(userId, activityItems);
+        // Best-effort side records AFTER a successful send + commit: the activity feed
+        // (queryable via recent_activity) and the digest↔email ref coupling (so a reply
+        // resolves to exact ids). The digest is already delivered, so a failure here must
+        // NOT fail the cycle (which would mark it errored) — log and move on.
+        try {
+          const activityItems = activityItemsFrom(res.acted, res.unruled);
+          if (activityItems.length > 0) await dbActivityRepo().record(userId, activityItems);
+          const refs = buildDigestRefs(res.important, res.acted);
+          if (typeof sentId === "number" && refs.length > 0) await dbDigestRefRepo().save(userId, sentId, refs);
+        } catch (err) {
+          log("poll.side_record_failed", { userId, error: err instanceof Error ? err.message : String(err) });
+        }
         log("poll.brief", { userId, important: ids.length, processed: res.processed, guardedTrashed: res.guardedTrashed, guardedArchived: res.guardedArchived, plainTrashed: res.plainTrashed, plainArchived: res.plainArchived });
       } catch (err) {
         if (isInvalidGrant(err)) {

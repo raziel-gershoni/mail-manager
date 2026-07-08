@@ -7,7 +7,7 @@ import { inMemoryStore } from "../../src/memory/store.js";
 import { fakeProposalRepo, fakeActionLogRepo } from "../../src/cleanup/proposals.js";
 import type { LLMProvider } from "../../src/llm/provider.js";
 
-function build(replyContext?: string) {
+function build(over: Partial<SecretaryDeps> = {}) {
   const seen: unknown[][] = [];
   const convo = fakeConversationRepo();
   const llm: LLMProvider = {
@@ -19,14 +19,14 @@ function build(replyContext?: string) {
   const deps: SecretaryDeps = {
     userId: 1, gmail: fakeGmailClient({ historyId: "1", addedSince: {}, messages: {} }),
     memory: inMemoryStore(), llm, convo, proposals: fakeProposalRepo(), actionLog: fakeActionLogRepo(),
-    tools: readOnlyTools(), replyContext,
+    tools: readOnlyTools(), ...over,
   };
   return { deps, seen, convo };
 }
 
 describe("handleMessage reply-to injection", () => {
   it("injects the replied-to message into the LLM turn but stores only the user's own text", async () => {
-    const { deps, seen, convo } = build("📬 1 new · nothing important · trashed 1");
+    const { deps, seen, convo } = build({ replyContext: "📬 1 new · nothing important · trashed 1" });
     await handleMessage("what was that one?", deps);
 
     const joined = JSON.stringify(seen[0]);
@@ -39,11 +39,27 @@ describe("handleMessage reply-to injection", () => {
     expect(userTurn?.content).toBe("what was that one?");
   });
 
-  it("without a replyContext, nothing extra is injected", async () => {
+  it("without a reply, the user message is passed through with no injected context block", async () => {
     const { deps, seen } = build();
     await handleMessage("hello", deps);
+    const msgs = seen[0] as Array<{ role: string; content: string }>;
+    const userMsg = msgs.find(m => m.role === "user");
+    expect(userMsg?.content).toBe("hello"); // exactly the text — no reply preface prepended
+  });
+
+  it("injects the EXACT Gmail ids when the replied-to digest was coupled (replyRefs win over text)", async () => {
+    const { deps, seen } = build({
+      replyContext: "📬 2 new · nothing important · trashed 2", // fuzzy text also present
+      replyRefs: [
+        { id: "j1", from: "promo@shop.com", subject: "50% off", kind: "trashed" },
+        { id: "j2", from: "news@list.com", subject: "weekly", kind: "trashed" },
+      ],
+    });
+    await handleMessage("undo the shop one", deps);
     const joined = JSON.stringify(seen[0]);
-    expect(joined).toContain("hello");
-    expect(joined).not.toContain("replying to");
+    expect(joined).toContain("id=j1");            // exact ids injected
+    expect(joined).toContain("id=j2");
+    expect(joined).toContain("do NOT guess");     // precise-mode instruction
+    expect(joined).not.toContain('"""');          // used refs, not the untrusted-text fallback
   });
 });

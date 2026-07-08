@@ -172,7 +172,7 @@ describe("runPoll", () => {
     // junk trashed, keeper untouched
     expect(d.gmail.trashedIds!()).toEqual(["gjunk"]);
     expect(r.guardedTrashed).toBe(1);
-    expect(r.acted).toEqual([{ from: "promo@shop.com", subject: "50% off", action: "trashed" }]); // itemized for a replyable digest
+    expect(r.acted).toEqual([{ id: "gjunk", from: "promo@shop.com", subject: "50% off", action: "trashed" }]); // itemized (with id) for a replyable digest
     expect(order).toEqual(["log", "trash"]); // action-log recorded BEFORE the trash
 
     // undo covers exactly the trashed message
@@ -247,7 +247,7 @@ describe("runPoll", () => {
 
     expect(d.gmail.trashedIds!()).toEqual(["p1"]);       // trashed despite an "important"-reading body → no body read
     expect(r.plainTrashed).toBe(1);
-    expect(r.acted).toEqual([{ from: "promo@shop.com", subject: "sale", action: "trashed" }]);
+    expect(r.acted).toEqual([{ id: "p1", from: "promo@shop.com", subject: "sale", action: "trashed" }]);
     expect(r.guardedTrashed).toBe(0);                     // this was NOT the guarded path
     expect(order).toEqual(["log", "trash"]);             // undo recorded before the mutation
     expect(await d.actionLog.lastUndoable(1)).toMatchObject({ action: "trash", messageIds: ["p1"] });

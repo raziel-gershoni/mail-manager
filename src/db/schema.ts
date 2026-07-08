@@ -99,6 +99,16 @@ export const processedUpdates = pgTable("processed_updates", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Couples a sent digest (Telegram message id) to the exact Gmail messages it was
+// about, so a reply to that digest resolves to precise ids (no LLM guessing).
+export const messageRefs = pgTable("message_refs", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  telegramMessageId: bigint("telegram_message_id", { mode: "number" }).notNull(),
+  refs: jsonb("refs").$type<{ id: string; from: string; subject: string; kind: string }[]>().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => ({ msgUx: uniqueIndex("message_refs_user_msg_ux").on(t.userId, t.telegramMessageId) }));
+
 // Human-readable feed of what the poll did each cycle (auto-trash/archive, flagged
 // sender). Distinct from action_log (which is undo bookkeeping keyed on messageIds).
 export const pollActivity = pgTable("poll_activity", {

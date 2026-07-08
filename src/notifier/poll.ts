@@ -14,7 +14,7 @@ export interface DigestItem { messageId: string; from: string; subject: string; 
 // Itemized trashed/archived this cycle (sender + subject) — recorded to the
 // activity log so the owner can later ask "what was that one?" on demand, without
 // anything being auto-injected into the conversation context.
-export interface ActedItem { from: string; subject: string; action: "trashed" | "archived"; }
+export interface ActedItem { id: string; from: string; subject: string; action: "trashed" | "archived"; }
 
 // Per-cycle ceiling on guarded body-reads. A backstop against a flood from one
 // guarded sender blowing the 60s poll budget; overflow is kept + surfaced (never
@@ -113,7 +113,7 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
       if (verb === "trash") guardedTrashed += g.act.length; else guardedArchived += g.act.length;
       for (const id of g.act) {
         const m = metaById.get(id);
-        if (m) acted.push({ from: m.from, subject: m.subject, action: verb === "trash" ? "trashed" : "archived" });
+        if (m) acted.push({ id: m.id, from: m.from, subject: m.subject, action: verb === "trash" ? "trashed" : "archived" });
         log("poll.guarded", { userId: deps.userId, ...(m ? logMeta(m) : { id }), action: verb === "trash" ? "trashed" : "archived" });
       }
     }
@@ -146,7 +146,7 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
     actedToCommit.push(...actIds);
     if (verb === "trash") plainTrashed += actIds.length; else plainArchived += actIds.length;
     for (const m of group) {
-      acted.push({ from: m.from, subject: m.subject, action: verb === "trash" ? "trashed" : "archived" });
+      acted.push({ id: m.id, from: m.from, subject: m.subject, action: verb === "trash" ? "trashed" : "archived" });
       log("poll.acted", { userId: deps.userId, ...logMeta(m), rule: verb, action: verb === "trash" ? "trashed" : "archived" });
     }
   }

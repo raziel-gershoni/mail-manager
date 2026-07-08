@@ -10,6 +10,7 @@ import { readOnlyTools } from "../../../src/agent/tools.js";
 import { trashTools } from "../../../src/cleanup/tools.js";
 import { dbProposalRepo, dbActionLogRepo } from "../../../src/db/cleanup-adapters.js";
 import { dbActivityRepo } from "../../../src/db/activity-adapter.js";
+import { dbDigestRefRepo } from "../../../src/db/refs-adapter.js";
 import { handleMessage } from "../../../src/telegram/bot.js";
 import { sendFormatted } from "../../../src/telegram/send.js";
 import { resolveUserForTelegram } from "../../../src/users/identity.js";
@@ -34,7 +35,9 @@ export async function POST(req: Request): Promise<Response> {
   const chatId = update?.message?.chat?.id;
   const text = update?.message?.text;
   const updateId = update?.update_id;
-  // If the owner replied to a message, pull its text in as context for this turn.
+  // If the owner replied to a message, pull it in as context for this turn — the
+  // replied-to message's id (to resolve exact Gmail refs) and its text (fallback).
+  const replyToMsgId = update?.message?.reply_to_message?.message_id;
   const replyToText = update?.message?.reply_to_message?.text;
   const replyContext = typeof replyToText === "string" ? replyToText.slice(0, 2000) : undefined;
   if (typeof fromId !== "number" || typeof text !== "string" || typeof chatId !== "number") {
@@ -66,11 +69,15 @@ export async function POST(req: Request): Promise<Response> {
       throw err;
     }
     const store = await dbMemoryStore(userId);
+    // Resolve the exact Gmail messages a replied-to digest was about (if we coupled it).
+    const replyRefs = typeof replyToMsgId === "number"
+      ? (await dbDigestRefRepo().lookup(userId, replyToMsgId)) ?? undefined
+      : undefined;
     const reply = await handleMessage(text, {
       userId, gmail: googleGmailClient(auth), memory: store,
       llm: geminiProvider(e.GEMINI_API_KEY), convo: dbConversationRepo(),
       proposals: dbProposalRepo(), actionLog: dbActionLogRepo(),
-      tools: [...readOnlyTools(), ...trashTools()], timezone: settings.timezone, language: settings.language, replyContext,
+      tools: [...readOnlyTools(), ...trashTools()], timezone: settings.timezone, language: settings.language, replyContext, replyRefs,
       activity: dbActivityRepo(),
     });
     await store.flush();
