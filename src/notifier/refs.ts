@@ -9,16 +9,19 @@ export interface DigestRefRepo {
   lookup(userId: number, telegramMessageId: number): Promise<DigestRef[] | null>;
 }
 
-// Build the ref list for one digest: the important messages it surfaced plus the
-// messages it acted on (trashed/archived), each with its Gmail id.
+// Build the ref list for one digest, ordered to match the digest's top-to-bottom
+// layout: the surfaced-important messages (shown first, in the brief), then the
+// trashed ones, then the archived ones (matching the "· trashed X · archived Y"
+// summary line). Within each group, the poll's processing order is preserved.
 export function buildDigestRefs(
   important: ReadonlyArray<{ messageId: string; from: string; subject: string }>,
   acted: ReadonlyArray<{ id: string; from: string; subject: string; action: string }>,
 ): DigestRef[] {
-  return [
-    ...important.map(i => ({ id: i.messageId, from: i.from, subject: i.subject, kind: "surfaced" })),
-    ...acted.map(a => ({ id: a.id, from: a.from, subject: a.subject, kind: a.action })),
-  ];
+  const surfaced = important.map(i => ({ id: i.messageId, from: i.from, subject: i.subject, kind: "surfaced" }));
+  const actedRefs = acted.map(a => ({ id: a.id, from: a.from, subject: a.subject, kind: a.action }));
+  const trashed = actedRefs.filter(r => r.kind === "trashed");
+  const archived = actedRefs.filter(r => r.kind === "archived");
+  return [...surfaced, ...trashed, ...archived];
 }
 
 export function fakeDigestRefRepo(): DigestRefRepo {
