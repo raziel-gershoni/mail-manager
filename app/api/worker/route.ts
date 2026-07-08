@@ -9,6 +9,7 @@ import { dbConversationRepo } from "../../../src/db/conversation-adapter.js";
 import { readOnlyTools } from "../../../src/agent/tools.js";
 import { trashTools } from "../../../src/cleanup/tools.js";
 import { dbProposalRepo, dbActionLogRepo } from "../../../src/db/cleanup-adapters.js";
+import { dbActivityRepo } from "../../../src/db/activity-adapter.js";
 import { handleMessage } from "../../../src/telegram/bot.js";
 import { sendFormatted } from "../../../src/telegram/send.js";
 import { resolveUserForTelegram } from "../../../src/users/identity.js";
@@ -70,6 +71,7 @@ export async function POST(req: Request): Promise<Response> {
       llm: geminiProvider(e.GEMINI_API_KEY), convo: dbConversationRepo(),
       proposals: dbProposalRepo(), actionLog: dbActionLogRepo(),
       tools: [...readOnlyTools(), ...trashTools()], timezone: settings.timezone, language: settings.language, replyContext,
+      activity: dbActivityRepo(),
     });
     await store.flush();
     log("worker.reply", { updateId, userId, replyLen: reply.length, reply: logPreview(reply, 1200) });

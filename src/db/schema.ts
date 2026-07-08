@@ -99,6 +99,17 @@ export const processedUpdates = pgTable("processed_updates", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Human-readable feed of what the poll did each cycle (auto-trash/archive, flagged
+// sender). Distinct from action_log (which is undo bookkeeping keyed on messageIds).
+export const pollActivity = pgTable("poll_activity", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  action: text("action").notNull(),                    // 'trashed' | 'archived' | 'flagged'
+  fromAddr: text("from_addr").notNull().default(""),
+  subject: text("subject").notNull().default(""),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const actionLog = pgTable("action_log", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id),

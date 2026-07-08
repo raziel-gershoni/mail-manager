@@ -13,6 +13,8 @@ import { dbTelegramLinkRepo, dbUserDirectory } from "../../../src/db/user-adapte
 import { dbSettingsRepo } from "../../../src/db/settings-adapter.js";
 import { effectiveSettings } from "../../../src/settings/settings.js";
 import { runPoll } from "../../../src/notifier/poll.js";
+import { activityItemsFrom } from "../../../src/notifier/activity.js";
+import { dbActivityRepo } from "../../../src/db/activity-adapter.js";
 import { generateBrief, composePollMessage } from "../../../src/notifier/brief.js";
 import { pollAllUsers } from "../../../src/notifier/fanout.js";
 import { sendFormatted } from "../../../src/telegram/send.js";
@@ -67,6 +69,11 @@ export async function POST(req: Request): Promise<Response> {
         // (queryable on demand via the recent_activity tool), keeping context lean.
         if (hasImportant) await dbConversationRepo().appendTurn(userId, { role: "brief", content: message });
         await res.commit();
+        // Record what this cycle did to the activity log (side table, not context) so the
+        // owner can pull it up on demand via recent_activity. Runs after a successful send
+        // + commit so a retried cycle doesn't double-log.
+        const activityItems = activityItemsFrom(res.acted, res.unruled);
+        if (activityItems.length > 0) await dbActivityRepo().record(userId, activityItems);
         log("poll.brief", { userId, important: ids.length, processed: res.processed, guardedTrashed: res.guardedTrashed, guardedArchived: res.guardedArchived, plainTrashed: res.plainTrashed, plainArchived: res.plainArchived });
       } catch (err) {
         if (isInvalidGrant(err)) {

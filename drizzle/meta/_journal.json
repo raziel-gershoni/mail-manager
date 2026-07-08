@@ -71,6 +71,13 @@
       "when": 1783428899355,
       "tag": "0009_yummy_polaris",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1783501166607,
+      "tag": "0010_cool_patch",
+      "breakpoints": true
     }
   ]
 }

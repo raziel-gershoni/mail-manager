@@ -4,6 +4,7 @@ import { GMAIL_FETCH_CONCURRENCY } from "../gmail/client.js";
 import type { MemoryStore, Verdict } from "../memory/store.js";
 import type { ToolSchema, LLMProvider } from "../llm/provider.js";
 import type { ProposalRepo, ActionLogRepo } from "../cleanup/proposals.js";
+import type { ActivityRepo } from "../notifier/activity.js";
 import { mapLimit } from "../util/concurrency.js";
 
 export interface ToolContext {
@@ -13,6 +14,7 @@ export interface ToolContext {
   proposals?: ProposalRepo;
   actionLog?: ActionLogRepo;
   llm?: LLMProvider;
+  activity?: ActivityRepo;
 }
 export interface ToolDef { schema: ToolSchema; mutating: boolean; run(args: Record<string, unknown>, ctx: ToolContext): Promise<unknown>; }
 
@@ -64,6 +66,17 @@ export function readOnlyTools(): ToolDef[] {
       mutating: false,
       schema: { name: "list_memories", description: "List the learned preference rules. Each rule includes its scope (sender/domain), matchValue (the address or domain it matches), verdict, and action (trash/archive/none) — use these to audit or double-check rules.", parameters: { type: "object", properties: {} } },
       async run(_args, ctx) { return ctx.memory.list().map(r => ({ slug: r.slug, scope: r.scope, matchValue: r.matchValue, verdict: r.verdict, action: r.action, description: r.description })); },
+    },
+    {
+      mutating: false,
+      schema: { name: "recent_activity", description: "List what the ~30-min background poll recently DID for the owner — messages it auto-trashed or auto-archived (with sender + subject) and new un-ruled senders it flagged — newest first, with timestamps. Routine poll activity is NOT in the conversation, so use THIS to answer 'what did you do?' / 'what was that one you trashed?' when the owner asks about a report or digest.",
+        parameters: { type: "object", properties: { limit: { type: "number" } } } },
+      async run(args, ctx) {
+        if (!ctx.activity) return { items: [] };
+        const limit = Math.min(Math.max(1, Number(args.limit ?? 30) || 30), 100);
+        const items = await ctx.activity.recent(ctx.userId, limit);
+        return { items: items.map(i => ({ action: i.action, from: i.from, subject: i.subject, at: i.at.toISOString() })) };
+      },
     },
     {
       mutating: true,
