@@ -12,7 +12,7 @@ import { dbConversationRepo } from "../../../src/db/conversation-adapter.js";
 import { dbTelegramLinkRepo, dbUserDirectory } from "../../../src/db/user-adapters.js";
 import { dbSettingsRepo } from "../../../src/db/settings-adapter.js";
 import { effectiveSettings } from "../../../src/settings/settings.js";
-import { runPoll, shouldStoreDigest, digestTurnContent } from "../../../src/notifier/poll.js";
+import { runPoll } from "../../../src/notifier/poll.js";
 import { generateBrief, composePollMessage } from "../../../src/notifier/brief.js";
 import { pollAllUsers } from "../../../src/notifier/fanout.js";
 import { sendFormatted } from "../../../src/telegram/send.js";
@@ -62,12 +62,10 @@ export async function POST(req: Request): Promise<Response> {
         const archived = res.guardedArchived + res.plainArchived;
         const message = composePollMessage(brief, { processed: res.processed, surfaced: res.important.length, trashed, archived, unruled: res.unruled }, language);
         await sendFormatted(bot, chatId, message, { silent: !hasImportant });
-        // Store the digest to the conversation when the cycle did something the owner
-        // might reply about (important mail, an action, or a new un-ruled sender) — with
-        // an itemized appendix so "what was that one?" is answerable. Heartbeats aren't stored.
-        if (shouldStoreDigest(hasImportant, res.acted.length, res.unruled.length)) {
-          await dbConversationRepo().appendTurn(userId, { role: "brief", content: digestTurnContent(message, res.acted) });
-        }
+        // Only genuinely-important briefs are stored in the conversation context.
+        // Routine activity is NOT auto-stored — it goes to the activity log instead
+        // (queryable on demand via the recent_activity tool), keeping context lean.
+        if (hasImportant) await dbConversationRepo().appendTurn(userId, { role: "brief", content: message });
         await res.commit();
         log("poll.brief", { userId, important: ids.length, processed: res.processed, guardedTrashed: res.guardedTrashed, guardedArchived: res.guardedArchived, plainTrashed: res.plainTrashed, plainArchived: res.plainArchived });
       } catch (err) {

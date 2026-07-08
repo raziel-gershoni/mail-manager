@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { runPoll, shouldStoreDigest, digestTurnContent } from "../../src/notifier/poll.js";
+import { runPoll } from "../../src/notifier/poll.js";
 import { fakeGmailClient } from "../../src/gmail/client.js";
 import { inMemoryStore } from "../../src/memory/store.js";
 import { fakeLLM } from "../../src/llm/provider.js";
@@ -281,30 +281,5 @@ describe("runPoll", () => {
     expect(r.guardedTrashed).toBe(1);
     expect(r.important.map(i => i.messageId).sort()).toEqual(["gkeep", "jane"]);
     expect(r.important.find(i => i.messageId === "gkeep")?.reason).toMatch(/overflow/i);
-  });
-});
-
-describe("shouldStoreDigest", () => {
-  it("stores when there's important mail, an action, or a new un-ruled sender", () => {
-    expect(shouldStoreDigest(true, 0, 0)).toBe(true);   // important
-    expect(shouldStoreDigest(false, 1, 0)).toBe(true);  // trashed/archived 1 → "what was that one?"
-    expect(shouldStoreDigest(false, 0, 1)).toBe(true);  // new un-ruled sender → "what are those?"
-  });
-  it("does NOT store a pure heartbeat / all-quiet check", () => {
-    expect(shouldStoreDigest(false, 0, 0)).toBe(false);
-  });
-});
-
-describe("digestTurnContent", () => {
-  it("returns the message unchanged when nothing was acted on", () => {
-    expect(digestTurnContent("📬 3 new · nothing important", [])).toBe("📬 3 new · nothing important");
-  });
-  it("appends an itemized detail line so a later 'what was that one?' is answerable", () => {
-    const c = digestTurnContent("📬 1 new · nothing important · trashed 1", [{ from: "promo@shop.com", subject: "50% off", action: "trashed" }]);
-    expect(c).toContain("📬 1 new · nothing important · trashed 1");
-    expect(c).toContain('trashed: "50% off" — promo@shop.com');
-  });
-  it("handles a missing subject", () => {
-    expect(digestTurnContent("x", [{ from: "a@b.com", subject: "", action: "archived" }])).toContain('archived: "(no subject)" — a@b.com');
   });
 });

@@ -11,25 +11,10 @@ import { isNotFound } from "../gmail/errors.js";
 import { log, logMeta } from "../util/log.js";
 
 export interface DigestItem { messageId: string; from: string; subject: string; reason: string; }
+// Itemized trashed/archived this cycle (sender + subject) — recorded to the
+// activity log so the owner can later ask "what was that one?" on demand, without
+// anything being auto-injected into the conversation context.
 export interface ActedItem { from: string; subject: string; action: "trashed" | "archived"; }
-
-// Store a digest turn in the conversation when the cycle produced something the
-// owner might reply about — important mail, an action taken (trash/archive), or a
-// new un-ruled sender. Pure heartbeats / all-quiet checks are NOT stored, so the
-// context isn't bloated by routine reports.
-export function shouldStoreDigest(hasImportant: boolean, actedCount: number, unruledCount: number): boolean {
-  return hasImportant || actedCount > 0 || unruledCount > 0;
-}
-
-// The conversation-turn content for a stored digest: the user-facing message plus a
-// compact, LLM-facing appendix naming what was acted on (sender + subject), so a
-// later "what was that one?" can be answered. The appendix is context-only — the
-// owner already saw the terse Telegram message.
-export function digestTurnContent(message: string, acted: ActedItem[]): string {
-  if (acted.length === 0) return message;
-  const details = acted.map(a => `${a.action}: "${a.subject || "(no subject)"}" — ${a.from}`).join("; ");
-  return `${message}\n[this check — ${details}]`;
-}
 
 // Per-cycle ceiling on guarded body-reads. A backstop against a flood from one
 // guarded sender blowing the 60s poll budget; overflow is kept + surfaced (never
