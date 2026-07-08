@@ -35,7 +35,9 @@ export interface GmailClient {
   readFull(id: string): Promise<{ meta: EmailMeta; bodyText: string }>;
   trash(ids: string[]): Promise<void>;
   untrash(ids: string[]): Promise<void>;
+  restore(ids: string[]): Promise<void>; // un-trash AND return to the inbox (removes TRASH, adds INBOX)
   trashedIds?(): string[]; // test-only introspection (implemented on the fake)
+  restoredIds?(): string[]; // test-only introspection (fake)
   archive(ids: string[]): Promise<void>;
   unarchive(ids: string[]): Promise<void>;
   archivedIds?(): string[]; // test-only introspection (fake)
@@ -97,6 +99,12 @@ export function googleGmailClient(auth: OAuth2Client): GmailClient {
       if (ids.length === 0) return;
       await gmail.users.messages.batchModify({ userId: "me", requestBody: { ids, removeLabelIds: ["TRASH"] } });
     },
+    async restore(ids) {
+      // Un-trash AND ensure it lands in the inbox (works even for mail Gmail's own
+      // trash had removed from the inbox), so "un-trash them" reliably returns mail.
+      if (ids.length === 0) return;
+      await gmail.users.messages.batchModify({ userId: "me", requestBody: { ids, removeLabelIds: ["TRASH"], addLabelIds: ["INBOX"] } });
+    },
     async archive(ids) {
       if (ids.length === 0) return;
       await gmail.users.messages.batchModify({ userId: "me", requestBody: { ids, removeLabelIds: ["INBOX"] } });
@@ -118,6 +126,7 @@ export function fakeGmailClient(opts: {
 }): GmailClient {
   const trashed = new Set<string>();
   const archivedFromInbox = new Set<string>();
+  const restored = new Set<string>();
   const c: GmailClient = {
     async currentHistoryId() { return opts.historyId; },
     async listAddedMessageIds(start) { return opts.addedSince[start] ?? []; },
@@ -140,7 +149,9 @@ export function fakeGmailClient(opts: {
     },
     async trash(ids) { for (const id of ids) trashed.add(id); },
     async untrash(ids) { for (const id of ids) trashed.delete(id); },
+    async restore(ids) { for (const id of ids) { trashed.delete(id); archivedFromInbox.delete(id); restored.add(id); } },
     trashedIds() { return [...trashed]; },
+    restoredIds() { return [...restored]; },
     async archive(ids) { for (const id of ids) archivedFromInbox.add(id); },
     async unarchive(ids) { for (const id of ids) archivedFromInbox.delete(id); },
     archivedIds() { return [...archivedFromInbox]; },

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { archiveMessagesTool, trashMessagesTool } from "../../src/cleanup/tools.js";
+import { archiveMessagesTool, trashMessagesTool, restoreMessagesTool } from "../../src/cleanup/tools.js";
 import { fakeActionLogRepo, fakeProposalRepo } from "../../src/cleanup/proposals.js";
 import { fakeGmailClient } from "../../src/gmail/client.js";
 
@@ -23,9 +23,17 @@ describe("direct action tools", () => {
     expect(gmail.archivedIds!()).toEqual(["m3"]);
     expect((await log.lastUndoable(1))!.action).toBe("archive");
   });
-  it("empty ids is a no-op error", async () => {
+  it("restore_messages un-trashes named ids and returns them to the inbox", async () => {
     const gmail = fakeGmailClient(gmailOpts);
-    const res = await trashMessagesTool().run({ ids: [] }, ctxWith(gmail, fakeActionLogRepo())) as any;
-    expect(res.ok).toBe(false);
+    await gmail.trash(["m4", "m5"]);
+    const res = await restoreMessagesTool().run({ ids: ["m4", "m5"], reason: "job offers" }, ctxWith(gmail, fakeActionLogRepo())) as any;
+    expect(res.ok).toBe(true); expect(res.restored).toBe(2);
+    expect(gmail.trashedIds!()).toEqual([]);             // no longer trashed
+    expect(gmail.restoredIds!().sort()).toEqual(["m4", "m5"]);
+  });
+  it("empty ids is a no-op error (trash + restore)", async () => {
+    const gmail = fakeGmailClient(gmailOpts);
+    expect((await trashMessagesTool().run({ ids: [] }, ctxWith(gmail, fakeActionLogRepo())) as any).ok).toBe(false);
+    expect((await restoreMessagesTool().run({ ids: [] }, ctxWith(gmail, fakeActionLogRepo())) as any).ok).toBe(false);
   });
 });

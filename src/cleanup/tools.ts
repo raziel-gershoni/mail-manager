@@ -117,6 +117,21 @@ export function trashMessagesTool(): ToolDef {
   };
 }
 
+export function restoreMessagesTool(): ToolDef {
+  return {
+    mutating: true,
+    schema: { name: "restore_messages", description: "Restore (un-trash) specific messages by id — removes them from Trash and puts them back in the inbox. Use when the owner wants trashed mail back (e.g. after reviewing Trash for something worth keeping). Find the ids first with search_gmail using an in:trash query (e.g. in:trash newer_than:7d), then confirm which ones with the owner before restoring.",
+      parameters: { type: "object", properties: { ids: { type: "array", items: { type: "string" } }, reason: { type: "string" } }, required: ["ids"] } },
+    async run(args, ctx) {
+      const ids = (args.ids as string[]) ?? [];
+      if (ids.length === 0) return { ok: false, error: "no ids" };
+      await ctx.gmail.restore(ids);
+      log("cleanup.restore_messages", { userId: ctx.userId, n: ids.length, ids: ids.slice(0, 100), reason: args.reason });
+      return { ok: true, restored: ids.length };
+    },
+  };
+}
+
 export function applyActionRulesTool(): ToolDef {
   return {
     mutating: true,
@@ -161,5 +176,5 @@ export function applyActionRulesTool(): ToolDef {
 }
 
 export function trashTools(): ToolDef[] {
-  return [proposeTrashTool(), confirmTrashTool(), undoLastTool(), archiveMessagesTool(), trashMessagesTool(), applyActionRulesTool()];
+  return [proposeTrashTool(), confirmTrashTool(), undoLastTool(), archiveMessagesTool(), trashMessagesTool(), restoreMessagesTool(), applyActionRulesTool()];
 }
