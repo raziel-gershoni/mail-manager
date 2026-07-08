@@ -33,6 +33,9 @@ export async function POST(req: Request): Promise<Response> {
   const chatId = update?.message?.chat?.id;
   const text = update?.message?.text;
   const updateId = update?.update_id;
+  // If the owner replied to a message, pull its text in as context for this turn.
+  const replyToText = update?.message?.reply_to_message?.text;
+  const replyContext = typeof replyToText === "string" ? replyToText.slice(0, 2000) : undefined;
   if (typeof fromId !== "number" || typeof text !== "string" || typeof chatId !== "number") {
     log("worker.skip", { reason: "bad_payload", updateId });
     return Response.json({ ok: true, skipped: true });
@@ -66,7 +69,7 @@ export async function POST(req: Request): Promise<Response> {
       userId, gmail: googleGmailClient(auth), memory: store,
       llm: geminiProvider(e.GEMINI_API_KEY), convo: dbConversationRepo(),
       proposals: dbProposalRepo(), actionLog: dbActionLogRepo(),
-      tools: [...readOnlyTools(), ...trashTools()], timezone: settings.timezone, language: settings.language,
+      tools: [...readOnlyTools(), ...trashTools()], timezone: settings.timezone, language: settings.language, replyContext,
     });
     await store.flush();
     log("worker.reply", { updateId, userId, replyLen: reply.length, reply: logPreview(reply, 1200) });

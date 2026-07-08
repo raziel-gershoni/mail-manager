@@ -46,6 +46,7 @@ export const SYSTEM_PROMPT =
 export interface SecretaryDeps {
   userId: number; gmail: GmailClient; memory: MemoryStore; llm: LLMProvider; convo: ConversationRepo; tools: ToolDef[];
   proposals: ProposalRepo; actionLog: ActionLogRepo; timezone?: string; language?: Lang;
+  replyContext?: string; // text of the message the owner replied to (Telegram reply-to), injected into this turn only
 }
 
 import type { MsgKey } from "../i18n/index.js";
@@ -79,7 +80,13 @@ export async function handleMessage(text: string, deps: SecretaryDeps): Promise<
 
   const state = await deps.convo.load(deps.userId);
   const system = `${SYSTEM_PROMPT}\n\n${languageDirective(lang)}\n\n${dateContext(new Date(), deps.timezone ?? "UTC")}`;
-  const messages = buildAgentMessages(system, deps.memory.index(), state, text);
+  // If the owner replied to one of the bot's messages (a digest/report/answer),
+  // pull that message into THIS turn's context so "what was that one?" has a referent.
+  // It's injected for the LLM call only — the stored user turn is the plain text.
+  const userText = deps.replyContext
+    ? `[The owner is replying to this earlier message from you:\n"""\n${deps.replyContext}\n"""\nUse it as the context for their message below.]\n\n${text}`
+    : text;
+  const messages = buildAgentMessages(system, deps.memory.index(), state, userText);
   const ctx: ToolContext = { userId: deps.userId, gmail: deps.gmail, memory: deps.memory,
     proposals: deps.proposals, actionLog: deps.actionLog, llm: deps.llm };
   const result = await runAgentTurn(messages, { llm: deps.llm, tools: deps.tools, ctx, language: lang });
