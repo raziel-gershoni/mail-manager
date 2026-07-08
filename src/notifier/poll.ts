@@ -11,6 +11,25 @@ import { isNotFound } from "../gmail/errors.js";
 import { log, logMeta } from "../util/log.js";
 
 export interface DigestItem { messageId: string; from: string; subject: string; reason: string; }
+export interface ActedItem { from: string; subject: string; action: "trashed" | "archived"; }
+
+// Store a digest turn in the conversation when the cycle produced something the
+// owner might reply about — important mail, an action taken (trash/archive), or a
+// new un-ruled sender. Pure heartbeats / all-quiet checks are NOT stored, so the
+// context isn't bloated by routine reports.
+export function shouldStoreDigest(hasImportant: boolean, actedCount: number, unruledCount: number): boolean {
+  return hasImportant || actedCount > 0 || unruledCount > 0;
+}
+
+// The conversation-turn content for a stored digest: the user-facing message plus a
+// compact, LLM-facing appendix naming what was acted on (sender + subject), so a
+// later "what was that one?" can be answered. The appendix is context-only — the
+// owner already saw the terse Telegram message.
+export function digestTurnContent(message: string, acted: ActedItem[]): string {
+  if (acted.length === 0) return message;
+  const details = acted.map(a => `${a.action}: "${a.subject || "(no subject)"}" — ${a.from}`).join("; ");
+  return `${message}\n[this check — ${details}]`;
+}
 
 // Per-cycle ceiling on guarded body-reads. A backstop against a flood from one
 // guarded sender blowing the 60s poll budget; overflow is kept + surfaced (never
@@ -30,6 +49,7 @@ export interface PollResult {
   guardedArchived: number;
   plainTrashed: number;   // action:"trash" rules — trashed outright by the poll (no body read)
   plainArchived: number;  // action:"archive" rules — archived outright by the poll (no body read)
+  acted: ActedItem[]; // itemized trashed/archived this cycle (sender+subject) — for replyable digests
   unruled: string[]; // senders left in the inbox that have no rule yet (deduped) — surfaced so the owner can teach one
   commit: () => Promise<void>;
 }
@@ -41,7 +61,7 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
   const cursor = await deps.sync.get(deps.userId);
   if (cursor === null) {
     await deps.sync.set(deps.userId, headId);
-    return { firstRun: true, important: [], processed: 0, guardedTrashed: 0, guardedArchived: 0, plainTrashed: 0, plainArchived: 0, unruled: [], commit: async () => {} };
+    return { firstRun: true, important: [], processed: 0, guardedTrashed: 0, guardedArchived: 0, plainTrashed: 0, plainArchived: 0, acted: [], unruled: [], commit: async () => {} };
   }
   const ids = await deps.gmail.listAddedMessageIds(cursor);
   const important: DigestItem[] = [];
@@ -52,6 +72,7 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
   const plainTrash: EmailMeta[] = [];     // action:"trash" — trashed outright, no body read
   const plainArchive: EmailMeta[] = [];   // action:"archive" — archived outright, no body read
   const unruledSenders = new Map<string, string>(); // fromEmail → display "from"; senders with no rule, left in inbox
+  const acted: ActedItem[] = []; // itemized trashed/archived this cycle (sender+subject)
   let processed = 0;
   for (const id of ids) {
     if (await deps.seen.has(deps.userId, id)) continue;
@@ -107,6 +128,7 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
       if (verb === "trash") guardedTrashed += g.act.length; else guardedArchived += g.act.length;
       for (const id of g.act) {
         const m = metaById.get(id);
+        if (m) acted.push({ from: m.from, subject: m.subject, action: verb === "trash" ? "trashed" : "archived" });
         log("poll.guarded", { userId: deps.userId, ...(m ? logMeta(m) : { id }), action: verb === "trash" ? "trashed" : "archived" });
       }
     }
@@ -138,7 +160,10 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
     if (verb === "trash") await deps.gmail.trash(actIds); else await deps.gmail.archive(actIds);
     actedToCommit.push(...actIds);
     if (verb === "trash") plainTrashed += actIds.length; else plainArchived += actIds.length;
-    for (const m of group) log("poll.acted", { userId: deps.userId, ...logMeta(m), rule: verb, action: verb === "trash" ? "trashed" : "archived" });
+    for (const m of group) {
+      acted.push({ from: m.from, subject: m.subject, action: verb === "trash" ? "trashed" : "archived" });
+      log("poll.acted", { userId: deps.userId, ...logMeta(m), rule: verb, action: verb === "trash" ? "trashed" : "archived" });
+    }
   }
 
   const commit = async (): Promise<void> => {
@@ -152,5 +177,5 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
     }
     await deps.sync.set(deps.userId, headId);
   };
-  return { firstRun: false, important, processed, guardedTrashed, guardedArchived, plainTrashed, plainArchived, unruled: [...unruledSenders.values()], commit };
+  return { firstRun: false, important, processed, guardedTrashed, guardedArchived, plainTrashed, plainArchived, acted, unruled: [...unruledSenders.values()], commit };
 }
