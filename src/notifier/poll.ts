@@ -72,6 +72,14 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
       if (isNotFound(err)) { log("poll.msg", { userId: deps.userId, id, action: "skipped-gone" }); continue; }
       throw err;
     }
+    // A message Gmail tagged SENT is one the OWNER sent — not incoming mail. Self-
+    // addressed mail (mailing yourself, CC-ing yourself, or a reply in a self-thread)
+    // is stored by Gmail as a single message carrying BOTH SENT and INBOX, so it
+    // shows up in the "added to inbox" history exactly like a real arrival. Skip it
+    // before counting/ruling/surfacing: the poll reports incoming mail, and keying
+    // off the authoritative SENT label (not a "From == me" match) means a phishing
+    // mail that spoofs the owner's own address is still surfaced, not silently hidden.
+    if (email.labelIds.includes("SENT")) { log("poll.msg", { userId: deps.userId, ...logMeta(email), action: "skipped-self" }); continue; }
     processed++;
     const rule = deps.store.findRuleFor(email.fromEmail, email.fromDomain);
     if (rule?.action === "review") { guardedTrash.push(email); log("poll.msg", { userId: deps.userId, ...logMeta(email), rule: "review", action: "guarded-queued" }); continue; }

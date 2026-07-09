@@ -24,4 +24,10 @@ describe("parseMessage", () => {
     expect(m.fromEmail).toBe("bare@host.io");
     expect(m.subject).toBe("");
   });
+  it("surfaces Gmail's labelIds (and defaults to [] when the message carries none)", () => {
+    const withLabels = parseMessage({ id:"m3", threadId:"t3", snippet:"", labelIds:["SENT","INBOX"], payload:{ headers:[{ name:"From", value:"me@x.com" }]}});
+    expect(withLabels.labelIds).toEqual(["SENT","INBOX"]);
+    const withoutLabels = parseMessage({ id:"m4", threadId:"t4", snippet:"", payload:{ headers:[{ name:"From", value:"a@b.com" }]}});
+    expect(withoutLabels.labelIds).toEqual([]);
+  });
 });

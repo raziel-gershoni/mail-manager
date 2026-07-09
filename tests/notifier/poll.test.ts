@@ -148,6 +148,30 @@ describe("runPoll", () => {
     expect(await d.sync.get(1)).toBe("200"); // cursor advanced despite the dead message — no stall
   });
 
+  it("skips a message the owner sent (SENT label) — never counted, ruled, or surfaced", async () => {
+    // Self-addressed mail (mailing yourself, CC-ing yourself, or a reply in a
+    // self-thread) is stored by Gmail as ONE message carrying both SENT and INBOX,
+    // so it enters the "added to inbox" history exactly like real incoming mail.
+    // It must be ignored: the poll reports incoming mail, not your own outgoing mail.
+    const d = deps({
+      gmail: fakeGmailClient({
+        historyId: "200",
+        addedSince: { "100": ["mine", "a"] },
+        messages: {
+          mine: { id:"mine", threadId:"t", snippet:"", labelIds:["SENT","INBOX"], payload:{ headers:[{name:"From",value:"me@x.com"},{name:"Subject",value:"my own reply"}] } },
+          a: { id:"a", threadId:"t", snippet:"", payload:{ headers:[{name:"From",value:"jane@x.com"},{name:"Subject",value:"Lunch"}] } },
+        },
+      }),
+    });
+    await d.sync.set(1, "100");
+    const r = await runPoll(d);
+    expect(r.processed).toBe(1);                                  // self-sent skipped BEFORE counting; only jane counted
+    expect(r.important.map((i: any) => i.messageId)).toEqual(["a"]); // jane surfaced, the self-sent message never is
+    expect(r.unruled).toEqual([]);                               // not flagged as an un-ruled sender either
+    expect(d.gmail.trashedIds!()).toEqual([]);                    // and never acted on
+    expect(await d.seen.has(1, "mine")).toBe(false);              // just ignored — nothing recorded
+  });
+
   it("skips messages already seen", async () => {
     const d = deps();
     await d.sync.set(1, "100");
