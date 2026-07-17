@@ -62,8 +62,8 @@ export async function POST(req: Request): Promise<Response> {
         // heartbeats go as silent notifications, and only real briefs are stored
         // in the conversation (so 48 heartbeats/day don't bloat the context).
         const hasImportant = res.important.length > 0;
-        const trashed = res.guardedTrashed + res.plainTrashed;
-        const archived = res.guardedArchived + res.plainArchived;
+        const trashed = res.guardedTrashed + res.plainTrashed + res.prefTrashed;
+        const archived = res.guardedArchived + res.plainArchived + res.prefArchived;
         const message = composePollMessage(brief, { processed: res.processed, surfaced: res.important.length, trashed, archived, unruled: res.unruled }, language);
         const sentId = await sendFormatted(bot, chatId, message, { silent: !hasImportant });
         // Only genuinely-important briefs are stored in the conversation context.
@@ -83,7 +83,7 @@ export async function POST(req: Request): Promise<Response> {
         } catch (err) {
           log("poll.side_record_failed", { userId, error: err instanceof Error ? err.message : String(err) });
         }
-        log("poll.brief", { userId, important: ids.length, processed: res.processed, guardedTrashed: res.guardedTrashed, guardedArchived: res.guardedArchived, plainTrashed: res.plainTrashed, plainArchived: res.plainArchived });
+        log("poll.brief", { userId, important: ids.length, processed: res.processed, guardedTrashed: res.guardedTrashed, guardedArchived: res.guardedArchived, plainTrashed: res.plainTrashed, plainArchived: res.plainArchived, prefTrashed: res.prefTrashed, prefArchived: res.prefArchived });
       } catch (err) {
         if (isInvalidGrant(err)) {
           log("poll.reconnect", { userId });
