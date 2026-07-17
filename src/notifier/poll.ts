@@ -7,6 +7,7 @@ import type { ActionLogRepo } from "../cleanup/proposals.js";
 import type { SyncStateRepo, SeenRepo } from "./sync.js";
 import { classifyEmail } from "./classify.js";
 import { guardVet } from "../cleanup/guard.js";
+import { preferenceVet, PREF_POLL_CAP } from "../cleanup/preference-vet.js";
 import { isNotFound } from "../gmail/errors.js";
 import { log, logMeta } from "../util/log.js";
 
@@ -34,6 +35,8 @@ export interface PollResult {
   guardedArchived: number;
   plainTrashed: number;   // action:"trash" rules — trashed outright by the poll (no body read)
   plainArchived: number;  // action:"archive" rules — archived outright by the poll (no body read)
+  prefTrashed: number;   // standing-preference matches trashed after a body read
+  prefArchived: number;  // standing-preference matches archived after a body read
   acted: ActedItem[]; // itemized trashed/archived this cycle (sender+subject) — for replyable digests
   unruled: string[]; // senders left in the inbox that have no rule yet (deduped) — surfaced so the owner can teach one
   commit: () => Promise<void>;
@@ -46,7 +49,7 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
   const cursor = await deps.sync.get(deps.userId);
   if (cursor === null) {
     await deps.sync.set(deps.userId, headId);
-    return { firstRun: true, important: [], processed: 0, guardedTrashed: 0, guardedArchived: 0, plainTrashed: 0, plainArchived: 0, acted: [], unruled: [], commit: async () => {} };
+    return { firstRun: true, important: [], processed: 0, guardedTrashed: 0, guardedArchived: 0, plainTrashed: 0, plainArchived: 0, prefTrashed: 0, prefArchived: 0, acted: [], unruled: [], commit: async () => {} };
   }
   const ids = await deps.gmail.listAddedMessageIds(cursor);
   const important: DigestItem[] = [];
@@ -56,6 +59,10 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
   const guardedArchive: EmailMeta[] = []; // action:"review_archive" — judged, then routine archived
   const plainTrash: EmailMeta[] = [];     // action:"trash" — trashed outright, no body read
   const plainArchive: EmailMeta[] = [];   // action:"archive" — archived outright, no body read
+  // Standing-preference matches, grouped by preference text: each group is body-read
+  // and judged against ITS OWN instruction before anything is acted on.
+  const prefTrash = new Map<string, EmailMeta[]>();
+  const prefArchive = new Map<string, EmailMeta[]>();
   const unruledSenders = new Map<string, string>(); // fromEmail → display "from"; senders with no rule, left in inbox
   const acted: ActedItem[] = []; // itemized trashed/archived this cycle (sender+subject)
   let processed = 0;
@@ -87,6 +94,16 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
     if (rule?.action === "trash") { plainTrash.push(email); log("poll.msg", { userId: deps.userId, ...logMeta(email), rule: "trash", action: "plain-queued" }); continue; }
     if (rule?.action === "archive") { plainArchive.push(email); log("poll.msg", { userId: deps.userId, ...logMeta(email), rule: "archive", action: "plain-queued" }); continue; }
     const outcome = await classifyEmail(email, { store: deps.store, llm: deps.llm });
+    if (outcome.matched) {
+      const pref = deps.store.index().find(m => m.key === outcome.matched!.key);
+      const text = pref?.description ?? outcome.matched.key;
+      const group = outcome.matched.action === "trash" ? prefTrash : prefArchive;
+      const list = group.get(text) ?? [];
+      list.push(email);
+      group.set(text, list);
+      log("poll.msg", { userId: deps.userId, ...logMeta(email), pref: outcome.matched.key, action: "pref-queued" });
+      continue;
+    }
     if (outcome.important) {
       // Defer marking-seen + cursor advance until the brief is delivered.
       important.push({ messageId: id, from: email.from, subject: email.subject, reason: outcome.reason });
@@ -159,6 +176,40 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
     }
   }
 
+  // Standing preferences: read the body and judge against the owner's own instruction
+  // before acting. Never act unread — overflow past the cap is kept and surfaced.
+  // Mirrors the guarded path: action-log FIRST, seen deferred to commit.
+  let prefTrashed = 0, prefArchived = 0;
+  for (const [group, verb] of [[prefTrash, "trash"], [prefArchive, "archive"]] as const) {
+    for (const [text, metas] of group) {
+      const g = await preferenceVet(metas.map(m => m.id), { gmail: deps.gmail, llm: deps.llm, cap: PREF_POLL_CAP, preference: text });
+      const metaById = new Map(metas.map(m => [m.id, m]));
+      if (g.act.length > 0) {
+        await deps.actionLog.record(deps.userId, randomUUID(), g.act, verb); // record before mutating so undo always covers it
+        if (verb === "trash") await deps.gmail.trash(g.act); else await deps.gmail.archive(g.act);
+        actedToCommit.push(...g.act);
+        if (verb === "trash") prefTrashed += g.act.length; else prefArchived += g.act.length;
+        for (const id of g.act) {
+          const m = metaById.get(id);
+          if (m) acted.push({ id: m.id, from: m.from, subject: m.subject, action: verb === "trash" ? "trashed" : "archived" });
+          log("poll.pref", { userId: deps.userId, ...(m ? logMeta(m) : { id }), pref: text, action: verb === "trash" ? "trashed" : "archived" });
+        }
+      }
+      // The judge said the preference does not apply → keep it in the inbox and surface it.
+      for (const k of g.keep) {
+        important.push({ messageId: k.id, from: k.from, subject: k.subject, reason: `pref-kept: ${k.reason}` });
+        toCommit.push({ id: k.id, reason: `pref-kept: ${k.reason}` });
+      }
+      if (g.capped) {
+        for (const m of metas.slice(PREF_POLL_CAP)) {
+          important.push({ messageId: m.id, from: m.from, subject: m.subject, reason: "pref-overflow: kept for review" });
+          toCommit.push({ id: m.id, reason: "pref-overflow" });
+          log("poll.pref", { userId: deps.userId, ...logMeta(m), action: "overflow-kept" });
+        }
+      }
+    }
+  }
+
   const commit = async (): Promise<void> => {
     for (const c of toCommit) {
       await deps.seen.record(deps.userId, { messageId: c.id, surfaced: true, verdict: "important", reason: c.reason });
@@ -170,5 +221,5 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
     }
     await deps.sync.set(deps.userId, headId);
   };
-  return { firstRun: false, important, processed, guardedTrashed, guardedArchived, plainTrashed, plainArchived, acted, unruled: [...unruledSenders.values()], commit };
+  return { firstRun: false, important, processed, guardedTrashed, guardedArchived, plainTrashed, plainArchived, prefTrashed, prefArchived, acted, unruled: [...unruledSenders.values()], commit };
 }
