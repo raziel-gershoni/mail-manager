@@ -33,4 +33,28 @@ describe("SYSTEM_PROMPT classification guidance", () => {
     expect(SYSTEM_PROMPT).toMatch(/why did you trash that\?/i);
     expect(SYSTEM_PROMPT).toMatch(/do NOT guess: call recent_activity/i);
   });
+
+  // generateBrief (notifier/brief.ts) calls readFull on up to MAX_BRIEF_BODIES of the
+  // cycle's surfaced-important message ids to write the digest — a THIRD case where the
+  // poll reads a full body, including for un-ruled mail judged important from
+  // subject+snippet alone. "exactly two cases" was false the moment that shipped; pin
+  // the corrected claim so a revert to "two cases" fails this test.
+  it("states the THIRD body-read case: surfaced-important mail read to write the digest", () => {
+    expect(SYSTEM_PROMPT).toMatch(/reads full bodies in three cases/i);
+    expect(SYSTEM_PROMPT).not.toMatch(/reads full bodies in exactly two cases/i);
+    expect(SYSTEM_PROMPT).toMatch(/messages it surfaces as important each cycle/i);
+    // The "no body" classification clause must not be read as "a surfaced un-ruled
+    // message's body was never read" — it may be read afterward to write the digest.
+    expect(SYSTEM_PROMPT).toMatch(/no body at that point/i);
+    expect(SYSTEM_PROMPT).toMatch(/surfaced un-ruled message's body may well have been read/i);
+  });
+
+  // recent_activity (agent/tools.ts) returns only {action, from, subject, at} — never
+  // the rule/preference name. The prompt must not promise that calling it alone tells
+  // the model which rule fired; it must say the model correlates that against
+  // list_memories itself.
+  it("does not overclaim what recent_activity returns", () => {
+    expect(SYSTEM_PROMPT).toMatch(/it does not name the rule/i);
+    expect(SYSTEM_PROMPT).toMatch(/cross-reference the sender\/domain or preference topic yourself/i);
+  });
 });

@@ -238,7 +238,12 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
         for (const m of metas.slice(readCount)) {
           important.push({ messageId: m.id, from: m.from, subject: m.subject, reason: "pref-overflow: kept for review" });
           toCommit.push({ id: m.id, reason: "pref-overflow" });
-          log("poll.pref", { userId: deps.userId, ...logMeta(m), action: "overflow-kept" });
+          // Same shape as the group-skip overflow log above (pref + limit) so both
+          // overflow reasons are equally diagnosable. This overflow can only be the
+          // read budget running out mid-group (preferenceVet was capped at
+          // budgetAtCall) — the group-cap is checked before any call is made, so it
+          // can never be the cause here.
+          log("poll.pref", { userId: deps.userId, ...logMeta(m), pref: text, limit: "read-budget", action: "overflow-kept" });
         }
       }
     }

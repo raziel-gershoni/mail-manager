@@ -124,9 +124,17 @@ export function readOnlyTools(): ToolDef[] {
         // Normalize exactly as propose_preference did (it stores `global:<normalized>`),
         // so the key the OWNER used ("Crypto Pitches") resolves to the row it created.
         const key = normalizeKey(String(args.key ?? ""));
+        // Fail CLOSED, not open: the propose→confirm barrier only holds if some caller
+        // actually built a proposedThisTurn set (today, always runAgentTurn). A
+        // ToolContext built without one must refuse rather than silently let the
+        // anti-injection barrier vanish — the missing set is itself a signal something
+        // is wrong, not license to allow.
+        if (!ctx.proposedThisTurn) {
+          return { ok: false, error: "no turn context to check the propose→confirm barrier against — refusing to confirm" };
+        }
         // Structural propose→confirm barrier: a key proposed in THIS turn is refused,
         // whatever the model was talked into by anything it read this turn.
-        if (ctx.proposedThisTurn?.has(key)) {
+        if (ctx.proposedThisTurn.has(key)) {
           return { ok: false, error: "proposed in this same turn — show the owner the exact preference text and wait for them to approve it in their next message before confirming" };
         }
         const row = ctx.memory.confirmPreference(key);

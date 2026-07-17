@@ -29,6 +29,19 @@ import { readCandidates } from "./read-candidates.js";
 // sender-guarded path's 40 reads + 2 reviewTrash calls (GUARDED_POLL_CAP = 20 per verb,
 // one call per verb), plus one classify call per un-ruled message.
 //
+// This cap is a real ~3x cut (up to 20 → up to 6 reviewPreference calls) versus what an
+// uncapped-by-groups preference path could cost, but it does NOT guarantee a poll cycle
+// fits app/api/poll/route.ts's maxDuration = 60. True worst case for one user is 8
+// SERIAL Gemini calls (this path's 6 reviewPreference + the guarded path's 2
+// reviewTrash), each with its own GEMINI_TIMEOUT_MS = 40_000ms HTTP timeout
+// (llm/gemini.ts) — 8 x 40s alone exceeds the 60s budget, and pollAllUsers
+// (notifier/fanout.ts) polls every user SERIALLY within that one invocation, so a
+// second user's poll adds to the same clock. The failure mode is safe, not silent: a
+// timeout throws mid-poll, so runPoll's commit() for the in-flight user never runs —
+// that user's sync cursor stays unadvanced and the next cycle simply retries; nothing
+// already acted on is lost (actionLog.record happens before any mutation) and nothing
+// is dropped.
+//
 // PREF_POLL_CAP is deliberately lower than GUARDED_POLL_CAP (20) for that reason — the
 // guarded path already spends its cap per verb, and these queues are additive.
 export const PREF_POLL_CAP = 10;
