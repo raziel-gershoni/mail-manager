@@ -1,7 +1,7 @@
 // src/db/adapters.ts
 import { and, desc, eq } from "drizzle-orm";
 import { db, schema } from "./client.js";
-import { matchRuleIn } from "../memory/store.js";
+import { matchRuleIn, keyFromSlug } from "../memory/store.js";
 import type { MemoryStore, RuleMatch, MemoryIndexEntry, MemoryRow, Verdict } from "../memory/store.js";
 import type { SeenRepo, SeenRow, SyncStateRepo } from "../notifier/sync.js";
 
@@ -9,14 +9,15 @@ import type { SeenRepo, SeenRow, SyncStateRepo } from "../notifier/sync.js";
 export async function dbMemoryStore(userId: number): Promise<MemoryStore & { flush(): Promise<void> }> {
   const rows = await db().select().from(schema.memories).where(eq(schema.memories.userId, userId));
   const local: MemoryRow[] = rows.map(r => ({ userId, slug: r.slug, description: r.description, body: r.body,
-    scope: r.scope, matchType: r.matchType, matchValue: r.matchValue, verdict: r.verdict, action: r.action }));
+    scope: r.scope, matchType: r.matchType, matchValue: r.matchValue, verdict: r.verdict, action: r.action, pending: r.pending }));
   const pending: Promise<unknown>[] = [];
   return {
     findRuleFor(email, domain): RuleMatch | null {
       return matchRuleIn(local, email, domain);
     },
     index(): MemoryIndexEntry[] {
-      return local.filter(r => r.matchType === null).map(r => ({ slug: r.slug, description: r.description, scope: r.scope }));
+      return local.filter(r => r.matchType === null && !r.pending)
+        .map(r => ({ slug: r.slug, key: keyFromSlug(r.slug), description: r.description, scope: r.scope, verdict: r.verdict, action: r.action }));
     },
     list() { return [...local]; },
     upsertSenderRule(email, verdict): MemoryRow {
@@ -51,6 +52,30 @@ export async function dbMemoryStore(userId: number): Promise<MemoryStore & { flu
         matchType: scope, matchValue: value, verdict, action: action ?? existing?.action ?? null, updatedAt: new Date() })
         .onConflictDoUpdate({ target: [schema.memories.userId, schema.memories.slug],
           set: { verdict, description, action: action ?? existing?.action ?? null, updatedAt: new Date() } });
+      pending.push(writePromise);
+      writePromise.catch(() => {});
+      return row;
+    },
+    upsertPreference({ key, description, verdict, action }): MemoryRow {
+      const slug = `global:${key}`;
+      const row: MemoryRow = { userId, slug, description, body: "", scope: "global", matchType: null, matchValue: null, verdict, action: action ?? null, pending: true };
+      const idx = local.findIndex(r => r.slug === slug);
+      if (idx >= 0) local[idx] = row; else local.push(row);
+      const writePromise = db().insert(schema.memories).values({ userId, slug, description, body: "", scope: "global",
+        matchType: null, matchValue: null, verdict, action: action ?? null, pending: true, updatedAt: new Date() })
+        .onConflictDoUpdate({ target: [schema.memories.userId, schema.memories.slug],
+          set: { description, verdict, action: action ?? null, pending: true, updatedAt: new Date() } });
+      pending.push(writePromise);
+      writePromise.catch(() => {});
+      return row;
+    },
+    confirmPreference(key: string): MemoryRow | null {
+      const slug = `global:${key}`;
+      const row = local.find(r => r.slug === slug);
+      if (!row) return null;
+      row.pending = false;
+      const writePromise = db().update(schema.memories).set({ pending: false, updatedAt: new Date() })
+        .where(and(eq(schema.memories.userId, userId), eq(schema.memories.slug, slug)));
       pending.push(writePromise);
       writePromise.catch(() => {});
       return row;

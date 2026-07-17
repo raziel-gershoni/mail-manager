@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { buildAgentMessages, needsCompaction, compactState, contextUsage, COMPACT_TOKENS } from "../../src/context/assemble.js";
 import { estimateTokens } from "../../src/context/tokens.js";
 
-const memIdx = [{ slug: "g:lease", description: "flag anything about the lease", scope: "global" }];
+const memIdx = [{ slug: "g:lease", key: "lease", description: "flag anything about the lease", scope: "global", verdict: null, action: null }];
 
 describe("buildAgentMessages", () => {
   it("puts system + memory index + summary first, then window, then the new user text", () => {

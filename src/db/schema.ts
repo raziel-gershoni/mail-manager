@@ -50,7 +50,8 @@ export const memories = pgTable("memories", {
   matchType: text("match_type"),  // 'sender' | 'domain' | null
   matchValue: text("match_value"),
   verdict: text("verdict"),        // 'important' | 'unimportant' | null
-  action: text("action"),          // 'trash' | 'archive' | null  (learned cleanup action)
+  action: text("action"),          // 'trash' | 'archive' | 'review' | 'review_archive' | 'keep' | null (learned cleanup action)
+  pending: boolean("pending").notNull().default(false), // standing preferences start inert until the owner confirms
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => ({ slugUx: uniqueIndex("memories_user_slug_ux").on(t.userId, t.slug) }));
 

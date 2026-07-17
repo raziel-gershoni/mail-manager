@@ -1,11 +1,14 @@
+import type { PrefAction } from "./preferences.js";
+
 export type Verdict = "important" | "unimportant";
 export type RuleAction = "trash" | "archive" | "review" | "review_archive" | "keep";
 export interface RuleMatch { slug: string; verdict: Verdict; action: RuleAction | null; }
-export interface MemoryIndexEntry { slug: string; description: string; scope: string; }
+export interface MemoryIndexEntry { slug: string; key: string; description: string; scope: string; verdict: string | null; action: string | null; }
 export interface MemoryRow {
   userId: number; slug: string; description: string; body: string;
   scope: string; matchType: string | null; matchValue: string | null; verdict: string | null;
   action: string | null;
+  pending?: boolean; // optional: absent ⇒ active (keeps existing rows and row fixtures valid)
 }
 export interface MemoryStore {
   findRuleFor(fromEmail: string, fromDomain: string): RuleMatch | null;
@@ -13,7 +16,15 @@ export interface MemoryStore {
   list(): MemoryRow[];
   upsertSenderRule(fromEmail: string, verdict: Verdict): MemoryRow;
   upsertRule(input: { matchValue: string; scope: "sender" | "domain"; verdict: Verdict; description: string; action?: RuleAction }): MemoryRow;
+  upsertPreference(input: { key: string; description: string; verdict: Verdict; action?: PrefAction | null }): MemoryRow;
+  confirmPreference(key: string): MemoryRow | null;
   deleteBySlug(slug: string): void;
+}
+
+// A preference's slug is `global:<key>`; strip the prefix so the classifier can be
+// told a short key to name. Fixtures predating this convention just echo the slug.
+export function keyFromSlug(slug: string): string {
+  return slug.startsWith("global:") ? slug.slice("global:".length) : slug;
 }
 
 // Rule matching is case-insensitive: incoming from-addresses are already
@@ -35,7 +46,8 @@ export function inMemoryStore(seed: MemoryRow[] = [], userId = 1): MemoryStore {
       return matchRuleIn(rows, fromEmail, fromDomain);
     },
     index() {
-      return rows.filter(r => r.matchType === null).map(r => ({ slug: r.slug, description: r.description, scope: r.scope }));
+      return rows.filter(r => r.matchType === null && !r.pending)
+        .map(r => ({ slug: r.slug, key: keyFromSlug(r.slug), description: r.description, scope: r.scope, verdict: r.verdict, action: r.action }));
     },
     list() { return [...rows]; },
     upsertSenderRule(fromEmail, verdict) {
@@ -55,6 +67,21 @@ export function inMemoryStore(seed: MemoryRow[] = [], userId = 1): MemoryStore {
       let row = rows.find(r => r.slug === slug);
       if (!row) { row = { userId, slug, description, body: "", scope, matchType: scope, matchValue: value, verdict, action: action ?? null }; rows.push(row); }
       else { row.verdict = verdict; row.description = description; row.action = action ?? row.action; }
+      return row;
+    },
+    upsertPreference({ key, description, verdict, action }) {
+      const slug = `global:${key}`;
+      // matchType/matchValue stay null: that is what keeps a preference invisible to
+      // matchRuleIn (it only ever checks "sender"/"domain") and visible to index().
+      let row = rows.find(r => r.slug === slug);
+      if (!row) { row = { userId, slug, description, body: "", scope: "global", matchType: null, matchValue: null, verdict, action: action ?? null, pending: true }; rows.push(row); }
+      else { row.description = description; row.verdict = verdict; row.action = action ?? null; row.pending = true; }
+      return row;
+    },
+    confirmPreference(key) {
+      const row = rows.find(r => r.slug === `global:${key}`);
+      if (!row) return null;
+      row.pending = false;
       return row;
     },
     deleteBySlug(slug) { const i = rows.findIndex(r => r.slug === slug); if (i >= 0) rows.splice(i, 1); },
