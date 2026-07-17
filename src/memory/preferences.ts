@@ -14,19 +14,41 @@ const KEY_RE = /^[a-z0-9-]{1,32}$/;
 
 export function normalizeKey(raw: string): string {
   return String(raw ?? "").trim().toLowerCase()
-    .replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32);
+    .replace(/[^a-z0-9-]+/g, "-").slice(0, 32).replace(/^-+|-+$/g, "");
 }
 
-// Collapse ALL whitespace (newlines included) and strip control chars: a preference
+// Collapse ALL whitespace (including U+0085 NEL) and strip control chars: a preference
 // renders as ONE "- [key] text" line, so an embedded newline would let its text forge
-// additional prompt lines and impersonate instructions.
+// additional prompt lines and impersonate instructions. U+0085 is not matched by \s but
+// can serve as a line terminator in some pipelines, so it is normalized to a space.
 //
 // Written with charCodeAt rather than a control-char regex range on purpose: it is
-// escape-free and unambiguous. Order matters — collapse whitespace FIRST so a newline
-// becomes a space (not nothing), then drop the remaining non-whitespace control chars.
+// escape-free and unambiguous. Process: convert code 133 (NEL) to space so it collapses
+// with other whitespace, then drop all remaining control chars (C0: 0-31, DEL: 127, C1: 128-159).
 export function sanitizeDescription(raw: string): string {
-  const spaced = String(raw ?? "").replace(/\s+/g, " ");
-  return [...spaced].filter(ch => { const c = ch.charCodeAt(0); return c >= 32 && c !== 127; }).join("").trim();
+  let str = String(raw ?? "");
+
+  // Convert U+0085 (NEL, code 133) to space so it participates in whitespace collapsing
+  let converted = "";
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i);
+    if (c === 133) {
+      converted += " ";
+    } else {
+      converted += str[i];
+    }
+  }
+
+  // Collapse all consecutive whitespace to a single space
+  const spaced = converted.replace(/\s+/g, " ");
+
+  // Filter: keep only chars >= 32 (printable) except DEL (127) and C1 block (128-159)
+  const filtered = [...spaced].filter(ch => {
+    const c = ch.charCodeAt(0);
+    return c >= 32 && c !== 127 && (c < 128 || c > 159);
+  }).join("");
+
+  return filtered.trim();
 }
 
 export function validatePreference(
