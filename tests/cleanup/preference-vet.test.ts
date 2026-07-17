@@ -50,6 +50,18 @@ describe("preferenceVet", () => {
     expect(r.act).not.toContain("b");
   });
 
+  it("keeps on a malformed verdict: missing keep field, or a non-boolean keep value", async () => {
+    const r = await preferenceVet(["a"], { gmail: gmail(), cap: 10, preference: "p",
+      llm: llm(() => [{ id: "a" }]) }); // no `keep` field at all
+    expect(r.act).toEqual([]);
+    expect(r.keep.map(k => k.id)).toEqual(["a"]);
+
+    const r2 = await preferenceVet(["a"], { gmail: gmail(), cap: 10, preference: "p",
+      llm: llm(() => [{ id: "a", keep: "no" }]) }); // keep is not a boolean
+    expect(r2.act).toEqual([]);
+    expect(r2.keep.map(k => k.id)).toEqual(["a"]);
+  });
+
   it("no ids is a no-op", async () => {
     expect(await preferenceVet([], { gmail: gmail(), cap: 10, preference: "p", llm: llm(() => []) }))
       .toEqual({ act: [], keep: [], capped: false });

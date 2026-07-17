@@ -1,9 +1,7 @@
 import type { GmailClient } from "../gmail/client.js";
-import { GMAIL_FETCH_CONCURRENCY } from "../gmail/client.js";
-import type { LLMProvider, TrashCandidate } from "../llm/provider.js";
-import { riskSignals } from "../gmail/risk.js";
+import type { LLMProvider } from "../llm/provider.js";
 import { vetTrashSet } from "./vet.js";
-import { mapLimit } from "../util/concurrency.js";
+import { readCandidates } from "./read-candidates.js";
 
 export interface GuardKeep { id: string; from: string; subject: string; reason: string; }
 // `act` = the ids to act on (the caller trashes OR archives them, per the rule);
@@ -21,18 +19,11 @@ export async function guardVet(
   ids: string[],
   deps: { gmail: GmailClient; llm: LLMProvider; cap: number },
 ): Promise<GuardResult> {
-  const capped = ids.length > deps.cap;
-  const use = ids.slice(0, deps.cap);
-  if (use.length === 0) return { act: [], keep: [], capped };
-  const fulls = await mapLimit(use, GMAIL_FETCH_CONCURRENCY, (id) => deps.gmail.readFull(id));
-  const candidates: TrashCandidate[] = fulls.map(f => {
-    const r = riskSignals(f.meta);
-    return { id: f.meta.id, from: f.meta.from, subject: f.meta.subject, bulk: r.bulk, transactional: r.transactional, bodyText: f.bodyText };
-  });
+  const { candidates, metas, capped } = await readCandidates(ids, deps);
+  if (candidates.length === 0) return { act: [], keep: [], capped };
   const vet = await vetTrashSet(candidates, { llm: deps.llm }); // ids already capped above
-  const metaById = new Map(fulls.map(f => [f.meta.id, f.meta]));
   const keep: GuardKeep[] = vet.setAside.map(s => {
-    const m = metaById.get(s.id);
+    const m = metas.get(s.id);
     return { id: s.id, from: m?.from ?? "", subject: m?.subject ?? "", reason: s.reason };
   });
   return { act: vet.autoTrash, keep, capped };
