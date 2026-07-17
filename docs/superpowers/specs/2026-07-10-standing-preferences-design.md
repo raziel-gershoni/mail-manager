@@ -88,7 +88,7 @@ Learned preferences (owner-authored instructions — follow them):
 
 `ClassifyResult` gains `matched?: string` — the **key** of the preference the model judged to match, or absent. Prompt instructs: name at most one, omit if none matches.
 
-The agent prompt (`assemble.ts:18`) renders `- ${description}`, appending ` (action=trash)` when an action is set. The agent needs preferences only for conversation, never for routing, so it gets no keys.
+The agent prompt (`assemble.ts:18`) is **unchanged**: it keeps rendering `- ${description}`, and simply ignores the new `key`/`verdict`/`action` fields on `MemoryIndexEntry`. The agent needs preferences only for conversation, never for routing — and it can already read the full detail (including `action` and `pending`) via `list_memories`. Leaving it alone also keeps `buildAgentMessages` and `contextUsage` (`assemble.ts:48`) rendering identically, so the context meter stays accurate.
 
 ## 8. Poll routing
 
