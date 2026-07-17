@@ -3,11 +3,22 @@ import type { LLMProvider } from "../llm/provider.js";
 import type { GuardKeep, GuardResult } from "./guard.js";
 import { readCandidates } from "./read-candidates.js";
 
-// Per-verb ceiling on body reads for preference-driven acting. Deliberately lower
-// than GUARDED_POLL_CAP (20): the sender-guarded path already spends that cap PER VERB,
-// so two more queues at 20 would push a 60s function to 80 reads + 4 review calls, on
-// top of the one classify call the poll already makes per un-ruled message. Overflow
-// is kept, so this cap can never cause loss.
+// Per-verb ceiling on body reads for preference-driven acting — a BUDGET SHARED
+// ACROSS EVERY DISTINCT CONFIRMED PREFERENCE matched for that verb this poll cycle,
+// not a fresh allowance per preference (poll.ts's runPoll allocates from one running
+// counter per verb across prefTrash/prefArchive's text-keyed groups, decrementing it
+// by exactly how many ids each group's preferenceVet call actually read). So worst
+// case per cycle is PREF_POLL_CAP trash reads + PREF_POLL_CAP archive reads = 20
+// reads total, REGARDLESS of how many of the up to PREF_MAX (20, memory/preferences.ts)
+// confirmed preferences matched. Because every group that runs consumes at least one
+// unit of budget (and zero-budget groups are skipped before any LLM call), this also
+// bounds reviewPreference calls to at most PREF_POLL_CAP per verb (20 worst case
+// across both verbs) — never one per matched preference.
+//
+// Deliberately lower than GUARDED_POLL_CAP (20): the sender-guarded path already
+// spends that cap per verb, so two more capped queues on top of the one classify
+// call the poll makes per un-ruled message needed to stay well inside a 60s budget.
+// Overflow is kept (never acted unread), so this cap can never cause loss.
 export const PREF_POLL_CAP = 10;
 
 // Judgment for preference-driven acting: read each FULL body and ask whether the

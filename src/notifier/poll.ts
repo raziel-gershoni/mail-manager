@@ -179,10 +179,34 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
   // Standing preferences: read the body and judge against the owner's own instruction
   // before acting. Never act unread — overflow past the cap is kept and surfaced.
   // Mirrors the guarded path: action-log FIRST, seen deferred to commit.
+  //
+  // PREF_POLL_CAP is a BUDGET SHARED ACROSS EVERY GROUP OF THE SAME VERB this cycle,
+  // not a fresh allowance per distinct preference — otherwise N confirmed preferences
+  // would cost N x PREF_POLL_CAP reads instead of PREF_POLL_CAP total (see the comment
+  // on PREF_POLL_CAP in cleanup/preference-vet.ts for the worst-case accounting this
+  // enforces). Each group is vetted with whatever budget remains; the budget is then
+  // decremented by exactly how many ids preferenceVet actually read (min(group size,
+  // budget-at-call-time)) so overflow selection always agrees with what was read. A
+  // group that starts with zero budget is skipped entirely — no reviewPreference call
+  // — and every one of its messages is kept + surfaced as overflow.
   let prefTrashed = 0, prefArchived = 0;
   for (const [group, verb] of [[prefTrash, "trash"], [prefArchive, "archive"]] as const) {
+    let budget = PREF_POLL_CAP;
     for (const [text, metas] of group) {
-      const g = await preferenceVet(metas.map(m => m.id), { gmail: deps.gmail, llm: deps.llm, cap: PREF_POLL_CAP, preference: text });
+      if (budget <= 0) {
+        // No budget left for this verb this cycle: never act unread, and avoid the
+        // LLM call entirely — surface the whole group as overflow.
+        for (const m of metas) {
+          important.push({ messageId: m.id, from: m.from, subject: m.subject, reason: "pref-overflow: kept for review" });
+          toCommit.push({ id: m.id, reason: "pref-overflow" });
+          log("poll.pref", { userId: deps.userId, ...logMeta(m), action: "overflow-kept" });
+        }
+        continue;
+      }
+      const budgetAtCall = budget;
+      const g = await preferenceVet(metas.map(m => m.id), { gmail: deps.gmail, llm: deps.llm, cap: budgetAtCall, preference: text });
+      const readCount = Math.min(metas.length, budgetAtCall);
+      budget -= readCount;
       const metaById = new Map(metas.map(m => [m.id, m]));
       if (g.act.length > 0) {
         await deps.actionLog.record(deps.userId, randomUUID(), g.act, verb); // record before mutating so undo always covers it
@@ -201,7 +225,10 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
         toCommit.push({ id: k.id, reason: `pref-kept: ${k.reason}` });
       }
       if (g.capped) {
-        for (const m of metas.slice(PREF_POLL_CAP)) {
+        // readCount is exactly how many ids preferenceVet read (it slices ids.slice(0,
+        // budgetAtCall) internally) — slicing metas at the same index keeps overflow
+        // selection in exact agreement with what was actually read.
+        for (const m of metas.slice(readCount)) {
           important.push({ messageId: m.id, from: m.from, subject: m.subject, reason: "pref-overflow: kept for review" });
           toCommit.push({ id: m.id, reason: "pref-overflow" });
           log("poll.pref", { userId: deps.userId, ...logMeta(m), action: "overflow-kept" });
