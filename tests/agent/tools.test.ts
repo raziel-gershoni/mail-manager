@@ -25,7 +25,7 @@ describe("readOnlyTools", () => {
     for (const banned of ["trash", "send_email", "forward", "http", "delete_messages"]) {
       expect(names.some(n => n.includes(banned))).toBe(false);
     }
-    expect(readOnlyTools().every(t => !t.mutating || t.schema.name.endsWith("_memory"))).toBe(true);
+    expect(readOnlyTools().every(t => !t.mutating || t.schema.name.endsWith("_memory") || t.schema.name.endsWith("_preference"))).toBe(true);
   });
 });
 
@@ -58,7 +58,7 @@ describe("dispatchTool", () => {
     const c = ctx();
     c.memory.upsertRule({ matchValue: "linkedin.com", scope: "domain", verdict: "unimportant", description: "li noise", action: "trash" });
     const r = await dispatchTool("list_memories", {}, c, tools) as Array<Record<string, unknown>>;
-    expect(r[0]).toEqual({ slug: "domain:linkedin.com", scope: "domain", matchValue: "linkedin.com", verdict: "unimportant", action: "trash", description: "li noise" });
+    expect(r[0]).toEqual({ slug: "domain:linkedin.com", scope: "domain", matchValue: "linkedin.com", verdict: "unimportant", action: "trash", description: "li noise", pending: false });
   });
   it("read_messages returns stripped bodies, capped at 10", async () => {
     const r = await dispatchTool("read_messages", { ids: ["a"] }, ctx(), tools) as any[];
