@@ -13,6 +13,24 @@ describe("parseReviewJson", () => {
     const out = parseReviewJson("garbage", ["a", "b"]);
     expect(out.every(v => v.keep)).toBe(true);
   });
+
+  // Keep-on-uncertainty applies to MALFORMED verdicts too, not just missing ones: a
+  // judged id whose `keep` isn't literally false is an ambiguous verdict, and only an
+  // explicit keep:false may act. This path is shared by reviewTrash (guarded senders)
+  // and reviewPreference (standing preferences) — a false keep is harmless, a false
+  // trash loses mail.
+  it("keeps a judged id whose keep is malformed, absent, or null — only explicit false acts", () => {
+    expect(parseReviewJson('[{"id":"a","keep":"yes","reason":"junk"}]', ["a"]))
+      .toEqual([{ id: "a", keep: true, reason: "junk" }]);        // non-boolean → keep
+    expect(parseReviewJson('[{"id":"a","reason":"junk"}]', ["a"]))
+      .toEqual([{ id: "a", keep: true, reason: "junk" }]);        // key omitted → keep
+    expect(parseReviewJson('[{"id":"a","keep":null,"reason":"junk"}]', ["a"]))
+      .toEqual([{ id: "a", keep: true, reason: "junk" }]);        // null → keep
+    expect(parseReviewJson('[{"id":"a","keep":0,"reason":"junk"}]', ["a"]))
+      .toEqual([{ id: "a", keep: true, reason: "junk" }]);        // falsy-but-not-false → keep
+    expect(parseReviewJson('[{"id":"a","keep":false,"reason":"junk"}]', ["a"]))
+      .toEqual([{ id: "a", keep: false, reason: "junk" }]);       // explicit false → act
+  });
 });
 
 describe("fakeReviewLLM", () => {

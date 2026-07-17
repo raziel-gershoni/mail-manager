@@ -3,23 +3,36 @@ import type { LLMProvider } from "../llm/provider.js";
 import type { GuardKeep, GuardResult } from "./guard.js";
 import { readCandidates } from "./read-candidates.js";
 
-// Per-verb ceiling on body reads for preference-driven acting — a BUDGET SHARED
-// ACROSS EVERY DISTINCT CONFIRMED PREFERENCE matched for that verb this poll cycle,
-// not a fresh allowance per preference (poll.ts's runPoll allocates from one running
-// counter per verb across prefTrash/prefArchive's text-keyed groups, decrementing it
-// by exactly how many ids each group's preferenceVet call actually read). So worst
-// case per cycle is PREF_POLL_CAP trash reads + PREF_POLL_CAP archive reads = 20
-// reads total, REGARDLESS of how many of the up to PREF_MAX (20, memory/preferences.ts)
-// confirmed preferences matched. Because every group that runs consumes at least one
-// unit of budget (and zero-budget groups are skipped before any LLM call), this also
-// bounds reviewPreference calls to at most PREF_POLL_CAP per verb (20 worst case
-// across both verbs) — never one per matched preference.
+// Two independent per-verb ceilings bound the preference path's cost per poll cycle.
+// Both are enforced by runPoll (src/notifier/poll.ts), which walks the text-keyed
+// prefTrash/prefArchive groups for a verb with one running read budget and one group
+// counter. Neither can cause loss: whatever either cap excludes is kept in the inbox
+// and surfaced as overflow, never acted unread.
 //
-// Deliberately lower than GUARDED_POLL_CAP (20): the sender-guarded path already
-// spends that cap per verb, so two more capped queues on top of the one classify
-// call the poll makes per un-ruled message needed to stay well inside a 60s budget.
-// Overflow is kept (never acted unread), so this cap can never cause loss.
+// PREF_POLL_CAP — body READS per verb, a BUDGET SHARED ACROSS EVERY DISTINCT
+// CONFIRMED PREFERENCE matched for that verb, not a fresh allowance per preference
+// (the budget is decremented by exactly how many ids each group's preferenceVet call
+// actually read).
+//
+// PREF_GROUP_CAP — preference GROUPS vetted per verb, i.e. reviewPreference CALLS per
+// verb. The read budget alone does NOT bound calls usefully: a group costs at least one
+// read, so N matched preferences meant up to PREF_POLL_CAP (10) calls per verb — ~20
+// serial Gemini calls per user per cycle, each with a 40s HTTP timeout, inside a 60s
+// maxDuration function that also iterates users sequentially. Capping groups pins that.
+//
+// WORST CASE PER USER PER CYCLE, added by the preference path:
+//   reads: PREF_POLL_CAP x 2 verbs                = 20 body reads
+//   calls: PREF_GROUP_CAP x 2 verbs               = 6 reviewPreference calls
+// regardless of how many of the up to PREF_MAX (20, memory/preferences.ts) confirmed
+// preferences matched. Realistically 1-2 preferences match per cycle, so PREF_GROUP_CAP
+// should almost never bind. This sits on top of what the poll already spends: the
+// sender-guarded path's 40 reads + 2 reviewTrash calls (GUARDED_POLL_CAP = 20 per verb,
+// one call per verb), plus one classify call per un-ruled message.
+//
+// PREF_POLL_CAP is deliberately lower than GUARDED_POLL_CAP (20) for that reason — the
+// guarded path already spends its cap per verb, and these queues are additive.
 export const PREF_POLL_CAP = 10;
+export const PREF_GROUP_CAP = 3;
 
 // Judgment for preference-driven acting: read each FULL body and ask whether the
 // owner's standing preference genuinely applies, keeping on any uncertainty.

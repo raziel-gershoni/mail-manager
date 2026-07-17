@@ -66,6 +66,12 @@ export async function runAgentTurn(
 ): Promise<AgentResult> {
   const max = deps.maxIters ?? MAX_TOOL_ITERS;
   const budget = deps.budgetMs ?? AGENT_BUDGET_MS;
+  // A turn is the unit the propose→confirm barrier is scoped to: this set starts
+  // empty for every owner message, propose_preference adds to it, and
+  // confirm_preference refuses anything in it. So within one turn the model can at
+  // most leave an inert pending row — making a preference live structurally requires
+  // a separate owner turn, no matter what the model read (or was told) this turn.
+  const ctx: ToolContext = { ...deps.ctx, proposedThisTurn: deps.ctx.proposedThisTurn ?? new Set<string>() };
   const schemas = deps.tools.map(t => t.schema);
   const convo = [...messages];
   const used: string[] = [];
@@ -100,7 +106,7 @@ export async function runAgentTurn(
       let result: unknown;
       const toolStart = Date.now();
       try {
-        result = await dispatchTool(call.name, call.args, deps.ctx, deps.tools);
+        result = await dispatchTool(call.name, call.args, ctx, deps.tools);
         log("agent.tool", { iter: i, name: call.name, args: call.args, result: summarize(result), ms: Date.now() - toolStart });
       } catch (e) {
         const error = e instanceof Error ? e.message : String(e);

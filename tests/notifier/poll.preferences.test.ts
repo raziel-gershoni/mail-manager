@@ -4,7 +4,7 @@ import { fakeGmailClient } from "../../src/gmail/client.js";
 import { inMemoryStore } from "../../src/memory/store.js";
 import { fakeSyncRepo, fakeSeenRepo } from "../../src/notifier/sync.js";
 import { fakeActionLogRepo } from "../../src/cleanup/proposals.js";
-import { PREF_POLL_CAP } from "../../src/cleanup/preference-vet.js";
+import { PREF_POLL_CAP, PREF_GROUP_CAP } from "../../src/cleanup/preference-vet.js";
 
 function deps(action: "trash" | "archive" | null = "trash") {
   const store = inMemoryStore();
@@ -200,5 +200,79 @@ describe("runPoll standing preferences — shared per-verb budget (PREF_POLL_CAP
     expect(d.calls.length).toBe(2);
     const calledIds = new Set(d.calls.flatMap(c => c.ids));
     for (const id of d.spam.ids) expect(calledIds.has(id)).toBe(false);
+  });
+});
+
+// PREF_GROUP_CAP + 1 distinct confirmed trash-preferences, each matching exactly ONE
+// message. The read budget (PREF_POLL_CAP) is deliberately NOT the binding constraint
+// here — every message would fit — so anything not acted on is proof the GROUP cap
+// (i.e. the reviewPreference CALL count, one per group per verb) bound it.
+function groupCapDeps() {
+  const store = inMemoryStore();
+  const keys = Array.from({ length: PREF_GROUP_CAP + 1 }, (_, i) => `pref${i + 1}`);
+  for (const key of keys) {
+    store.upsertPreference({ key, description: `${key} standing preference`, verdict: "unimportant", action: "trash" });
+    store.confirmPreference(key);
+  }
+  const ids = keys.map((_, i) => `m${i + 1}`);
+  const messages: Record<string, any> = {};
+  const bodies: Record<string, string> = {};
+  ids.forEach((id, i) => {
+    messages[id] = { id, threadId: "t", snippet: "", payload: { headers: [{ name: "From", value: `x@${keys[i]}.io` }, { name: "Subject", value: `msg ${id}` }] } };
+    bodies[id] = "body text";
+  });
+  const calls: { preference: string; ids: string[] }[] = [];
+  return {
+    userId: 1, store, keys, ids, calls,
+    gmail: fakeGmailClient({ historyId: "200", addedSince: { "100": ids }, messages, bodies }),
+    llm: {
+      // Each sender's domain names its own preference → one group per preference.
+      async classifyImportance(i: any) {
+        const key = (i.email.fromEmail as string).split("@")[1]!.replace(".io", "");
+        return { important: false, suspicious: false, reason: "r", matched: key };
+      },
+      async agentStep() { return { kind: "final", text: "" }; },
+      async writeBrief() { return ""; },
+      async reviewTrash() { throw new Error("preference path must not use reviewTrash"); },
+      async reviewPreference(c: any[], preference: string) {
+        calls.push({ preference, ids: c.map((x: any) => x.id) });
+        return c.map((x: any) => ({ id: x.id, keep: false, reason: "matches" }));
+      },
+    } as any,
+    sync: fakeSyncRepo(), seen: fakeSeenRepo(), actionLog: fakeActionLogRepo(),
+  };
+}
+
+describe("runPoll standing preferences — per-verb group cap (PREF_GROUP_CAP)", () => {
+  it("vets at most PREF_GROUP_CAP groups per verb, so reviewPreference calls stay bounded by the spec's budget", async () => {
+    const d = groupCapDeps();
+    await d.sync.set(1, "100");
+    const r = await runPoll(d as any);
+
+    // One call per vetted group, capped — NOT one per matched preference.
+    expect(d.calls.length).toBe(PREF_GROUP_CAP);
+    expect(d.gmail.trashedIds!().sort()).toEqual(d.ids.slice(0, PREF_GROUP_CAP).sort());
+    expect(r.prefTrashed).toBe(PREF_GROUP_CAP);
+  });
+
+  it("surfaces every group beyond the cap as overflow, triggering NO reviewPreference call for it and never acting on it", async () => {
+    const d = groupCapDeps();
+    await d.sync.set(1, "100");
+    const r = await runPoll(d as any);
+
+    for (const id of d.ids.slice(PREF_GROUP_CAP)) {
+      expect(d.gmail.trashedIds!()).not.toContain(id);                  // never acted
+      expect(new Set(d.calls.flatMap(c => c.ids)).has(id)).toBe(false); // never even read/judged
+      const item = r.important.find((i: any) => i.messageId === id);
+      expect(item).toBeDefined();                                       // never dropped
+      expect(item!.reason).toContain("pref-overflow");
+    }
+    // Every matched message is accounted for by exactly one path: acted or surfaced.
+    const acted = new Set(d.gmail.trashedIds!());
+    const surfaced = new Set(r.important.map((i: any) => i.messageId));
+    for (const id of d.ids) {
+      expect(acted.has(id) || surfaced.has(id)).toBe(true);
+      expect(acted.has(id) && surfaced.has(id)).toBe(false);
+    }
   });
 });

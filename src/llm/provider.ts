@@ -34,7 +34,11 @@ export function parseReviewJson(text: string, candidateIds: string[]): ReviewVer
     // error is a false keep, never a false trash (a well-formed but incomplete
     // array must not silently trash an unjudged message).
     if (!v) return { id, keep: true, reason: "unjudged-rescue" };
-    return { id, keep: v.keep === true, reason: typeof v.reason === "string" ? v.reason : "" };
+    // Only an EXPLICIT keep:false may act. A judged id whose keep is malformed or
+    // absent ("yes", null, missing) is an ambiguous verdict, not a licence to trash:
+    // coercing it to false would turn model sloppiness into a false trash. Same rule
+    // as the unjudged case above — the safe error is a false keep, never a false trash.
+    return { id, keep: v.keep !== false, reason: typeof v.reason === "string" ? v.reason : "" };
   });
 }
 

@@ -38,6 +38,10 @@ const en = {
   verb_archive: "archived",
   verb_trash: "trashed",
   verb_apply_rules: "applied rules",
+  verb_propose_pref: "drafted a preference",
+  verb_confirm_pref: "saved a preference",
+  verb_restore: "restored",
+  verb_recent_activity: "checked recent activity",
 
   // Poll / brief
   poll_heartbeat: "🟢 No new mail this check.",
@@ -147,6 +151,10 @@ export const messages: Record<"en" | "he", Record<MsgKey, string>> = {
     verb_archive: "ארכבתי",
     verb_trash: "זרקתי",
     verb_apply_rules: "החלתי כללים",
+    verb_propose_pref: "ניסחתי העדפה",
+    verb_confirm_pref: "שמרתי העדפה",
+    verb_restore: "שחזרתי",
+    verb_recent_activity: "בדקתי פעילות אחרונה",
 
     // Poll / brief
     poll_heartbeat: "🟢 אין דואר חדש בבדיקה הזו.",

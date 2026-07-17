@@ -7,7 +7,7 @@ import type { ActionLogRepo } from "../cleanup/proposals.js";
 import type { SyncStateRepo, SeenRepo } from "./sync.js";
 import { classifyEmail } from "./classify.js";
 import { guardVet } from "../cleanup/guard.js";
-import { preferenceVet, PREF_POLL_CAP } from "../cleanup/preference-vet.js";
+import { preferenceVet, PREF_POLL_CAP, PREF_GROUP_CAP } from "../cleanup/preference-vet.js";
 import { isNotFound } from "../gmail/errors.js";
 import { log, logMeta } from "../util/log.js";
 
@@ -180,29 +180,36 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
   // before acting. Never act unread — overflow past the cap is kept and surfaced.
   // Mirrors the guarded path: action-log FIRST, seen deferred to commit.
   //
-  // PREF_POLL_CAP is a BUDGET SHARED ACROSS EVERY GROUP OF THE SAME VERB this cycle,
-  // not a fresh allowance per distinct preference — otherwise N confirmed preferences
-  // would cost N x PREF_POLL_CAP reads instead of PREF_POLL_CAP total (see the comment
-  // on PREF_POLL_CAP in cleanup/preference-vet.ts for the worst-case accounting this
-  // enforces). Each group is vetted with whatever budget remains; the budget is then
-  // decremented by exactly how many ids preferenceVet actually read (min(group size,
-  // budget-at-call-time)) so overflow selection always agrees with what was read. A
-  // group that starts with zero budget is skipped entirely — no reviewPreference call
-  // — and every one of its messages is kept + surfaced as overflow.
+  // TWO per-verb ceilings, both shared across every group of that verb this cycle (see
+  // the worst-case accounting on PREF_POLL_CAP/PREF_GROUP_CAP in cleanup/preference-vet.ts):
+  //
+  //   budget (PREF_POLL_CAP)     — total body READS. Each group is vetted with whatever
+  //     budget remains, then the budget is decremented by exactly how many ids
+  //     preferenceVet actually read (min(group size, budget-at-call-time)), so overflow
+  //     selection always agrees with what was read. Without sharing, N confirmed
+  //     preferences would cost N x PREF_POLL_CAP reads instead of PREF_POLL_CAP total.
+  //   vetted (PREF_GROUP_CAP)    — groups vetted, i.e. reviewPreference CALLS. The read
+  //     budget alone doesn't bound calls usefully (a group costs as little as one read,
+  //     so N groups = up to PREF_POLL_CAP calls per verb — ~20 serial Gemini calls a
+  //     cycle across both verbs, in a 60s function that also loops users sequentially).
+  //
+  // A group excluded by EITHER ceiling is skipped before any LLM call and every one of
+  // its messages is kept + surfaced as overflow — never acted unread, never dropped.
   let prefTrashed = 0, prefArchived = 0;
   for (const [group, verb] of [[prefTrash, "trash"], [prefArchive, "archive"]] as const) {
     let budget = PREF_POLL_CAP;
+    let vetted = 0;
     for (const [text, metas] of group) {
-      if (budget <= 0) {
-        // No budget left for this verb this cycle: never act unread, and avoid the
-        // LLM call entirely — surface the whole group as overflow.
+      if (budget <= 0 || vetted >= PREF_GROUP_CAP) {
+        const limit = budget <= 0 ? "read-budget" : "group-cap";
         for (const m of metas) {
           important.push({ messageId: m.id, from: m.from, subject: m.subject, reason: "pref-overflow: kept for review" });
           toCommit.push({ id: m.id, reason: "pref-overflow" });
-          log("poll.pref", { userId: deps.userId, ...logMeta(m), action: "overflow-kept" });
+          log("poll.pref", { userId: deps.userId, ...logMeta(m), pref: text, limit, action: "overflow-kept" });
         }
         continue;
       }
+      vetted++;
       const budgetAtCall = budget;
       const g = await preferenceVet(metas.map(m => m.id), { gmail: deps.gmail, llm: deps.llm, cap: budgetAtCall, preference: text });
       const readCount = Math.min(metas.length, budgetAtCall);
