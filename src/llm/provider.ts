@@ -5,7 +5,7 @@ import type { MemoryIndexEntry } from "../memory/store.js";
 import type { AgentMessage } from "../context/assemble.js";
 
 export interface ClassifyInput { email: EmailMeta; risk: RiskSignals; memoryIndex: MemoryIndexEntry[]; }
-export interface ClassifyResult { important: boolean; suspicious: boolean; reason: string; }
+export interface ClassifyResult { important: boolean; suspicious: boolean; reason: string; matched?: string; }
 
 export interface ToolSchema { name: string; description: string; parameters: Record<string, unknown>; }
 export interface ToolCall { name: string; args: Record<string, unknown>; thoughtSignature?: string; }
@@ -20,6 +20,7 @@ export interface LLMProvider {
   agentStep(messages: AgentMessage[], tools: ToolSchema[]): Promise<AgentStep>;
   writeBrief(emails: BriefEmail[], context?: string): Promise<string>;
   reviewTrash(candidates: TrashCandidate[]): Promise<ReviewVerdict[]>;
+  reviewPreference(candidates: TrashCandidate[], preference: string): Promise<ReviewVerdict[]>;
 }
 
 export function parseReviewJson(text: string, candidateIds: string[]): ReviewVerdict[] {
@@ -43,6 +44,7 @@ export function fakeReviewLLM(fn: (c: TrashCandidate[]) => ReviewVerdict[]): LLM
     async agentStep() { return { kind: "final", text: "" }; },
     async writeBrief() { return ""; },
     async reviewTrash(c) { return fn(c); },
+    async reviewPreference(c) { return fn(c); },
   };
 }
 
@@ -52,6 +54,7 @@ export function fakeLLM(fn: (i: ClassifyInput) => ClassifyResult): LLMProvider {
     async agentStep() { return { kind: "final", text: "" }; },
     async writeBrief() { return ""; },
     async reviewTrash() { return []; },
+    async reviewPreference() { return []; },
   };
 }
 
@@ -64,5 +67,6 @@ export function fakeAgentLLM(
     async agentStep(messages, tools) { return script(messages, tools); },
     async writeBrief(emails, context) { return brief(emails, context); },
     async reviewTrash() { return []; },
+    async reviewPreference() { return []; },
   };
 }

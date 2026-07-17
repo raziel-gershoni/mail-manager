@@ -14,6 +14,7 @@ function build(over: Partial<SecretaryDeps> = {}) {
     async classifyImportance() { return { important: false, suspicious: false, reason: "" }; },
     async writeBrief() { return ""; },
     async reviewTrash() { return []; },
+    async reviewPreference() { return []; },
     async agentStep(messages: unknown[]) { seen.push(messages); return { kind: "final", text: "ok" }; },
   };
   const deps: SecretaryDeps = {

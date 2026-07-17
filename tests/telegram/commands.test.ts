@@ -16,6 +16,7 @@ function deps(): SecretaryDeps {
     async classifyImportance() { return { important: false, suspicious: false, reason: "" }; },
     async writeBrief() { return ""; },
     async reviewTrash() { return []; },
+    async reviewPreference() { return []; },
     async agentStep() { throw new Error("agentStep should NOT be called for /start or /help"); },
   };
   return {

@@ -24,6 +24,7 @@ it("a scripted agent runs propose_trash then confirm_trash and the email is tras
     async classifyImportance() { return { important: false, suspicious: false, reason: "" }; },
     async writeBrief() { return ""; },
     async reviewTrash() { return []; },
+    async reviewPreference() { return []; },
     async agentStep(): Promise<AgentStep> {
       step++;
       if (step === 1) return { kind: "tool_calls", calls: [{ name: "propose_trash", args: { ids: ["a"], reason: "linkedin" } }] };
