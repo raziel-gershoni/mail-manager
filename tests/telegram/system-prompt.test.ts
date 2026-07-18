@@ -57,4 +57,12 @@ describe("SYSTEM_PROMPT classification guidance", () => {
     expect(SYSTEM_PROMPT).toMatch(/it does not name the rule/i);
     expect(SYSTEM_PROMPT).toMatch(/cross-reference the sender\/domain or preference topic yourself/i);
   });
+
+  // The mail-listing sign legend (search_gmail/read_messages carry a trusted `rule`
+  // field the model renders as a per-email sign). Pin every sign + the null contract
+  // so a revert or a dropped emoji fails this test.
+  it("documents the rule-sign legend for mail listings", () => {
+    for (const sign of ["🗑", "📥", "🛡", "✅", "⭐", "🔕"]) expect(SYSTEM_PROMPT).toContain(sign);
+    expect(SYSTEM_PROMPT).toMatch(/rule: null means no rule/i);
+  });
 });

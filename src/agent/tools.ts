@@ -8,6 +8,7 @@ import type { ActivityRepo } from "../notifier/activity.js";
 import { mapLimit } from "../util/concurrency.js";
 import { validatePreference, normalizeKey } from "../memory/preferences.js";
 import { keyFromSlug } from "../memory/store.js";
+import { ruleTag } from "./rule-tag.js";
 
 export interface ToolContext {
   userId: number;
@@ -44,7 +45,10 @@ export function readOnlyTools(): ToolDef[] {
       mutating: false,
       schema: { name: "search_gmail", description: "Search the owner's mail with a Gmail query; returns message metadata (no bodies). Searches the INBOX by default — to look beyond it, include an in: operator (e.g. in:anywhere = all mail incl. archived/trash/spam; in:sent; in:trash).",
         parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
-      async run(args, ctx) { return ctx.gmail.search(scopeSearchToInbox(String(args.query ?? ""))); },
+      async run(args, ctx) {
+        const metas = await ctx.gmail.search(scopeSearchToInbox(String(args.query ?? "")));
+        return metas.map(m => ({ ...m, rule: ruleTag(ctx.memory.findRuleFor(m.fromEmail, m.fromDomain)) }));
+      },
     },
     {
       mutating: false,
@@ -67,7 +71,7 @@ export function readOnlyTools(): ToolDef[] {
       async run(args, ctx) {
         const ids = (args.ids as string[] ?? []).slice(0, READ_LIMIT);
         const fulls = await mapLimit(ids, 5, (id) => ctx.gmail.readFull(id));
-        return fulls.map((f, i) => ({ id: ids[i]!, from: f.meta.from, subject: f.meta.subject, bodyText: f.bodyText }));
+        return fulls.map((f, i) => ({ id: ids[i]!, from: f.meta.from, subject: f.meta.subject, bodyText: f.bodyText, rule: ruleTag(ctx.memory.findRuleFor(f.meta.fromEmail, f.meta.fromDomain)) }));
       },
     },
     {
