@@ -12,6 +12,9 @@ describe("ruleTag", () => {
     expect(ruleTag(rm("domain:x.com", "review_archive"))).toMatchObject({ kind: "guarded" });
     expect(ruleTag(rm("sender:a@b.com", "keep"))).toMatchObject({ kind: "keep" });
   });
+  it("splits only on the FIRST colon, so a matchValue containing a colon is preserved", () => {
+    expect(ruleTag(rm("sender:weird:value@x.com", "trash"))).toEqual({ kind: "auto-trash", scope: "sender", matchValue: "weird:value@x.com" });
+  });
   it("maps a verdict-only rule (action null) by verdict", () => {
     expect(ruleTag(rm("sender:vip@x.com", null, "important"))).toMatchObject({ kind: "important" });
     expect(ruleTag(rm("domain:spam.com", null, "unimportant"))).toMatchObject({ kind: "ignore" });
