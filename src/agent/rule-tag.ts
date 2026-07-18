@@ -1,6 +1,6 @@
 import type { RuleMatch } from "../memory/store.js";
 
-export type RuleTagKind = "auto-trash" | "auto-archive" | "guarded" | "keep" | "important" | "ignore";
+export type RuleTagKind = "auto-trash" | "auto-archive" | "guarded-trash" | "guarded-archive" | "keep" | "important" | "ignore";
 export interface RuleTag { kind: RuleTagKind; scope: string; matchValue: string; }
 
 // Map a sender/domain rule to a compact, LLM-facing tag. null in → null out (no
@@ -16,7 +16,8 @@ export function ruleTag(rule: RuleMatch | null): RuleTag | null {
   switch (rule.action) {
     case "trash": kind = "auto-trash"; break;
     case "archive": kind = "auto-archive"; break;
-    case "review": case "review_archive": kind = "guarded"; break;
+    case "review": kind = "guarded-trash"; break;             // reads & judges, then trashes junk
+    case "review_archive": kind = "guarded-archive"; break;   // reads & judges, then archives routine
     case "keep": kind = "keep"; break;
     default: kind = rule.verdict === "important" ? "important" : "ignore"; // verdict-only rule (action null)
   }

@@ -62,7 +62,7 @@ describe("SYSTEM_PROMPT classification guidance", () => {
   // field the model renders as a per-email sign). Pin every sign + the null contract
   // so a revert or a dropped emoji fails this test.
   it("documents the rule-sign legend for mail listings", () => {
-    for (const sign of ["🗑", "📥", "🛡", "✅", "⭐", "🔕"]) expect(SYSTEM_PROMPT).toContain(sign);
+    for (const sign of ["🗑", "📥", "🛡🗑", "🛡📥", "✅", "⭐", "🔕"]) expect(SYSTEM_PROMPT).toContain(sign);
     expect(SYSTEM_PROMPT).toMatch(/rule: null means no rule/i);
   });
 });

@@ -27,7 +27,7 @@ New module `src/agent/rule-tag.ts`:
 ```ts
 import type { RuleMatch } from "../memory/store.js";
 
-export type RuleTagKind = "auto-trash" | "auto-archive" | "guarded" | "keep" | "important" | "ignore";
+export type RuleTagKind = "auto-trash" | "auto-archive" | "guarded-trash" | "guarded-archive" | "keep" | "important" | "ignore";
 export interface RuleTag { kind: RuleTagKind; scope: string; matchValue: string; }
 
 // Map a sender/domain rule to a compact, LLM-facing tag. null in → null out
@@ -42,7 +42,8 @@ export function ruleTag(rule: RuleMatch | null): RuleTag | null {
   switch (rule.action) {
     case "trash": kind = "auto-trash"; break;
     case "archive": kind = "auto-archive"; break;
-    case "review": case "review_archive": kind = "guarded"; break;
+    case "review": kind = "guarded-trash"; break;
+    case "review_archive": kind = "guarded-archive"; break;
     case "keep": kind = "keep"; break;
     default: kind = rule.verdict === "important" ? "important" : "ignore"; // verdict-only rule (action null)
   }
@@ -56,7 +57,8 @@ export function ruleTag(rule: RuleMatch | null): RuleTag | null {
 |---|---|---|
 | auto-trash | action `trash` | 🗑 |
 | auto-archive | action `archive` | 📥 |
-| guarded | action `review` / `review_archive` | 🛡 |
+| guarded-trash | action `review` | 🛡🗑 |
+| guarded-archive | action `review_archive` | 🛡📥 |
 | keep | action `keep` | ✅ |
 | important | verdict `important`, no action | ⭐ |
 | ignore | verdict `unimportant`, no action | 🔕 |
@@ -75,7 +77,7 @@ Both mail-listing tools in `src/agent/tools.ts` add a `rule` field per message v
 
 One block added to `SYSTEM_PROMPT` in `src/telegram/bot.ts`:
 
-> When you list the owner's emails from `search_gmail` or `read_messages`, mark each one whose sender already has a learned rule so the owner sees at a glance what is handled. Each result carries a `rule` field — trusted, computed from the stored rules, not the email. `rule: null` → no rule, leave it unmarked (those are the senders still open to rule). Otherwise prefix the email with the sign for `rule.kind`: 🗑 auto-trash, 📥 auto-archive, 🛡 guarded, ✅ keep, ⭐ important, 🔕 ignore. Never put a sign on a `rule: null` message.
+> When you list the owner's emails from `search_gmail` or `read_messages`, mark each one whose sender already has a learned rule so the owner sees at a glance what is handled. Each result carries a `rule` field — trusted, computed from the stored rules, not the email. `rule: null` → no rule, leave it unmarked (those are the senders still open to rule). Otherwise prefix the email with the sign for `rule.kind`: 🗑 auto-trash, 📥 auto-archive, 🛡🗑 guarded-trash, 🛡📥 guarded-archive, ✅ keep, ⭐ important, 🔕 ignore (🛡 = reads & judges the body first; the second sign is what it does after). Never put a sign on a `rule: null` message.
 
 The guidance constrains only the per-email prefix, not the rest of the reply's format.
 

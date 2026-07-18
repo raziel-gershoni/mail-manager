@@ -8,8 +8,8 @@ describe("ruleTag", () => {
   it("maps each action to its kind and parses scope/matchValue from the slug", () => {
     expect(ruleTag(rm("domain:linkedin.com", "trash"))).toEqual({ kind: "auto-trash", scope: "domain", matchValue: "linkedin.com" });
     expect(ruleTag(rm("sender:jane@work.com", "archive"))).toEqual({ kind: "auto-archive", scope: "sender", matchValue: "jane@work.com" });
-    expect(ruleTag(rm("domain:x.com", "review"))).toMatchObject({ kind: "guarded" });
-    expect(ruleTag(rm("domain:x.com", "review_archive"))).toMatchObject({ kind: "guarded" });
+    expect(ruleTag(rm("domain:x.com", "review"))).toMatchObject({ kind: "guarded-trash" });
+    expect(ruleTag(rm("domain:x.com", "review_archive"))).toMatchObject({ kind: "guarded-archive" });
     expect(ruleTag(rm("sender:a@b.com", "keep"))).toMatchObject({ kind: "keep" });
   });
   it("splits only on the FIRST colon, so a matchValue containing a colon is preserved", () => {
