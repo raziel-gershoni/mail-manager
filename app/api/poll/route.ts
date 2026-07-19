@@ -46,12 +46,13 @@ export async function POST(req: Request): Promise<Response> {
       try {
         const auth = await authedGmailFor(userId, e);
         const gmail = googleGmailClient(auth);
-        const res = await runPoll({ userId, gmail, store: await dbMemoryStore(userId), llm, sync: dbSyncRepo(), seen: dbSeenRepo(), actionLog: dbActionLogRepo() });
+        const store = await dbMemoryStore(userId);
+        const res = await runPoll({ userId, gmail, store, llm, sync: dbSyncRepo(), seen: dbSeenRepo(), actionLog: dbActionLogRepo() });
         if (res.firstRun) return;
         const ids = res.important.map(i => i.messageId);
         let brief: string | null = null;
         if (ids.length > 0) {
-          brief = await generateBrief(ids, { gmail, llm, timezone, language });
+          brief = await generateBrief(ids, { gmail, llm, timezone, language, store });
           if (!brief || brief.trim() === "") {
             brief = `${t(language, "poll_fallback_head", { n: ids.length })}\n` +
               res.important.map(i => `• ${i.subject || t(language, "poll_no_subject")} — ${i.from}`).join("\n");

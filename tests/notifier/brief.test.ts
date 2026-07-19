@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import { generateBrief } from "../../src/notifier/brief.js";
 import { fakeGmailClient } from "../../src/gmail/client.js";
 import { fakeAgentLLM } from "../../src/llm/provider.js";
+import { inMemoryStore } from "../../src/memory/store.js";
 
 describe("generateBrief", () => {
   const gmail = fakeGmailClient({
@@ -26,5 +27,19 @@ describe("generateBrief", () => {
     await generateBrief(["a"], { gmail, llm, timezone: "UTC" });
     expect(seenContext).toContain("Today is");
     expect(seenContext).toContain("(UTC)");
+  });
+  it("tags each brief email with its sender's rule when a store is given", async () => {
+    const store = inMemoryStore();
+    store.upsertRule({ matchValue: "x.com", scope: "domain", verdict: "unimportant", description: "x", action: "review_archive" });
+    let seen: any[] = [];
+    const llm = fakeAgentLLM(() => ({ kind: "final", text: "" }), (emails) => { seen = emails; return "B"; });
+    await generateBrief(["a"], { gmail, llm, store });
+    expect(seen[0].rule).toEqual({ kind: "guarded-archive", scope: "domain", matchValue: "x.com" }); // stripe@x.com → domain x.com
+  });
+  it("leaves rule undefined/null when no store is given (existing callers unaffected)", async () => {
+    let seen: any[] = [];
+    const llm = fakeAgentLLM(() => ({ kind: "final", text: "" }), (emails) => { seen = emails; return "B"; });
+    await generateBrief(["a"], { gmail, llm });
+    expect(seen[0].rule ?? null).toBeNull();
   });
 });

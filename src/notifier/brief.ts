@@ -1,6 +1,8 @@
 // src/notifier/brief.ts
 import type { GmailClient } from "../gmail/client.js";
 import type { LLMProvider, BriefEmail } from "../llm/provider.js";
+import type { MemoryStore } from "../memory/store.js";
+import { ruleTag } from "../agent/rule-tag.js";
 import { dateContext } from "../context/date.js";
 import { languageDirective } from "../telegram/bot.js";
 import { t, type Lang } from "../i18n/index.js";
@@ -9,17 +11,17 @@ export const MAX_BRIEF_BODIES = 8;
 
 export async function generateBrief(
   ids: string[],
-  deps: { gmail: GmailClient; llm: LLMProvider; timezone?: string; language?: Lang },
+  deps: { gmail: GmailClient; llm: LLMProvider; timezone?: string; language?: Lang; store?: MemoryStore },
 ): Promise<string | null> {
   if (ids.length === 0) return null;
   const emails: BriefEmail[] = [];
   for (const id of ids.slice(0, MAX_BRIEF_BODIES)) {
     const f = await deps.gmail.readFull(id);
-    emails.push({ from: f.meta.from, subject: f.meta.subject, bodyText: f.bodyText });
+    emails.push({ from: f.meta.from, subject: f.meta.subject, bodyText: f.bodyText, rule: deps.store ? ruleTag(deps.store.findRuleFor(f.meta.fromEmail, f.meta.fromDomain)) : null });
   }
   for (const id of ids.slice(MAX_BRIEF_BODIES)) {
     const m = await deps.gmail.getMeta(id);
-    emails.push({ from: m.from, subject: m.subject, bodyText: m.snippet });
+    emails.push({ from: m.from, subject: m.subject, bodyText: m.snippet, rule: deps.store ? ruleTag(deps.store.findRuleFor(m.fromEmail, m.fromDomain)) : null });
   }
   // The language directive rides in the brief context so the brief is written in
   // the user's language regardless of the mail's language.
