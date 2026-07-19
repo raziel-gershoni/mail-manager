@@ -3,6 +3,7 @@ import type { EmailMeta } from "../gmail/headers.js";
 import type { RiskSignals } from "../gmail/risk.js";
 import type { MemoryIndexEntry } from "../memory/store.js";
 import type { AgentMessage } from "../context/assemble.js";
+import type { RuleTag } from "../agent/rule-tag.js";
 
 export interface ClassifyInput { email: EmailMeta; risk: RiskSignals; memoryIndex: MemoryIndexEntry[]; }
 export interface ClassifyResult { important: boolean; suspicious: boolean; reason: string; matched?: string; }
@@ -10,7 +11,7 @@ export interface ClassifyResult { important: boolean; suspicious: boolean; reaso
 export interface ToolSchema { name: string; description: string; parameters: Record<string, unknown>; }
 export interface ToolCall { name: string; args: Record<string, unknown>; thoughtSignature?: string; }
 export type AgentStep = { kind: "tool_calls"; calls: ToolCall[] } | { kind: "final"; text: string };
-export interface BriefEmail { from: string; subject: string; bodyText: string; }
+export interface BriefEmail { from: string; subject: string; bodyText: string; rule?: RuleTag | null; }
 
 export interface TrashCandidate { id: string; from: string; subject: string; bulk: boolean; transactional: boolean; bodyText?: string; }
 export interface ReviewVerdict { id: string; keep: boolean; reason: string; }
