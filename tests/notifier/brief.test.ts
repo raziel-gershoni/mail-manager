@@ -42,4 +42,24 @@ describe("generateBrief", () => {
     await generateBrief(["a"], { gmail, llm });
     expect(seen[0].rule ?? null).toBeNull();
   });
+  it("tags the getMeta overflow branch too, and leaves an unruled sender null in the same call", async () => {
+    // 9 ids > MAX_BRIEF_BODIES (8): id "a" (ruled, stripe@x.com) is read via getMeta as
+    // the 9th (overflow) message; "u" (unruled) rides the readFull branch. Both paths tagged.
+    const many = fakeGmailClient({
+      historyId: "1", addedSince: {},
+      messages: {
+        a: { id: "a", threadId: "t", snippet: "s", payload: { headers: [{ name: "From", value: "stripe@x.com" }, { name: "Subject", value: "Invoice" }] } },
+        u: { id: "u", threadId: "t", snippet: "s", payload: { headers: [{ name: "From", value: "nobody@unruled.com" }, { name: "Subject", value: "Hi" }] } },
+      },
+      bodies: { a: "amount due", u: "hello" },
+    });
+    const store = inMemoryStore();
+    store.upsertRule({ matchValue: "x.com", scope: "domain", verdict: "unimportant", description: "x", action: "review_archive" });
+    let seen: any[] = [];
+    const llm = fakeAgentLLM(() => ({ kind: "final", text: "" }), (emails) => { seen = emails; return "B"; });
+    // "u" first (readFull branch, unruled → null), then 8 copies of "a"; the 9th "a" hits the getMeta overflow branch.
+    await generateBrief(["u", "a", "a", "a", "a", "a", "a", "a", "a"], { gmail: many, llm, store });
+    expect(seen[0].rule ?? null).toBeNull();                                          // unruled sender in the readFull branch
+    expect(seen[8].rule).toEqual({ kind: "guarded-archive", scope: "domain", matchValue: "x.com" }); // overflow (getMeta) branch tagged
+  });
 });
