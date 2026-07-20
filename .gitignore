@@ -9,3 +9,7 @@ next-env.d.ts
 
 # TypeScript incremental build cache
 *.tsbuildinfo
+
+# AI-assisted planning/spec artifacts (kept locally, not published)
+.superpowers/
+docs/superpowers/
