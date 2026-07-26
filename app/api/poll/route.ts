@@ -61,7 +61,7 @@ export async function POST(req: Request): Promise<Response> {
         // Report every cycle (heartbeat when nothing arrived; activity otherwise).
         // Only genuinely-important mail buzzes the phone — routine reports and
         // heartbeats go as silent notifications, and only real briefs are stored
-        // in the conversation (so 48 heartbeats/day don't bloat the context).
+        // in the conversation (so 24 heartbeats/day don't bloat the context).
         const hasImportant = res.important.length > 0;
         const trashed = res.guardedTrashed + res.plainTrashed + res.prefTrashed;
         const archived = res.guardedArchived + res.plainArchived + res.prefArchived;

@@ -1,4 +1,4 @@
-// The poll's activity log: a compact record of what each ~30-min cycle DID
+// The poll's activity log: a compact record of what each hourly cycle DID
 // (auto-trashed/archived a message, or flagged a new un-ruled sender). It is
 // written to a side table — NOT the conversation context — so the owner can pull
 // it up on demand via the `recent_activity` tool ("what did you do?" / "what was

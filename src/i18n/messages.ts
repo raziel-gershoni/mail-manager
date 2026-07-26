@@ -8,7 +8,7 @@ const en = {
   // Bot / Telegram
   intro:
     "Hi — I'm your Gmail secretary. 📬\n\n" +
-    "Every ~30 min I'll message you about important new mail. Any time, just talk to me normally:\n" +
+    "Every hour I'll message you about important new mail. Any time, just talk to me normally:\n" +
     '• "what\'s important?" / "anything from the bank?" — I search and summarize your inbox\n' +
     '• "dana is always important" / "I don\'t care about LinkedIn" — I learn your preferences\n' +
     '• "clean my LinkedIn junk" — I propose what to trash; you confirm, and it\'s undoable\n\n' +
@@ -121,7 +121,7 @@ export const messages: Record<"en" | "he", Record<MsgKey, string>> = {
     // Bot / Telegram
     intro:
       "היי — אני המזכיר/ה של הג'ימייל שלך. 📬\n\n" +
-      "כל ~30 דקות אשלח לך עדכון על מיילים חדשים וחשובים. בכל רגע פשוט דבר/י איתי רגיל:\n" +
+      "כל שעה אשלח לך עדכון על מיילים חדשים וחשובים. בכל רגע פשוט דבר/י איתי רגיל:\n" +
       "• \"מה חשוב?\" / \"יש משהו מהבנק?\" — אחפש ואסכם לך את תיבת הדואר\n" +
       "• \"דנה תמיד חשובה\" / \"לא מעניין אותי לינקדאין\" — אלמד את ההעדפות שלך\n" +
       "• \"תנקה לי את הזבל מלינקדאין\" — אציע מה לזרוק; את/ה מאשר/ת, והכול הפיך\n\n" +

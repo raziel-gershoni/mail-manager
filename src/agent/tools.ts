@@ -81,7 +81,7 @@ export function readOnlyTools(): ToolDef[] {
     },
     {
       mutating: false,
-      schema: { name: "recent_activity", description: "List what the ~30-min background poll recently DID for the owner — messages it auto-trashed or auto-archived (with sender + subject) and new un-ruled senders it flagged — newest first, with timestamps. Routine poll activity is NOT in the conversation, so use THIS to answer 'what did you do?' / 'what was that one you trashed?' when the owner asks about a report or digest.",
+      schema: { name: "recent_activity", description: "List what the hourly background poll recently DID for the owner — messages it auto-trashed or auto-archived (with sender + subject) and new un-ruled senders it flagged — newest first, with timestamps. Routine poll activity is NOT in the conversation, so use THIS to answer 'what did you do?' / 'what was that one you trashed?' when the owner asks about a report or digest.",
         parameters: { type: "object", properties: { limit: { type: "number" } } } },
       async run(args, ctx) {
         if (!ctx.activity) return { items: [] };

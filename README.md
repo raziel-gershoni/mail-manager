@@ -20,7 +20,7 @@ Mail Manager polls each linked Gmail account on a schedule, classifies incoming 
      ![screenshot](docs/screenshot.png) -->
 
 ## ✨ Features
-- **Scheduled inbox triage.** Every ~30 minutes the bot syncs new mail via Gmail's history API, decides what is important, and delivers a written brief to Telegram — important mail notifies, routine mail goes to an activity log instead of pinging you.
+- **Scheduled inbox triage.** Every hour the bot syncs new mail via Gmail's history API, decides what is important, and delivers a written brief to Telegram — important mail notifies, routine mail goes to an activity log instead of pinging you.
 - **Conversational control.** Ask questions and give instructions in plain language; the assistant searches, reads, and reasons over your inbox and replies conversationally rather than dumping a wall of buttons.
 - **Learns your preferences.** Tell it "the bank is always important" or "crypto pitches are noise" and it remembers — as sender/domain rules or topic-based standing preferences that shape future triage.
 - **Guarded, recoverable cleanup.** Ask it to clean a category and it proposes a vetted set and waits for your approval before trashing or archiving. Every destructive action is logged and reversible with a simple "undo."
@@ -101,7 +101,7 @@ npm start
 npm run typecheck
 ```
 
-After the first deploy (and whenever `APP_BASE_URL` changes), run once to create the QStash poll schedule and register the Telegram webhook — both operations are idempotent:
+After the first deploy (and whenever `APP_BASE_URL` or the poll cadence changes), run once to create the QStash poll schedule and register the Telegram webhook — both operations are idempotent, and the schedule step re-creates the cron if it has drifted from `POLL_CRON`:
 ```bash
 curl -X POST https://<app>/api/setup -H 'Authorization: Bearer <SETUP_SECRET>'
 ```
@@ -115,7 +115,7 @@ npm run test:watch
 ```
 
 ## 📦 Deployment
-Deploys to **Vercel**. The `vercel-build` script runs Drizzle migrations before building, so schema changes ship with the deploy and a failed migration blocks it. The recurring inbox poll runs as an **Upstash QStash** cron (~every 30 minutes) that hits the app's poll endpoint with a signature-verified request.
+Deploys to **Vercel**. The `vercel-build` script runs Drizzle migrations before building, so schema changes ship with the deploy and a failed migration blocks it. The recurring inbox poll runs as an **Upstash QStash** cron (hourly, on the hour) that hits the app's poll endpoint with a signature-verified request.
 
 ## 📄 License
 Shared publicly as a portfolio project.
