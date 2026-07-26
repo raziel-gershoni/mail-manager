@@ -10,9 +10,9 @@
 ![Neon Postgres](https://img.shields.io/badge/Neon_Postgres-00e599?style=flat-square&logo=postgresql&logoColor=white)
 ![Vitest](https://img.shields.io/badge/Vitest-6e9f18?style=flat-square&logo=vitest&logoColor=white)
 ![Vercel](https://img.shields.io/badge/Vercel-000?style=flat-square&logo=vercel&logoColor=white)
-[![demo · live](https://img.shields.io/badge/demo-live-2ea043?style=flat-square&logo=vercel&logoColor=white)](https://mail-manager-lime.vercel.app)
+[![demo · live](https://img.shields.io/badge/demo-live-2ea043?style=flat-square&logo=vercel&logoColor=white)](https://mail-manager-eight.vercel.app)
 
-**🔗 Live demo:** https://mail-manager-lime.vercel.app  <!-- access is Telegram-bot based and owner-provisioned; the landing page is public but the assistant runs inside a Telegram chat -->
+**🔗 Live demo:** https://mail-manager-eight.vercel.app  <!-- access is Telegram-bot based and owner-provisioned; the landing page is public but the assistant runs inside a Telegram chat -->
 
 Mail Manager polls each linked Gmail account on a schedule, classifies incoming mail with learned rules and a Gemini pass, and sends a natural-language brief to Telegram — surfacing only what genuinely matters while routine mail flows into an activity log. You talk to it like a person ("what's new?", "clean my LinkedIn junk", "LinkedIn is never important") and an agentic tool-use loop searches and reads your mail, learns your preferences, and performs guarded, fully recoverable cleanup that always asks before it deletes.
 
