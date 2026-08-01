@@ -3,7 +3,7 @@ import { Bot } from "grammy";
 import type { Env } from "../config/env.js";
 import type { GmailClient } from "../gmail/client.js";
 import type { MemoryStore } from "../memory/store.js";
-import type { LLMProvider } from "../llm/provider.js";
+import type { LLMProvider, StreamSink } from "../llm/provider.js";
 import type { ConversationRepo } from "../conversation/store.js";
 import type { ToolDef, ToolContext } from "../agent/tools.js";
 import type { ProposalRepo, ActionLogRepo } from "../cleanup/proposals.js";
@@ -56,6 +56,7 @@ export interface SecretaryDeps {
   replyContext?: string; // text of the message the owner replied to (Telegram reply-to), injected into this turn only
   replyRefs?: DigestRef[]; // exact Gmail messages the replied-to digest was about (resolved from its Telegram message id)
   activity?: ActivityRepo; // the poll's activity log, queried on demand by the recent_activity tool
+  sink?: StreamSink; // streams the answer into the chat as it is written (worker only)
 }
 
 import type { MsgKey } from "../i18n/index.js";
@@ -107,7 +108,7 @@ export async function handleMessage(text: string, deps: SecretaryDeps): Promise<
   const messages = buildAgentMessages(system, deps.memory.index(), state, userText);
   const ctx: ToolContext = { userId: deps.userId, gmail: deps.gmail, memory: deps.memory,
     proposals: deps.proposals, actionLog: deps.actionLog, llm: deps.llm, activity: deps.activity };
-  const result = await runAgentTurn(messages, { llm: deps.llm, tools: deps.tools, ctx, language: lang });
+  const result = await runAgentTurn(messages, { llm: deps.llm, tools: deps.tools, ctx, language: lang, sink: deps.sink });
   await deps.convo.appendTurn(deps.userId, { role: "user", content: text });
   await deps.convo.appendTurn(deps.userId, { role: "assistant", content: result.text, toolNote: result.toolNote });
   const after = await deps.convo.load(deps.userId);

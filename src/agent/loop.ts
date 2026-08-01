@@ -1,5 +1,5 @@
 import type { AgentMessage } from "../context/assemble.js";
-import type { LLMProvider } from "../llm/provider.js";
+import type { LLMProvider, StreamSink } from "../llm/provider.js";
 import type { ToolDef, ToolContext } from "./tools.js";
 import { dispatchTool } from "./tools.js";
 import { log } from "../util/log.js";
@@ -62,7 +62,9 @@ function summarize(result: unknown): unknown {
 
 export async function runAgentTurn(
   messages: AgentMessage[],
-  deps: { llm: LLMProvider; tools: ToolDef[]; ctx: ToolContext; maxIters?: number; budgetMs?: number; language?: Lang },
+  // `sink` streams the answer into the chat as it is written. It is optional: the
+  // poll and most tests run without one and behave exactly as before.
+  deps: { llm: LLMProvider; tools: ToolDef[]; ctx: ToolContext; maxIters?: number; budgetMs?: number; language?: Lang; sink?: StreamSink },
 ): Promise<AgentResult> {
   const max = deps.maxIters ?? MAX_TOOL_ITERS;
   const budget = deps.budgetMs ?? AGENT_BUDGET_MS;
@@ -83,7 +85,7 @@ export async function runAgentTurn(
     const stepStart = Date.now();
     let step: Awaited<ReturnType<typeof deps.llm.agentStep>> | typeof TIMED_OUT;
     try {
-      step = await withTimeout(deps.llm.agentStep(convo, schemas), remaining);
+      step = await withTimeout(deps.llm.agentStep(convo, schemas, deps.sink), remaining);
     } catch (err) {
       // The model call REJECTED (e.g. Gemini 504 DEADLINE_EXCEEDED on a heavy turn).
       // withTimeout only converts the *timeout* branch into a sentinel — a thrown
@@ -123,6 +125,7 @@ export async function runAgentTurn(
       deps.llm.agentStep(
         [...convo, { role: "user", content: "You've used your tool budget. Give the owner your best final answer NOW using what you've already found. If you couldn't find what they meant, say so briefly and ask them to clarify (e.g. the sender's email). Do NOT call any tools." }],
         [],
+        deps.sink, // this call IS the owner's answer on an exhausted turn — stream it too
       ),
       FORCE_FINAL_MS,
     );
