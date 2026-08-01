@@ -97,7 +97,11 @@ export const proposals = pgTable("proposals", {
 
 export const processedUpdates = pgTable("processed_updates", {
   updateId: text("update_id").primaryKey(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(), // when the CURRENT attempt claimed it
+  // Null while a worker is still running. Set once the turn finished, which seals
+  // the update forever: a late duplicate must never re-answer or re-act. Without
+  // this, the stale-claim takeover would also expire real duplicate protection.
+  completedAt: timestamp("completed_at"),
 });
 
 // Couples a sent digest (Telegram message id) to the exact Gmail messages it was
