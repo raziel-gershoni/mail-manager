@@ -13,6 +13,7 @@ import { dbActivityRepo } from "../../../src/db/activity-adapter.js";
 import { dbDigestRefRepo } from "../../../src/db/refs-adapter.js";
 import { handleMessage } from "../../../src/telegram/bot.js";
 import { sendFormatted } from "../../../src/telegram/send.js";
+import { liveReply, startTyping } from "../../../src/telegram/live.js";
 import { resolveUserForTelegram } from "../../../src/users/identity.js";
 import { dbTelegramLinkRepo, dbUserDirectory } from "../../../src/db/user-adapters.js";
 import { dbSettingsRepo } from "../../../src/db/settings-adapter.js";
@@ -73,16 +74,30 @@ export async function POST(req: Request): Promise<Response> {
     const replyRefs = typeof replyToMsgId === "number"
       ? (await dbDigestRefRepo().lookup(userId, replyToMsgId)) ?? undefined
       : undefined;
-    const reply = await handleMessage(text, {
-      userId, gmail: googleGmailClient(auth), memory: store,
-      llm: geminiProvider(e.GEMINI_API_KEY), convo: dbConversationRepo(),
-      proposals: dbProposalRepo(), actionLog: dbActionLogRepo(),
-      tools: [...readOnlyTools(), ...trashTools()], timezone: settings.timezone, language: settings.language, replyContext, replyRefs,
-      activity: dbActivityRepo(),
-    });
+    // Show "typing…" for the whole turn and stream the answer in as it is written.
+    // Both are best-effort; stopTyping runs in a finally so a thrown turn can't
+    // leave the interval ticking.
+    const stopTyping = startTyping(bot, chatId);
+    const live = liveReply(bot, chatId);
+    let reply: string;
+    try {
+      reply = await handleMessage(text, {
+        userId, gmail: googleGmailClient(auth), memory: store,
+        llm: geminiProvider(e.GEMINI_API_KEY), convo: dbConversationRepo(),
+        proposals: dbProposalRepo(), actionLog: dbActionLogRepo(),
+        tools: [...readOnlyTools(), ...trashTools()], timezone: settings.timezone, language: settings.language, replyContext, replyRefs,
+        activity: dbActivityRepo(),
+        sink: { onText: d => live.push(d), onToolCall: () => live.noteToolCall() },
+      });
+    } finally {
+      stopTyping();
+    }
     await store.flush();
-    log("worker.reply", { updateId, userId, replyLen: reply.length, reply: logPreview(reply, 1200) });
-    await sendFormatted(bot, chatId, reply);
+    log("worker.reply", { updateId, userId, replyLen: reply.length, streamed: live.posted(), reply: logPreview(reply, 1200) });
+    // commit() edits the streamed message into its final MarkdownV2 form, or sends
+    // it outright if nothing streamed. It throws if the answer never reached the
+    // chat, so an undeliverable turn retries rather than vanishing.
+    await live.commit(reply);
     return { ok: true as const };
   });
   if (!outcome.processed) {
