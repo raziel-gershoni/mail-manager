@@ -11,6 +11,14 @@ export interface ClassifyResult { important: boolean; suspicious: boolean; reaso
 export interface ToolSchema { name: string; description: string; parameters: Record<string, unknown>; }
 export interface ToolCall { name: string; args: Record<string, unknown>; thoughtSignature?: string; }
 export type AgentStep = { kind: "tool_calls"; calls: ToolCall[] } | { kind: "final"; text: string };
+
+// Where a streaming agent step reports its progress. Both methods are synchronous
+// and must not throw: the provider calls them from inside the stream loop, and
+// progress reporting can never be allowed to break the turn.
+export interface StreamSink {
+  onText(delta: string): void; // a user-visible text delta (never the model's reasoning)
+  onToolCall(): void;          // this step is calling a tool, so its prose was not the answer
+}
 export interface BriefEmail { from: string; subject: string; bodyText: string; rule?: RuleTag | null; }
 
 export interface TrashCandidate { id: string; from: string; subject: string; bulk: boolean; transactional: boolean; bodyText?: string; }
@@ -18,7 +26,9 @@ export interface ReviewVerdict { id: string; keep: boolean; reason: string; }
 
 export interface LLMProvider {
   classifyImportance(input: ClassifyInput): Promise<ClassifyResult>;
-  agentStep(messages: AgentMessage[], tools: ToolSchema[]): Promise<AgentStep>;
+  // With a sink, the step streams and reports deltas as they arrive; without one it
+  // behaves exactly as before. The returned AgentStep is identical either way.
+  agentStep(messages: AgentMessage[], tools: ToolSchema[], sink?: StreamSink): Promise<AgentStep>;
   writeBrief(emails: BriefEmail[], context?: string): Promise<string>;
   reviewTrash(candidates: TrashCandidate[]): Promise<ReviewVerdict[]>;
   reviewPreference(candidates: TrashCandidate[], preference: string): Promise<ReviewVerdict[]>;
@@ -64,12 +74,12 @@ export function fakeLLM(fn: (i: ClassifyInput) => ClassifyResult): LLMProvider {
 }
 
 export function fakeAgentLLM(
-  script: (messages: AgentMessage[], tools: ToolSchema[]) => AgentStep,
+  script: (messages: AgentMessage[], tools: ToolSchema[], sink?: StreamSink) => AgentStep,
   brief: (emails: BriefEmail[], context?: string) => string = () => "",
 ): LLMProvider {
   return {
     async classifyImportance() { return { important: true, suspicious: false, reason: "fake" }; },
-    async agentStep(messages, tools) { return script(messages, tools); },
+    async agentStep(messages, tools, sink) { return script(messages, tools, sink); },
     async writeBrief(emails, context) { return brief(emails, context); },
     async reviewTrash() { return []; },
     async reviewPreference() { return []; },

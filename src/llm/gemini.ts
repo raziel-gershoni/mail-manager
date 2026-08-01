@@ -1,9 +1,10 @@
 // src/llm/gemini.ts
 import { GoogleGenAI } from "@google/genai";
-import type { ClassifyInput, ClassifyResult, LLMProvider, TrashCandidate, BriefEmail } from "./provider.js";
+import type { ClassifyInput, ClassifyResult, LLMProvider, TrashCandidate, BriefEmail, StreamSink, AgentStep, ToolCall } from "./provider.js";
 import { parseReviewJson } from "./provider.js";
 import type { AgentMessage } from "../context/assemble.js";
 import type { MemoryIndexEntry } from "../memory/store.js";
+import { log } from "../util/log.js";
 
 const MODEL = "gemini-3.5-flash";
 
@@ -53,6 +54,56 @@ export function toGeminiContents(
   }
   const systemInstruction = systems.length ? systems.join("\n\n") : undefined;
   return { systemInstruction, contents };
+}
+
+// One streamed part, as Gemini emits it. Structural (not the SDK's Part) so this
+// stays testable with a plain async generator and no SDK mock.
+type StreamPart = {
+  text?: string;
+  thought?: boolean;
+  thoughtSignature?: string;
+  functionCall?: { name?: string; args?: Record<string, unknown> };
+};
+type StreamChunk = { candidates?: { content?: { parts?: StreamPart[] } }[] };
+
+// Fold a Gemini stream into the same AgentStep the non-streaming path returns,
+// reporting progress to the sink as it goes.
+//
+// Two rules matter here. Parts flagged `thought` are the model's private reasoning
+// and must NEVER reach the chat. And once a functionCall appears, this step was a
+// tool call rather than an answer — any prose it emitted first is not the reply, so
+// the sink is told once and no further text is forwarded.
+export async function consumeAgentStream(
+  stream: AsyncIterable<StreamChunk>,
+  sink?: StreamSink,
+): Promise<AgentStep> {
+  const calls: ToolCall[] = [];
+  let text = "";
+  try {
+    for await (const chunk of stream) {
+      for (const p of chunk.candidates?.[0]?.content?.parts ?? []) {
+        if (p.functionCall) {
+          if (calls.length === 0) sink?.onToolCall();
+          calls.push({
+            name: p.functionCall.name!,
+            args: (p.functionCall.args ?? {}) as Record<string, unknown>,
+            thoughtSignature: p.thoughtSignature,
+          });
+        } else if (typeof p.text === "string" && p.text && !p.thought) {
+          text += p.text;
+          if (calls.length === 0) sink?.onText(p.text);
+        }
+      }
+    }
+  } catch (err) {
+    // Nothing arrived before it broke — let the caller retry without streaming.
+    if (!text && calls.length === 0) throw err;
+    // Otherwise keep what we got: a truncated answer beats no answer, and the
+    // owner can always ask again.
+    log("gemini.stream_truncated", { chars: text.length, calls: calls.length, error: err instanceof Error ? err.message : String(err) });
+  }
+  if (calls.length) return { kind: "tool_calls", calls };
+  return { kind: "final", text };
 }
 
 export function parseClassifyJson(text: string): ClassifyResult {
@@ -139,16 +190,23 @@ export function geminiProvider(apiKey: string): LLMProvider {
       });
       return parseClassifyJson(res.text ?? "");
     },
-    async agentStep(messages: AgentMessage[], tools) {
+    async agentStep(messages: AgentMessage[], tools, sink) {
       const { systemInstruction, contents } = toGeminiContents(messages);
-      const res = await ai.models.generateContent({
-        model: MODEL, contents,
-        config: {
-          systemInstruction,
-          tools: tools.length ? [{ functionDeclarations: tools.map(t => ({ name: t.name, description: t.description, parameters: t.parameters as any })) }] : undefined,
-          temperature: 0,
-        },
-      });
+      const config = {
+        systemInstruction,
+        tools: tools.length ? [{ functionDeclarations: tools.map(t => ({ name: t.name, description: t.description, parameters: t.parameters as any })) }] : undefined,
+        temperature: 0,
+      };
+      if (sink) {
+        try {
+          return await consumeAgentStream(await ai.models.generateContentStream({ model: MODEL, contents, config }), sink);
+        } catch (err) {
+          // consumeAgentStream only rethrows when NOTHING was emitted, so the sink
+          // is untouched and re-running non-streamed cannot duplicate text.
+          log("gemini.stream_fallback", { error: err instanceof Error ? err.message : String(err) });
+        }
+      }
+      const res = await ai.models.generateContent({ model: MODEL, contents, config });
       // Read functionCall parts directly (not res.functionCalls) so we can capture the
       // per-part thoughtSignature that Gemini 3 requires echoed back on the next turn.
       const parts = res.candidates?.[0]?.content?.parts ?? [];
