@@ -44,6 +44,10 @@ const en = {
   verb_recent_activity: "checked recent activity",
 
   // Poll / brief
+  // Sent only after QStash has exhausted every retry, so it is a genuine dead end.
+  // Says plainly that nothing was changed, because the owner's first worry after a
+  // failed cleanup request is what it did before it broke.
+  turn_failed: "⚠️ I couldn't finish that one — something broke on my side, and I've stopped retrying. Nothing in your mail was changed. Try asking again?",
   poll_heartbeat: "🟢 No new mail this check.",
   poll_trashed: "trashed {n}",
   poll_archived: "archived {n}",
@@ -157,6 +161,7 @@ export const messages: Record<"en" | "he", Record<MsgKey, string>> = {
     verb_recent_activity: "בדקתי פעילות אחרונה",
 
     // Poll / brief
+    turn_failed: "⚠️ לא הצלחתי לסיים את זה — משהו נשבר אצלי, והפסקתי לנסות שוב. שום דבר בדואר שלך לא השתנה. רוצה לשאול שוב?",
     poll_heartbeat: "🟢 אין דואר חדש בבדיקה הזו.",
     poll_trashed: "נזרקו {n}",
     poll_archived: "אורכבו {n}",

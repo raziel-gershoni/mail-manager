@@ -5,9 +5,17 @@ export function buildDestination(baseUrl: string, path: string): string {
   return baseUrl.replace(/\/+$/, "") + path;
 }
 
+export const FAILURE_PATH = "/api/worker-failed";
+
 export async function enqueue(env: Env, path: "/api/worker", body: unknown): Promise<void> {
   const client = new Client({ token: env.QSTASH_TOKEN });
-  await client.publishJSON({ url: buildDestination(env.APP_BASE_URL, path), body });
+  await client.publishJSON({
+    url: buildDestination(env.APP_BASE_URL, path),
+    body,
+    // Without this, a turn that fails every retry is silent forever: QStash gives
+    // up and nobody tells the owner. The callback fires exactly once, at the end.
+    failureCallback: buildDestination(env.APP_BASE_URL, FAILURE_PATH),
+  });
 }
 
 export async function verifyQStash(env: Env, req: Request): Promise<unknown> {
