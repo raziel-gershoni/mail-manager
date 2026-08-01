@@ -5,7 +5,7 @@
 import { env } from "../../../src/config/env.js";
 import { verifyQStash } from "../../../src/queue/qstash.js";
 import { parseFailureBody } from "../../../src/queue/failure.js";
-import { resolveUserForTelegram } from "../../../src/users/identity.js";
+import { resolveUserIdForApp } from "../../../src/users/identity.js";
 import { dbTelegramLinkRepo, dbUserDirectory } from "../../../src/db/user-adapters.js";
 import { dbSettingsRepo } from "../../../src/db/settings-adapter.js";
 import { effectiveSettings } from "../../../src/settings/settings.js";
@@ -40,7 +40,10 @@ export async function POST(req: Request): Promise<Response> {
     }
     let language: Lang = "en";
     if (typeof failed.fromId === "number") {
-      const userId = await resolveUserForTelegram(e.TELEGRAM_OWNER_ID, failed.fromId, failed.chatId, dbTelegramLinkRepo(), dbUserDirectory());
+      // Read-only resolution on purpose: a failure handler must not create links or
+      // otherwise mutate state. The link already exists — the turn got far enough to
+      // be queued.
+      const userId = await resolveUserIdForApp(e.TELEGRAM_OWNER_ID, failed.fromId, dbTelegramLinkRepo(), dbUserDirectory());
       if (userId !== null) language = effectiveSettings(await dbSettingsRepo().get(userId), e.OWNER_TZ).language;
     }
     log("worker_failed.notify", { updateId: failed.updateId, chatId: failed.chatId });

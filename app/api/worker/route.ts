@@ -87,8 +87,13 @@ export async function POST(req: Request): Promise<Response> {
         proposals: dbProposalRepo(), actionLog: dbActionLogRepo(),
         tools: [...readOnlyTools(), ...trashTools()], timezone: settings.timezone, language: settings.language, replyContext, replyRefs,
         activity: dbActivityRepo(),
-        sink: { onText: d => live.push(d), onToolCall: () => live.noteToolCall() },
+        sink: { onText: d => live.push(d), onToolCall: () => { void live.discard(); } },
       });
+    } catch (err) {
+      // The turn died mid-stream. Remove the half-written message before rethrowing,
+      // or the QStash retry stacks a second partial underneath an orphaned fragment.
+      await live.discard();
+      throw err;
     } finally {
       stopTyping();
     }

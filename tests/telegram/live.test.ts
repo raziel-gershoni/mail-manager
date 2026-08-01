@@ -125,7 +125,7 @@ describe("liveReply prose-then-tool-call", () => {
     const live = liveReply(bot, 1, { now: () => t });
     live.push(long);            // model started talking...
     await settle();
-    live.noteToolCall();        // ...then called a tool instead
+    live.discard();        // ...then called a tool instead
     await settle();
     expect(calls.map(c => c.kind)).toEqual(["send", "delete"]);
     expect(calls[1]!.id).toBe(42);
@@ -137,11 +137,23 @@ describe("liveReply prose-then-tool-call", () => {
     expect(calls[2]!.text).toBe(long + " real"); // not concatenated onto the discarded prose
   });
 
+  it("awaits the delete, so a dying turn can clean up before the function exits", async () => {
+    // The worker calls this in its catch and then rethrows; if discard didn't
+    // settle, Vercel could tear the function down mid-delete and the QStash retry
+    // would stack a second partial under the orphaned first one.
+    const { bot, calls } = fakeBot();
+    const live = liveReply(bot, 1);
+    live.push(long);
+    await settle();
+    await live.discard();
+    expect(calls.map(c => c.kind)).toEqual(["send", "delete"]); // no settle() needed
+  });
+
   it("never posts at all when the tool call comes before the first flush", async () => {
     const { bot, calls } = fakeBot();
     const live = liveReply(bot, 1);
     live.push("thinking");      // under STREAM_MIN_CHARS, nothing sent yet
-    live.noteToolCall();
+    live.discard();
     await settle();
     expect(calls).toEqual([]);
   });
@@ -176,7 +188,7 @@ describe("liveReply resilience", () => {
     const boom = async () => { throw new Error("telegram down"); };
     const bot = { api: { sendMessage: boom, editMessageText: boom, deleteMessage: boom } } as unknown as Bot;
     const live = liveReply(bot, 1);
-    expect(() => { live.push(long); live.noteToolCall(); }).not.toThrow();
+    expect(() => { live.push(long); live.discard(); }).not.toThrow();
     await settle();
     expect(live.posted()).toBe(false);
   });

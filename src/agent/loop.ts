@@ -24,6 +24,26 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | typeof TIMED_OUT
   return Promise.race([p, new Promise<typeof TIMED_OUT>(r => setTimeout(() => r(TIMED_OUT), ms))]);
 }
 
+// Fence a step's streaming behind a gate that can be shut.
+//
+// withTimeout only stops AWAITING an abandoned call — the model call keeps running,
+// and a streaming one keeps emitting text. Without this fence, a timed-out step
+// would go on pushing into the same sink while the forced-final answer that
+// replaces it streams in, interleaving two different answers in the owner's chat;
+// text arriving after commit() could even overwrite the finished message. Closing
+// the gate the moment a step settles makes that impossible.
+function gatedSink(sink: StreamSink | undefined): { sink: StreamSink | undefined; close: () => void } {
+  if (!sink) return { sink: undefined, close: () => {} };
+  let open = true;
+  return {
+    sink: {
+      onText: d => { if (open) sink.onText(d); },
+      onToolCall: () => { if (open) sink.onToolCall(); },
+    },
+    close: () => { open = false; },
+  };
+}
+
 // Log-safe projection of one tool-result item: keeps who/what + a short preview,
 // never the full body. (read_messages items carry `bodyText`; only a truncated
 // preview of it is logged.)
@@ -84,8 +104,9 @@ export async function runAgentTurn(
     if (remaining < 3000) { stop = "budget"; break; }
     const stepStart = Date.now();
     let step: Awaited<ReturnType<typeof deps.llm.agentStep>> | typeof TIMED_OUT;
+    const gate = gatedSink(deps.sink);
     try {
-      step = await withTimeout(deps.llm.agentStep(convo, schemas, deps.sink), remaining);
+      step = await withTimeout(deps.llm.agentStep(convo, schemas, gate.sink), remaining);
     } catch (err) {
       // The model call REJECTED (e.g. Gemini 504 DEADLINE_EXCEEDED on a heavy turn).
       // withTimeout only converts the *timeout* branch into a sentinel — a thrown
@@ -94,6 +115,10 @@ export async function runAgentTurn(
       // Fall through to the forced-final path so the owner ALWAYS gets an answer.
       log("agent.step_error", { iter: i, ms: Date.now() - stepStart, error: err instanceof Error ? err.message : String(err) });
       stop = "error"; break;
+    } finally {
+      // The step has settled — resolved, rejected or abandoned. Whatever its stream
+      // does from here on must not reach the chat.
+      gate.close();
     }
     const stepMs = Date.now() - stepStart;
     if (step === TIMED_OUT) { log("agent.step_timeout", { iter: i, ms: stepMs }); stop = "budget"; break; }
@@ -120,12 +145,15 @@ export async function runAgentTurn(
   }
   // Ran out of tool rounds or time — force a bounded final answer using what we've gathered (no tools).
   log("agent.exhausted", { stop, iters: used.length, tools: used, ms: Date.now() - start });
+  // Gated like every other step: if this one is abandoned too, the safety-net text
+  // below is what the owner gets, and a late delta must not overwrite it.
+  const forcedGate = gatedSink(deps.sink);
   try {
     const forced = await withTimeout(
       deps.llm.agentStep(
         [...convo, { role: "user", content: "You've used your tool budget. Give the owner your best final answer NOW using what you've already found. If you couldn't find what they meant, say so briefly and ask them to clarify (e.g. the sender's email). Do NOT call any tools." }],
         [],
-        deps.sink, // this call IS the owner's answer on an exhausted turn — stream it too
+        forcedGate.sink, // this call IS the owner's answer on an exhausted turn — stream it too
       ),
       FORCE_FINAL_MS,
     );
@@ -136,6 +164,8 @@ export async function runAgentTurn(
     log("agent.forced_final_timeout", {});
   } catch (e) {
     log("agent.forced_final_error", { error: e instanceof Error ? e.message : String(e) });
+  } finally {
+    forcedGate.close();
   }
   return { text: t(deps.language ?? "en", "safety_net"), toolNote: used.join(",") || "none" };
 }

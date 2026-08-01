@@ -40,8 +40,14 @@ export function startTyping(bot: Bot, chatId: number): () => void {
 }
 
 export interface LiveReply {
-  push(delta: string): void;   // buffer a text delta from the model
-  noteToolCall(): void;        // this step called a tool — it wasn't the answer
+  push(delta: string): void;
+  // Throw away whatever has been streamed so far, removing it from the chat if it
+  // already landed. Two callers: a step that turns out to be a tool call (its prose
+  // was not the answer), and a turn that dies mid-stream (leaving the fragment would
+  // stack a second partial under it when QStash retries). Returns the settled queue
+  // so the dying-turn caller can await the delete before the function exits; the
+  // tool-call caller ignores it.
+  discard(): Promise<void>;
   commit(finalText: string): Promise<number | undefined>;
   posted(): boolean;
 }
@@ -106,17 +112,18 @@ export function liveReply(bot: Bot, chatId: number, opts: { now?: () => number }
       schedule();
     },
 
-    noteToolCall() {
-      // The model was thinking out loud before calling a tool. Whatever it said is
-      // not the answer: drop it, and remove it from the chat if it already landed,
-      // so the next step's real answer arrives as a fresh (notifying) message.
+    discard() {
+      // Reset synchronously so any already-queued flush finds an empty buffer and
+      // no-ops, and so a later step starts clean — its answer then arrives as a
+      // fresh, notifying message rather than being appended to abandoned prose.
       const stray = messageId;
       buffer = ""; shownText = ""; started = false; messageId = undefined;
-      if (stray === undefined) return;
+      if (stray === undefined) return chain;
       chain = chain.then(async () => {
         try { await bot.api.deleteMessage(chatId, stray); }
         catch (err) { log("live.delete_error", { error: errText(err) }); }
       });
+      return chain;
     },
 
     // The one method here that is NOT best-effort. Streaming is a nicety, but the
