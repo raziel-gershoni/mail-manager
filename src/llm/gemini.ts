@@ -177,6 +177,12 @@ function prompt(i: ClassifyInput): string {
 // (FORCE_FINAL_MS = 12s) + post-work (~3s: flush + Telegram send) ≤ 60s, so this
 // caps at ~42s. 40s is the safe ceiling; the agent loop's own remaining-budget
 // race (AGENT_BUDGET_MS) is the tighter, primary bound — this is the HTTP backstop.
+//
+// Since @google/genai 2.16 this is a PER-ATTEMPT deadline, not a total one. That is
+// harmless only because we pass no `retryOptions`: the SDK short-circuits to a single
+// fetch, so per-attempt and total are the same 40s. Adding retryOptions would silently
+// multiply this cap by the attempt count and blow the 60s worker budget — if you ever
+// want SDK-level retries, lower this number to match.
 const GEMINI_TIMEOUT_MS = 40_000;
 
 export function geminiProvider(apiKey: string): LLMProvider {
