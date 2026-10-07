@@ -71,9 +71,10 @@ describe.skipIf(!RUN)("gemini live contract", () => {
     if (step.kind === "final") expect(deltas.join("")).toBe(step.text);
   }, 60_000);
 
-  it("still honours responseMimeType + temperature on the JSON paths", async () => {
-    // temperature was deprecated on 2026-07-21. It is still accepted today; when that
-    // stops being true, this test is where we find out — not the owner's inbox.
+  it("still honours responseMimeType on the JSON paths", async () => {
+    // We send no sampling params (temperature/topP/topK) — Google is retiring them and
+    // will 400 any request that carries one; gemini-request.test.ts pins that offline.
+    // This checks the live model still returns parseable JSON without them.
     const { geminiProvider } = await import("../../src/llm/gemini.js");
     const res = await geminiProvider(KEY!).classifyImportance({
       email: {
