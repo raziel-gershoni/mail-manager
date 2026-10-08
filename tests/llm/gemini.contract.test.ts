@@ -34,29 +34,37 @@ describe.skipIf(!RUN)("gemini live contract", () => {
     if (step.kind === "final") expect(step.text.toLowerCase()).toContain("pong");
   }, 60_000);
 
-  it("round-trips a tool call AND accepts the thoughtSignature and call id echoed back", async () => {
-    // The failure this guards: Gemini 3 rejects a follow-up turn with INVALID_ARGUMENT
-    // if the thoughtSignature it attached to a functionCall part is not echoed. Our
-    // toGeminiContents does echo it — this proves the live model still accepts that.
-    // Same for the call id, whose absence fails silently (an empty answer) instead.
-    const { geminiProvider } = await import("../../src/llm/gemini.js");
-    const llm = geminiProvider(KEY!);
-    const first = await llm.agentStep([{ role: "user", content: "What time is it right now?" }], [CLOCK]);
-    expect(first.kind).toBe("tool_calls");
-    if (first.kind !== "tool_calls") return;
-    expect(first.calls[0]!.name).toBe("get_current_time");
-    expect(first.calls[0]!.id).toEqual(expect.any(String)); // Gemini 3 always sends one
+  // Both transports: the bot always streams (the worker passes a sink), and falls back
+  // to the plain call only when a stream fails before emitting anything.
+  for (const transport of ["streamed", "non-streamed"] as const) {
+    it(`round-trips a tool call AND accepts the thoughtSignature and call id echoed back (${transport})`, async () => {
+      // The failure this guards: Gemini 3 rejects a follow-up turn with INVALID_ARGUMENT
+      // if the thoughtSignature it attached to a functionCall part is not echoed. Our
+      // toGeminiContents does echo it — this proves the live model still accepts that.
+      // Same for the call id, whose absence fails silently (an empty answer) instead.
+      const { geminiProvider } = await import("../../src/llm/gemini.js");
+      const llm = geminiProvider(KEY!);
+      const sink: StreamSink | undefined = transport === "streamed" ? { onText: () => {}, onToolCall: () => {} } : undefined;
+      const first = await llm.agentStep([{ role: "user", content: "What time is it right now?" }], [CLOCK], sink);
+      expect(first.kind).toBe("tool_calls");
+      if (first.kind !== "tool_calls") return;
+      expect(first.calls[0]!.name).toBe("get_current_time");
+      for (const c of first.calls) expect(c.id).toEqual(expect.any(String)); // Gemini 3 always sends one
 
-    // Feed the call and its result back exactly as the agent loop does.
-    const convo: AgentMessage[] = [
-      { role: "user", content: "What time is it right now?" },
-      { role: "assistant", toolCalls: first.calls },
-      { role: "tool", name: first.calls[0]!.name, id: first.calls[0]!.id, result: { time: "14:30", timezone: "Asia/Jerusalem" } },
-    ];
-    const second = await llm.agentStep(convo, [CLOCK]);
-    expect(second.kind).toBe("final");
-    if (second.kind === "final") expect(second.text).toContain("14:30");
-  }, 90_000);
+      // Feed the calls and their results back exactly as the agent loop does: the
+      // assistant turn, then one tool result per call, each carrying its call's id.
+      const convo: AgentMessage[] = [
+        { role: "user", content: "What time is it right now?" },
+        { role: "assistant", toolCalls: first.calls },
+        ...first.calls.map((c): AgentMessage => ({ role: "tool", name: c.name, id: c.id, result: { time: "14:30", timezone: "Asia/Jerusalem" } })),
+      ];
+      const second = await llm.agentStep(convo, [CLOCK], sink);
+      expect(second.kind).toBe("final");
+      // The contract is that the answer USES the tool result, not how it formats it:
+      // 3.8 often says "2:30 PM" without ever writing "14:30".
+      if (second.kind === "final") expect(second.text).toMatch(/14:30|2:30/);
+    }, 90_000);
+  }
 
   it("streams deltas without ever leaking a thought part", async () => {
     const { geminiProvider } = await import("../../src/llm/gemini.js");
