@@ -48,6 +48,14 @@ describe("consumeAgentStream", () => {
     ] });
   });
 
+  it("keeps each streamed call's id", async () => {
+    const step = await consumeAgentStream(streamOf(
+      chunk({ functionCall: { id: "call_1", name: "search_gmail", args: { q: "bank" } }, thoughtSignature: "sig-1" }),
+      chunk({ functionCall: { id: "call_2", name: "read_messages", args: { ids: ["a"] } } }),
+    ));
+    expect(step.kind === "tool_calls" && step.calls.map(c => c.id)).toEqual(["call_1", "call_2"]);
+  });
+
   it("stops streaming text once the step turns out to be a tool call", async () => {
     const r = recorder();
     await consumeAgentStream(streamOf(

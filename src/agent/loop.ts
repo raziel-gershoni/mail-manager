@@ -140,7 +140,7 @@ export async function runAgentTurn(
         result = { error };
         log("agent.tool", { iter: i, name: call.name, args: call.args, error, ms: Date.now() - toolStart });
       }
-      convo.push({ role: "tool", name: call.name, result });
+      convo.push({ role: "tool", name: call.name, id: call.id, result });
     }
   }
   // Ran out of tool rounds or time — force a bounded final answer using what we've gathered (no tools).

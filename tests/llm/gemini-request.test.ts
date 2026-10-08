@@ -8,13 +8,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ClassifyInput, StreamSink, TrashCandidate } from "../../src/llm/provider.js";
 
 const sent = vi.hoisted(() => [] as { method: string; req: any }[]);
+const reply = vi.hoisted(() => ({ next: undefined as unknown }));
 
 vi.mock("@google/genai", () => ({
   GoogleGenAI: class {
     models = {
       async generateContent(req: any) {
         sent.push({ method: "generateContent", req });
-        return { text: "[]", candidates: [] };
+        return reply.next ?? { text: "[]", candidates: [] };
       },
       async generateContentStream(req: any) {
         sent.push({ method: "generateContentStream", req });
@@ -53,7 +54,7 @@ async function exerciseEveryPath() {
 }
 
 describe("geminiProvider request config", () => {
-  beforeEach(() => { sent.length = 0; });
+  beforeEach(() => { sent.length = 0; reply.next = undefined; });
 
   it("never sends a sampling param (temperature/topP/topK) on any path", async () => {
     await exerciseEveryPath();
@@ -78,5 +79,26 @@ describe("geminiProvider request config", () => {
       ["generateContent", { responseMimeType: "application/json" }], // reviewTrash
       ["generateContent", { responseMimeType: "application/json" }], // reviewPreference
     ]);
+  });
+
+  it("round-trips a function call's id: read off the response, sent back on both sides", async () => {
+    // Non-streamed path (the streamed one is covered in gemini-stream.test.ts).
+    reply.next = { candidates: [{ content: { parts: [
+      { functionCall: { id: "call_9", name: "get_time", args: {} }, thoughtSignature: "SIG" },
+    ] } }] };
+    const llm = geminiProvider("test-key");
+    const step = await llm.agentStep([{ role: "user", content: "time?" }], [tool]);
+    expect(step).toEqual({ kind: "tool_calls", calls: [{ id: "call_9", name: "get_time", args: {}, thoughtSignature: "SIG" }] });
+    if (step.kind !== "tool_calls") return;
+
+    reply.next = undefined;
+    await llm.agentStep([
+      { role: "user", content: "time?" },
+      { role: "assistant", toolCalls: step.calls },
+      { role: "tool", name: "get_time", id: step.calls[0]!.id, result: { time: "14:30" } },
+    ], [tool]);
+    const [model, user] = sent[1]!.req.contents.slice(1);
+    expect(model.parts[0].functionCall.id).toBe("call_9");
+    expect(user.parts[0].functionResponse.id).toBe("call_9");
   });
 });

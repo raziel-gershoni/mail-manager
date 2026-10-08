@@ -8,7 +8,7 @@ export type AgentMessage =
   | { role: "user"; content: string }
   | { role: "assistant"; content: string }
   | { role: "assistant"; toolCalls: ToolCall[] }
-  | { role: "tool"; name: string; result: unknown };
+  | { role: "tool"; name: string; id?: string; result: unknown };
 type TextMessage = Extract<AgentMessage, { content: string }>;
 export const COMPACT_TOKENS = 40_000;
 

@@ -29,8 +29,11 @@ export function toGeminiContents(
         role: "model",
         // Gemini 3 requires echoing the thoughtSignature the model attached to each
         // functionCall part, or the follow-up turn is rejected with INVALID_ARGUMENT.
+        // The call id is echoed too, here and on the functionResponse below.
         parts: m.toolCalls.map(c => {
-          const fc: Record<string, unknown> = { functionCall: { name: c.name, args: c.args } };
+          const call: Record<string, unknown> = { name: c.name, args: c.args };
+          if (c.id) call.id = c.id;
+          const fc: Record<string, unknown> = { functionCall: call };
           if (c.thoughtSignature) fc.thoughtSignature = c.thoughtSignature;
           return fc;
         }),
@@ -43,7 +46,11 @@ export function toGeminiContents(
       if (JSON.stringify(response).length > 40_000) {
         response = { result: JSON.stringify(value).slice(0, 40_000) };
       }
-      const part = { functionResponse: { name: m.name, response } };
+      // Echo the call's id so the model maps this result to the right call. Without it
+      // a mismatch doesn't error — the model just tends to answer with empty text.
+      const fr: Record<string, unknown> = { name: m.name, response };
+      if (m.id) fr.id = m.id;
+      const part = { functionResponse: fr };
       const last = contents.at(-1);
       if (last && last.role === "user" && last.parts.length > 0 && last.parts.every((p: any) => "functionResponse" in p)) {
         last.parts.push(part);
@@ -62,7 +69,7 @@ type StreamPart = {
   text?: string;
   thought?: boolean;
   thoughtSignature?: string;
-  functionCall?: { name?: string; args?: Record<string, unknown> };
+  functionCall?: { id?: string; name?: string; args?: Record<string, unknown> };
 };
 type StreamChunk = { candidates?: { content?: { parts?: StreamPart[] } }[] };
 
@@ -87,6 +94,7 @@ export async function consumeAgentStream(
           calls.push({
             name: p.functionCall.name!,
             args: (p.functionCall.args ?? {}) as Record<string, unknown>,
+            id: p.functionCall.id,
             thoughtSignature: p.thoughtSignature,
           });
         } else if (typeof p.text === "string" && p.text && !p.thought) {
@@ -213,13 +221,15 @@ export function geminiProvider(apiKey: string): LLMProvider {
       }
       const res = await ai.models.generateContent({ model: MODEL, contents, config });
       // Read functionCall parts directly (not res.functionCalls) so we can capture the
-      // per-part thoughtSignature that Gemini 3 requires echoed back on the next turn.
+      // per-part thoughtSignature that Gemini 3 requires echoed back on the next turn
+      // (and the call id, which is echoed alongside it).
       const parts = res.candidates?.[0]?.content?.parts ?? [];
       const calls = parts
         .filter(p => p.functionCall)
         .map(p => ({
           name: p.functionCall!.name!,
           args: (p.functionCall!.args ?? {}) as Record<string, unknown>,
+          id: p.functionCall!.id,
           thoughtSignature: p.thoughtSignature,
         }));
       if (calls.length) return { kind: "tool_calls", calls };

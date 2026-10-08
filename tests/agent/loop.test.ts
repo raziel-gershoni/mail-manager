@@ -46,6 +46,18 @@ describe("runAgentTurn", () => {
     expect(asstIdx).toBeGreaterThanOrEqual(0);
     expect(asstIdx).toBeLessThan(toolIdx);
   });
+  it("carries each call's id onto its tool result, in call order", async () => {
+    const seen: any[][] = [];
+    let n = 0;
+    const llm = fakeAgentLLM((messages) => {
+      seen.push(messages);
+      return n++ === 0
+        ? { kind: "tool_calls", calls: [{ name: "list_memories", args: {}, id: "c1" }, { name: "list_memories", args: {}, id: "c2" }] }
+        : { kind: "final", text: "done" };
+    });
+    await runAgentTurn([{ role: "user", content: "x" }], { llm, tools: readOnlyTools(), ctx: ctx() });
+    expect(seen[1]!.filter((m: any) => m.role === "tool").map((m: any) => m.id)).toEqual(["c1", "c2"]);
+  });
   it("forces a final answer after exhausting tool rounds (no canned apology)", async () => {
     let n = 0;
     const llm = fakeAgentLLM(() => {

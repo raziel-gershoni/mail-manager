@@ -36,6 +36,40 @@ describe("toGeminiContents", () => {
     expect("thoughtSignature" in (part as object)).toBe(false);
   });
 
+  it("echoes each call's id on its functionCall AND on the matching functionResponse", () => {
+    // Gemini 3 maps a result back to its call by this id. Without it, a mismatch
+    // surfaces as a silently empty answer, not an error.
+    const out = toGeminiContents([
+      { role: "assistant", toolCalls: [
+        { name: "get_time", args: { city: "Tokyo" }, id: "call_1", thoughtSignature: "SIG" },
+        { name: "get_time", args: { city: "London" }, id: "call_2" },
+      ] },
+      { role: "tool", name: "get_time", id: "call_1", result: { time: "03:10" } },
+      { role: "tool", name: "get_time", id: "call_2", result: { time: "19:10" } },
+    ]);
+    expect(out.contents).toEqual([
+      { role: "model", parts: [
+        { functionCall: { id: "call_1", name: "get_time", args: { city: "Tokyo" } }, thoughtSignature: "SIG" },
+        { functionCall: { id: "call_2", name: "get_time", args: { city: "London" } } },
+      ] },
+      { role: "user", parts: [
+        { functionResponse: { id: "call_1", name: "get_time", response: { time: "03:10" } } },
+        { functionResponse: { id: "call_2", name: "get_time", response: { time: "19:10" } } },
+      ] },
+    ]);
+  });
+
+  it("omits id on both sides when the call has none", () => {
+    const out = toGeminiContents([
+      { role: "assistant", toolCalls: [{ name: "list_memories", args: {} }] },
+      { role: "tool", name: "list_memories", result: { n: 0 } },
+    ]);
+    const call = (out.contents[0]!.parts[0] as { functionCall: object }).functionCall;
+    const resp = (out.contents[1]!.parts[0] as { functionResponse: object }).functionResponse;
+    expect("id" in call).toBe(false);
+    expect("id" in resp).toBe(false);
+  });
+
   it("maps an assistant-content to model/text", () => {
     const out = toGeminiContents([{ role: "assistant", content: "hello" }]);
     expect(out.contents).toEqual([{ role: "model", parts: [{ text: "hello" }] }]);

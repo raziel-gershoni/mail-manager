@@ -9,7 +9,9 @@ export interface ClassifyInput { email: EmailMeta; risk: RiskSignals; memoryInde
 export interface ClassifyResult { important: boolean; suspicious: boolean; reason: string; matched?: string; }
 
 export interface ToolSchema { name: string; description: string; parameters: Record<string, unknown>; }
-export interface ToolCall { name: string; args: Record<string, unknown>; thoughtSignature?: string; }
+// `id` is the call id Gemini 3 attaches to every functionCall; it must be echoed on the
+// matching functionResponse so the model can map each result back to its call.
+export interface ToolCall { name: string; args: Record<string, unknown>; id?: string; thoughtSignature?: string; }
 export type AgentStep = { kind: "tool_calls"; calls: ToolCall[] } | { kind: "final"; text: string };
 
 // Where a streaming agent step reports its progress. Both methods are synchronous
