@@ -6,7 +6,7 @@ import type { AgentMessage } from "../context/assemble.js";
 import type { MemoryIndexEntry } from "../memory/store.js";
 import { log } from "../util/log.js";
 
-const MODEL = "gemini-3.7-flash";
+const MODEL = "gemini-3.8-flash";
 
 type GeminiContent = { role: "user" | "model"; parts: any[] };
 
