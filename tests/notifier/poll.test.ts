@@ -307,3 +307,117 @@ describe("runPoll", () => {
     expect(r.important.find(i => i.messageId === "gkeep")?.reason).toMatch(/overflow/i);
   });
 });
+
+// Time passes while each message is fetched: every getMeta advances a fake clock by
+// 10s, so a deadline expressed in that clock cuts the run after a known number of
+// messages, independent of how often the implementation reads the clock.
+function clocked(d: { gmail: any }, stepMs = 10_000): () => number {
+  let t = 0;
+  const orig = d.gmail.getMeta.bind(d.gmail);
+  d.gmail.getMeta = async (id: string) => { t += stepMs; return orig(id); };
+  return () => t;
+}
+
+const msg = (id: string, from: string, subject: string) =>
+  ({ id, threadId: "t", snippet: "", payload: { headers: [{ name: "From", value: from }, { name: "Subject", value: subject }] } });
+
+// A day's backlog: three people (important) and two bulk senders (not), all un-ruled.
+function backlogDeps() {
+  const classified: string[] = [];
+  const people = new Set(["jane@x.com", "bob@x.com", "carol@x.com"]);
+  return {
+    classified,
+    deps: {
+      userId: 1,
+      gmail: fakeGmailClient({
+        historyId: "200",
+        addedSince: { "100": ["a", "b", "c", "d", "e"] },
+        messages: {
+          a: msg("a", "jane@x.com", "Lunch"), b: msg("b", "n@linkedin.com", "Searches"),
+          c: msg("c", "bob@x.com", "Contract"), d: msg("d", "news@shop.com", "Sale"),
+          e: msg("e", "carol@x.com", "Dinner"),
+        },
+      }),
+      store: inMemoryStore(),
+      llm: fakeLLM(i => { classified.push(i.email.id); return { important: people.has(i.email.fromEmail), suspicious: false, reason: "x" }; }),
+      sync: fakeSyncRepo(), seen: fakeSeenRepo(), actionLog: fakeActionLogRepo(),
+    },
+  };
+}
+
+describe("runPoll deadline (catch-up that can't finish in one run)", () => {
+  it("stops taking on new mail at the deadline, commits what it covered, and holds the cursor", async () => {
+    const { deps: d, classified } = backlogDeps();
+    await d.sync.set(1, "100");
+    const now = clocked(d);
+    const r = await runPoll({ ...d, deadline: 25_000, now }); // checks at t=0,10k,20k pass; t=30k stops
+    expect(r.processed).toBe(3);
+    expect(r.remaining).toBe(2);
+    expect(r.important.map(i => i.messageId)).toEqual(["a", "c"]);
+    expect(classified).toEqual(["a", "b", "c"]);
+    await r.commit();
+    expect(await d.seen.has(1, "a")).toBe(true);   // important, committed
+    expect(await d.seen.has(1, "c")).toBe(true);
+    expect(await d.seen.has(1, "d")).toBe(false);  // never reached
+    expect(await d.sync.get(1)).toBe("100");       // cursor HELD so the next run continues
+  });
+
+  it("the next run picks up exactly where it stopped, never re-checks a message, then advances", async () => {
+    const { deps: d, classified } = backlogDeps();
+    await d.sync.set(1, "100");
+    const now = clocked(d);
+    const r1 = await runPoll({ ...d, deadline: 25_000, now });
+    await r1.commit();
+    const r2 = await runPoll(d); // next hour, no pressure
+    expect(r2.processed).toBe(2);
+    expect(r2.remaining).toBe(0);
+    expect(r2.important.map(i => i.messageId)).toEqual(["e"]);
+    expect(classified).toEqual(["a", "b", "c", "d", "e"]); // each exactly once across both runs
+    await r2.commit();
+    expect(await d.sync.get(1)).toBe("200");
+  });
+
+  it("with the deadline already passed, covers nothing, reports everything as remaining, holds the cursor", async () => {
+    const { deps: d, classified } = backlogDeps();
+    await d.sync.set(1, "100");
+    const r = await runPoll({ ...d, deadline: 0, now: () => 0 });
+    expect(r.processed).toBe(0);
+    expect(r.remaining).toBe(5);
+    expect(classified).toEqual([]);
+    await r.commit();
+    expect(await d.sync.get(1)).toBe("100");
+  });
+
+  it("guarded mail acted on in a partial run is never re-reviewed or re-acted next run", async () => {
+    const d = guardedDeps(); // [gjunk (trashed), gkeep (kept), jane]
+    let reviews = 0;
+    const review = d.llm.reviewTrash.bind(d.llm);
+    d.llm.reviewTrash = async (c: any[]) => { reviews++; return review(c); };
+    await d.sync.set(1, "100");
+    const now = clocked(d);
+    const r1 = await runPoll({ ...d, deadline: 15_000, now }); // reaches gjunk, gkeep; jane is left
+    expect(r1.remaining).toBe(1);
+    expect(r1.guardedTrashed).toBe(1);
+    await r1.commit();
+    expect(await d.sync.get(1)).toBe("100");
+    const r2 = await runPoll(d);
+    expect(reviews).toBe(1);                 // the guarded batch was judged once, in run 1
+    expect(r2.guardedTrashed).toBe(0);
+    expect(r2.important.map(i => i.messageId)).toEqual(["jane"]);
+    expect(d.gmail.trashedIds!()).toEqual(["gjunk"]);
+  });
+
+  it("without a deadline nothing changes: remaining is 0 and the cursor advances", async () => {
+    const d = deps();
+    await d.sync.set(1, "100");
+    const r = await runPoll(d);
+    expect(r.remaining).toBe(0);
+    await r.commit();
+    expect(await d.sync.get(1)).toBe("200");
+  });
+
+  it("a first run reports nothing remaining", async () => {
+    const r = await runPoll(deps());
+    expect(r.remaining).toBe(0);
+  });
+});

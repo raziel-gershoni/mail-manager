@@ -26,6 +26,10 @@ export interface PollDeps {
   userId: number; gmail: GmailClient; store: MemoryStore; llm: LLMProvider;
   sync: SyncStateRepo; seen: SeenRepo; actionLog: ActionLogRepo;
   guardedCap?: number; // test seam; defaults to GUARDED_POLL_CAP
+  // Stop taking on new mail once this instant (epoch ms) has passed: what's left is
+  // reported as `remaining` and the cursor is held, so the next run continues from here.
+  deadline?: number;
+  now?: () => number; // test seam; defaults to Date.now
 }
 export interface PollResult {
   firstRun: boolean;
@@ -39,6 +43,7 @@ export interface PollResult {
   prefArchived: number;  // standing-preference matches archived after a body read
   acted: ActedItem[]; // itemized trashed/archived this cycle (sender+subject) — for replyable digests
   unruled: string[]; // senders left in the inbox that have no rule yet (deduped) — surfaced so the owner can teach one
+  remaining: number; // listed messages not reached before the deadline (an estimate); 0 = complete
   commit: () => Promise<void>;
 }
 
@@ -49,7 +54,7 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
   const cursor = await deps.sync.get(deps.userId);
   if (cursor === null) {
     await deps.sync.set(deps.userId, headId);
-    return { firstRun: true, important: [], processed: 0, guardedTrashed: 0, guardedArchived: 0, plainTrashed: 0, plainArchived: 0, prefTrashed: 0, prefArchived: 0, acted: [], unruled: [], commit: async () => {} };
+    return { firstRun: true, important: [], processed: 0, guardedTrashed: 0, guardedArchived: 0, plainTrashed: 0, plainArchived: 0, prefTrashed: 0, prefArchived: 0, acted: [], unruled: [], remaining: 0, commit: async () => {} };
   }
   const ids = await deps.gmail.listAddedMessageIds(cursor);
   const important: DigestItem[] = [];
@@ -66,7 +71,13 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
   const unruledSenders = new Map<string, string>(); // fromEmail → display "from"; senders with no rule, left in inbox
   const acted: ActedItem[] = []; // itemized trashed/archived this cycle (sender+subject)
   let processed = 0;
-  for (const id of ids) {
+  const clock = deps.now ?? Date.now;
+  let remaining = 0;
+  for (let i = 0; i < ids.length; i++) {
+    // Out of time: stop taking on new mail. Everything covered so far is still acted on,
+    // briefed and committed below; the rest waits for the next run (the cursor is held).
+    if (deps.deadline !== undefined && clock() >= deps.deadline) { remaining = ids.length - i; break; }
+    const id = ids[i]!;
     if (await deps.seen.has(deps.userId, id)) continue;
     let email: EmailMeta;
     try {
@@ -118,6 +129,8 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
       log("poll.msg", { userId: deps.userId, ...logMeta(email), verdict, source: outcome.source, reason: outcome.reason, action: "left" });
     }
   }
+
+  if (remaining > 0) log("poll.incomplete", { userId: deps.userId, processed, remaining });
 
   // Guarded batches: read full bodies, ACT on the junk/routine (action-log recorded
   // FIRST so undo always covers it), surface the keepers. review → trash,
@@ -258,7 +271,9 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
       // them un-seen and the retry re-reports the action instead of dropping it.
       await deps.seen.record(deps.userId, { messageId: id, surfaced: false, verdict: "unimportant", reason: "auto-acted" });
     }
-    await deps.sync.set(deps.userId, headId);
+    // Advance only when every listed message was reached. Otherwise hold the cursor: the
+    // next run re-lists from here, skips everything now recorded as seen, and continues.
+    if (remaining === 0) await deps.sync.set(deps.userId, headId);
   };
-  return { firstRun: false, important, processed, guardedTrashed, guardedArchived, plainTrashed, plainArchived, prefTrashed, prefArchived, acted, unruled: [...unruledSenders.values()], commit };
+  return { firstRun: false, important, processed, guardedTrashed, guardedArchived, plainTrashed, plainArchived, prefTrashed, prefArchived, acted, unruled: [...unruledSenders.values()], remaining, commit };
 }
