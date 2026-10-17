@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { composePollMessage } from "../../src/notifier/brief.js";
+import { composePollMessage, pollSilent } from "../../src/notifier/brief.js";
 
-const act = (o: Partial<{ processed: number; surfaced: number; trashed: number; archived: number; unruled: string[] }>) =>
-  ({ processed: 0, surfaced: 0, trashed: 0, archived: 0, unruled: [], ...o });
+const act = (o: Partial<{ processed: number; surfaced: number; trashed: number; archived: number; unruled: string[]; remaining: number }>) =>
+  ({ processed: 0, surfaced: 0, trashed: 0, archived: 0, unruled: [], remaining: 0, ...o });
 
 describe("composePollMessage", () => {
   it("sends a heartbeat when no mail arrived", () => {
@@ -37,5 +37,37 @@ describe("composePollMessage", () => {
     const m = composePollMessage(null, act({ processed: 8, unruled: ["a", "b", "c", "d", "e", "f", "g"] }), "en");
     expect(m).toContain("a, b, c, d, e +2 more");
     expect(m).toMatch(/New senders you haven't ruled/); // plural
+  });
+});
+
+describe("composePollMessage — catch-up that couldn't finish", () => {
+  const WARN_EN = "⚠️ I haven't got to about 23 more emails yet — I'll keep going next hour. Check Gmail if you don't want to wait.";
+  const WARN_HE = "⚠️ עוד לא הגעתי לכ־23 מיילים נוספים — אמשיך בשעה הבאה. אפשר לבדוק ישירות ב־Gmail אם לא רוצים לחכות.";
+  it("ends the brief with the warning", () => {
+    expect(composePollMessage("your brief", act({ processed: 5, surfaced: 1, remaining: 23 }), "en"))
+      .toBe(`your brief\n\n_📬 5 new_\n${WARN_EN}`);
+  });
+  it("ends a nothing-important report with the warning", () => {
+    expect(composePollMessage(null, act({ processed: 3, remaining: 23 }), "en"))
+      .toBe(`📬 3 new · nothing important\n${WARN_EN}`);
+  });
+  it("puts the warning after the un-ruled senders line", () => {
+    const out = composePollMessage(null, act({ processed: 3, unruled: ["a@x.com"], remaining: 23 }), "en");
+    expect(out.split("\n").at(-1)).toBe(WARN_EN);
+  });
+  it("sends only the warning, not the heartbeat, when nothing was covered", () => {
+    expect(composePollMessage(null, act({ processed: 0, remaining: 23 }), "en")).toBe(WARN_EN);
+  });
+  it("localizes the warning in Hebrew", () => {
+    expect(composePollMessage(null, act({ processed: 0, remaining: 23 }), "he")).toBe(WARN_HE);
+  });
+});
+
+describe("pollSilent", () => {
+  it("is silent only for a routine report that finished", () => {
+    expect(pollSilent(false, 0)).toBe(true);
+    expect(pollSilent(true, 0)).toBe(false);
+    expect(pollSilent(false, 4)).toBe(false); // an unfinished catch-up always buzzes
+    expect(pollSilent(true, 4)).toBe(false);
   });
 });

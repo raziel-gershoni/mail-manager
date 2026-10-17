@@ -29,7 +29,7 @@ export async function generateBrief(
   return deps.llm.writeBrief(emails, context);
 }
 
-export interface PollActivity { processed: number; surfaced: number; trashed: number; archived: number; unruled: string[]; }
+export interface PollActivity { processed: number; surfaced: number; trashed: number; archived: number; unruled: string[]; remaining: number; }
 
 // Compose the poll's outgoing Telegram message from the important-mail brief and
 // the cycle's activity. ALWAYS returns a message for a real (non-first) cycle: a
@@ -37,7 +37,10 @@ export interface PollActivity { processed: number; surfaced: number; trashed: nu
 // nothing was important. (The owner asked for a report every check.) When mail was
 // left from senders with no rule yet, they're flagged so the owner can teach one.
 export function composePollMessage(brief: string | null, a: PollActivity, lang: Lang): string {
-  if (a.processed === 0) return t(lang, "poll_heartbeat");
+  // A catch-up that ran out of time says so explicitly, as the last line, so the owner
+  // knows the brief is partial (and can check Gmail rather than wait for the next run).
+  const warning = a.remaining > 0 ? t(lang, "poll_incomplete", { n: a.remaining }) : "";
+  if (a.processed === 0) return warning || t(lang, "poll_heartbeat");
   const bits: string[] = [];
   if (a.trashed > 0) bits.push(t(lang, "poll_trashed", { n: a.trashed }));
   if (a.archived > 0) bits.push(t(lang, "poll_archived", { n: a.archived }));
@@ -48,11 +51,20 @@ export function composePollMessage(brief: string | null, a: PollActivity, lang: 
   const head = brief && brief.trim()
     ? `${brief}\n\n_${newCount}${summary}_`
     : `${newCount} · ${t(lang, "poll_nothing_important")}${summary}`;
-  if (a.unruled.length === 0) return head;
-  const names = a.unruled.slice(0, 5).join(", ");
-  const more = a.unruled.length > 5 ? t(lang, "poll_more", { n: a.unruled.length - 5 }) : "";
-  const line = a.unruled.length > 1
-    ? t(lang, "poll_unruled_many", { names, more })
-    : t(lang, "poll_unruled_one", { names, more });
-  return `${head}\n${line}`;
+  let out = head;
+  if (a.unruled.length > 0) {
+    const names = a.unruled.slice(0, 5).join(", ");
+    const more = a.unruled.length > 5 ? t(lang, "poll_more", { n: a.unruled.length - 5 }) : "";
+    const line = a.unruled.length > 1
+      ? t(lang, "poll_unruled_many", { names, more })
+      : t(lang, "poll_unruled_one", { names, more });
+    out = `${head}\n${line}`;
+  }
+  return warning ? `${out}\n${warning}` : out;
+}
+
+// Whether the poll's message goes out without a notification sound. Routine reports and
+// heartbeats are silent; important mail — or a catch-up that couldn't finish — buzzes.
+export function pollSilent(hasImportant: boolean, remaining: number): boolean {
+  return !hasImportant && remaining === 0;
 }

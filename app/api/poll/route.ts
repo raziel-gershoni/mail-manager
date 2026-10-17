@@ -17,7 +17,7 @@ import { activityItemsFrom } from "../../../src/notifier/activity.js";
 import { dbActivityRepo } from "../../../src/db/activity-adapter.js";
 import { buildDigestRefs } from "../../../src/notifier/refs.js";
 import { dbDigestRefRepo } from "../../../src/db/refs-adapter.js";
-import { generateBrief, composePollMessage } from "../../../src/notifier/brief.js";
+import { generateBrief, composePollMessage, pollSilent } from "../../../src/notifier/brief.js";
 import { pollAllUsers } from "../../../src/notifier/fanout.js";
 import { sendFormatted } from "../../../src/telegram/send.js";
 import { log } from "../../../src/util/log.js";
@@ -65,8 +65,8 @@ export async function POST(req: Request): Promise<Response> {
         const hasImportant = res.important.length > 0;
         const trashed = res.guardedTrashed + res.plainTrashed + res.prefTrashed;
         const archived = res.guardedArchived + res.plainArchived + res.prefArchived;
-        const message = composePollMessage(brief, { processed: res.processed, surfaced: res.important.length, trashed, archived, unruled: res.unruled }, language);
-        const sentId = await sendFormatted(bot, chatId, message, { silent: !hasImportant });
+        const message = composePollMessage(brief, { processed: res.processed, surfaced: res.important.length, trashed, archived, unruled: res.unruled, remaining: res.remaining }, language);
+        const sentId = await sendFormatted(bot, chatId, message, { silent: pollSilent(hasImportant, res.remaining) });
         // Only genuinely-important briefs are stored in the conversation context.
         // Routine activity is NOT auto-stored — it goes to the activity log instead
         // (queryable on demand via the recent_activity tool), keeping context lean.
@@ -84,7 +84,7 @@ export async function POST(req: Request): Promise<Response> {
         } catch (err) {
           log("poll.side_record_failed", { userId, error: err instanceof Error ? err.message : String(err) });
         }
-        log("poll.brief", { userId, important: ids.length, processed: res.processed, guardedTrashed: res.guardedTrashed, guardedArchived: res.guardedArchived, plainTrashed: res.plainTrashed, plainArchived: res.plainArchived, prefTrashed: res.prefTrashed, prefArchived: res.prefArchived });
+        log("poll.brief", { userId, important: ids.length, processed: res.processed, guardedTrashed: res.guardedTrashed, guardedArchived: res.guardedArchived, plainTrashed: res.plainTrashed, plainArchived: res.plainArchived, prefTrashed: res.prefTrashed, prefArchived: res.prefArchived, remaining: res.remaining });
       } catch (err) {
         if (isInvalidGrant(err)) {
           log("poll.reconnect", { userId });

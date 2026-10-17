@@ -49,6 +49,7 @@ const en = {
   // failed cleanup request is what it did before it broke.
   turn_failed: "⚠️ I couldn't finish that one — something broke on my side, and I've stopped retrying. Nothing in your mail was changed. Try asking again?",
   poll_heartbeat: "🟢 No new mail this check.",
+  poll_incomplete: "⚠️ I haven't got to about {n} more emails yet — I'll keep going next hour. Check Gmail if you don't want to wait.",
   poll_trashed: "trashed {n}",
   poll_archived: "archived {n}",
   poll_left: "{n} left in inbox",
@@ -163,6 +164,7 @@ export const messages: Record<"en" | "he", Record<MsgKey, string>> = {
     // Poll / brief
     turn_failed: "⚠️ לא הצלחתי לסיים את זה — משהו נשבר אצלי, והפסקתי לנסות שוב. שום דבר בדואר שלך לא השתנה. רוצה לשאול שוב?",
     poll_heartbeat: "🟢 אין דואר חדש בבדיקה הזו.",
+    poll_incomplete: "⚠️ עוד לא הגעתי לכ־{n} מיילים נוספים — אמשיך בשעה הבאה. אפשר לבדוק ישירות ב־Gmail אם לא רוצים לחכות.",
     poll_trashed: "נזרקו {n}",
     poll_archived: "אורכבו {n}",
     poll_left: "{n} נשארו בתיבה",
