@@ -102,4 +102,15 @@ describe.skipIf(!RUN)("gemini live contract", () => {
     expect(typeof res.suspicious).toBe("boolean");
     expect(typeof res.reason).toBe("string");
   }, 60_000);
+
+  it("writes a brief at low thinking", async () => {
+    // The brief runs with thinkingLevel LOW; this proves the live model accepts that config
+    // and still returns prose. The CONTRACT, not the wording: non-empty and on-topic.
+    const { geminiProvider } = await import("../../src/llm/gemini.js");
+    const brief = await geminiProvider(KEY!).writeBrief([
+      { from: "Leumi Bank <alerts@leumi.co.il>", subject: "Unusual activity on your card ending 4821", bodyText: "We blocked a charge of ₪3,240 at an overseas merchant. Confirm or dispute within 24h." },
+    ]);
+    expect(brief.trim().length).toBeGreaterThan(0);
+    expect(brief).toContain("4821");
+  }, 60_000);
 });

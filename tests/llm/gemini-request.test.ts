@@ -4,13 +4,16 @@
 // one is rejected with a 400, which would take down classification, the agent, the
 // brief and both reviewers at once. So every path is pinned here — both that no
 // sampling param is sent, and that the rest of the config is exactly what it was.
+// Thinking is pinned too: LOW only on classify and the brief (measured: same verdicts,
+// ~2.5x faster); the agent and both reviewers stay at the model default on purpose.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ClassifyInput, StreamSink, TrashCandidate } from "../../src/llm/provider.js";
 
 const sent = vi.hoisted(() => [] as { method: string; req: any }[]);
 const reply = vi.hoisted(() => ({ next: undefined as unknown }));
 
-vi.mock("@google/genai", () => ({
+vi.mock("@google/genai", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@google/genai")>()), // keep the real enums (ThinkingLevel)
   GoogleGenAI: class {
     models = {
       async generateContent(req: any) {
@@ -64,7 +67,7 @@ describe("geminiProvider request config", () => {
     }
   });
 
-  it("keeps the rest of each path's config unchanged", async () => {
+  it("pins each path's config: low thinking only on classify and the brief", async () => {
     await exerciseEveryPath();
     const configs = sent.map(s => [s.method, s.req.config ?? {}]);
     const agentConfig = {
@@ -72,10 +75,10 @@ describe("geminiProvider request config", () => {
       tools: [{ functionDeclarations: [{ name: "get_time", description: "time", parameters: { type: "object", properties: {} } }] }],
     };
     expect(configs).toEqual([
-      ["generateContent", { responseMimeType: "application/json" }], // classifyImportance
-      ["generateContent", agentConfig],                               // agentStep
+      ["generateContent", { responseMimeType: "application/json", thinkingConfig: { thinkingLevel: "LOW" } }], // classifyImportance
+      ["generateContent", agentConfig],                               // agentStep (default thinking)
       ["generateContentStream", agentConfig],                         // agentStep, streamed
-      ["generateContent", {}],                                        // writeBrief
+      ["generateContent", { thinkingConfig: { thinkingLevel: "LOW" } }], // writeBrief
       ["generateContent", { responseMimeType: "application/json" }], // reviewTrash
       ["generateContent", { responseMimeType: "application/json" }], // reviewPreference
     ]);
