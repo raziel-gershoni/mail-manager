@@ -4,7 +4,7 @@
 // to THEIR OWN Gmail — the token is minted by Google from their consent, never here.
 import type { Lang } from "../i18n/index.js";
 import type { TelegramLinkRepo } from "../users/identity.js";
-import type { SettingsRepo } from "../settings/settings.js";
+import { ALL_DAYS, type SettingsRepo } from "../settings/settings.js";
 import type { OAuthStateRepo } from "./reconnect.js";
 
 export interface ProvisionInput { telegramUserId: number; language: Lang; }
@@ -37,7 +37,7 @@ export async function provisionUser(
   const userId = await deps.createUser();
   // In a private chat, chat.id === from.id, so the Telegram user id doubles as the chat id.
   await deps.links.upsert({ userId, telegramUserId: input.telegramUserId, chatId: input.telegramUserId });
-  await deps.settings.upsert(userId, { timezone: null, digestStartHour: 0, digestEndHour: 24, paused: false, language: input.language });
+  await deps.settings.upsert(userId, { timezone: null, digestStartHour: 0, digestEndHour: 24, paused: false, language: input.language, activeDays: [...ALL_DAYS] });
   const state = deps.genState();
   await deps.states.create(state, userId, new Date(now.getTime() + deps.ttlMs));
   return { userId, consentUrl: deps.buildConsentUrl(state) };

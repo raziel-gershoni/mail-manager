@@ -1,0 +1,1 @@
+ALTER TABLE "user_settings" ADD COLUMN "active_days" integer[] DEFAULT '{0,1,2,3,4,5,6}'::integer[] NOT NULL;

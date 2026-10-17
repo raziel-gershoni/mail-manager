@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { buildSettingsView, validateSettingsPatch, mergePatch } from "../../src/settings/service.js";
 import type { EffectiveSettings } from "../../src/settings/settings.js";
 
-const eff: EffectiveSettings = { timezone: "UTC", digestStartHour: 0, digestEndHour: 24, paused: false, language: "en" };
+const eff: EffectiveSettings = { timezone: "UTC", digestStartHour: 0, digestEndHour: 24, paused: false, language: "en", activeDays: [0, 1, 2, 3, 4, 5, 6] };
 
 describe("validateSettingsPatch", () => {
   it("accepts a valid partial patch", () => {
@@ -26,14 +26,31 @@ describe("validateSettingsPatch", () => {
     expect(validateSettingsPatch({ language: "fr" })).toHaveProperty("error");
     expect(validateSettingsPatch({ language: 3 })).toHaveProperty("error");
   });
+  it("accepts activeDays and normalizes them to ascending order", () => {
+    expect(validateSettingsPatch({ activeDays: [6, 0, 3] })).toEqual({ activeDays: [0, 3, 6] });
+    expect(validateSettingsPatch({ activeDays: [0, 1, 2, 3, 4, 5, 6] })).toEqual({ activeDays: [0, 1, 2, 3, 4, 5, 6] });
+  });
+  it("rejects empty, duplicate, out-of-range, non-integer and non-array activeDays", () => {
+    expect(validateSettingsPatch({ activeDays: [] })).toEqual({ error: "invalid activeDays" });   // "Pause briefs" covers none
+    expect(validateSettingsPatch({ activeDays: [1, 1] })).toEqual({ error: "invalid activeDays" });
+    expect(validateSettingsPatch({ activeDays: [7] })).toEqual({ error: "invalid activeDays" });
+    expect(validateSettingsPatch({ activeDays: [-1] })).toEqual({ error: "invalid activeDays" });
+    expect(validateSettingsPatch({ activeDays: [1.5] })).toEqual({ error: "invalid activeDays" });
+    expect(validateSettingsPatch({ activeDays: ["1"] })).toEqual({ error: "invalid activeDays" });
+    expect(validateSettingsPatch({ activeDays: 1 })).toEqual({ error: "invalid activeDays" });
+  });
 });
 
 describe("mergePatch", () => {
   it("overlays only provided fields onto the effective settings", () => {
-    expect(mergePatch(eff, { paused: true })).toEqual({ timezone: "UTC", digestStartHour: 0, digestEndHour: 24, paused: true, language: "en" });
+    expect(mergePatch(eff, { paused: true })).toEqual({ timezone: "UTC", digestStartHour: 0, digestEndHour: 24, paused: true, language: "en", activeDays: [0, 1, 2, 3, 4, 5, 6] });
   });
   it("overlays language when provided", () => {
     expect(mergePatch(eff, { language: "he" }).language).toBe("he");
+  });
+  it("overlays activeDays when provided, keeps them otherwise", () => {
+    expect(mergePatch(eff, { activeDays: [0, 1, 2, 3, 4, 5] }).activeDays).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(mergePatch(eff, { paused: true }).activeDays).toEqual([0, 1, 2, 3, 4, 5, 6]);
   });
 });
 
@@ -51,6 +68,7 @@ describe("buildSettingsView", () => {
     const view = buildSettingsView(eff, { email: "me@gmail.com", needsReconnect: true }, rules, usage);
     expect(view.gmail).toEqual({ email: "me@gmail.com", connected: true, needsReconnect: true });
     expect(view.context).toEqual(usage); // context usage is passed through to the view
+    expect(view.activeDays).toEqual([0, 1, 2, 3, 4, 5, 6]); // settings pass straight through to the mini app
     expect(view.rules).toEqual([ // only match rules; review → "guarded trash", review_archive → "guarded archive", keep → "keep"
       { matchValue: "x@y.com", scope: "sender", verdict: "important", action: "" },
       { matchValue: "linkedin.com", scope: "domain", verdict: "unimportant", action: "trash" },

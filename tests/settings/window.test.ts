@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { hourInZone, isWithinDigestWindow } from "../../src/settings/window.js";
+import { hourInZone, isWithinDigestWindow, weekdayInZone, isActiveDay } from "../../src/settings/window.js";
 
 describe("hourInZone", () => {
   it("reads the wall-clock hour in a timezone", () => {
@@ -50,5 +50,35 @@ describe("isWithinDigestWindow", () => {
     expect(isWithinDigestWindow(at(0), "UTC", 0, 24)).toBe(true);
     expect(isWithinDigestWindow(at(3), "UTC", 0, 24)).toBe(true);
     expect(isWithinDigestWindow(at(23), "UTC", 0, 24)).toBe(true);
+  });
+});
+
+describe("weekdayInZone", () => {
+  it("reads the weekday in the user's zone, not UTC (summer, UTC+3)", () => {
+    // Fri 2026-07-03 21:30 UTC = Sat 00:30 in Jerusalem (IDT)
+    const t = new Date("2026-07-03T21:30:00Z");
+    expect(weekdayInZone(t, "UTC")).toBe(5);            // Friday
+    expect(weekdayInZone(t, "Asia/Jerusalem")).toBe(6); // Saturday
+  });
+  it("reads the weekday in the user's zone in winter too (UTC+2)", () => {
+    // Fri 2026-12-04 22:30 UTC = Sat 00:30 in Jerusalem (IST)
+    const t = new Date("2026-12-04T22:30:00Z");
+    expect(weekdayInZone(t, "UTC")).toBe(5);
+    expect(weekdayInZone(t, "Asia/Jerusalem")).toBe(6);
+  });
+  it("falls back to UTC on an invalid timezone", () => {
+    expect(weekdayInZone(new Date("2026-07-03T21:30:00Z"), "Not/AZone")).toBe(5);
+  });
+});
+
+describe("isActiveDay", () => {
+  const friNightUtc = new Date("2026-07-03T21:30:00Z"); // Saturday 00:30 in Jerusalem
+  it("is true on every day when all 7 are active", () => {
+    expect(isActiveDay(friNightUtc, "Asia/Jerusalem", [0, 1, 2, 3, 4, 5, 6])).toBe(true);
+  });
+  it("is false on an inactive day, judged by the LOCAL date", () => {
+    const noSaturday = [0, 1, 2, 3, 4, 5];
+    expect(isActiveDay(friNightUtc, "Asia/Jerusalem", noSaturday)).toBe(false); // already Saturday locally
+    expect(isActiveDay(friNightUtc, "UTC", noSaturday)).toBe(true);             // still Friday in UTC
   });
 });

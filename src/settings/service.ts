@@ -8,7 +8,7 @@ export interface SettingsView extends EffectiveSettings {
   rules: Array<{ matchValue: string; scope: string; verdict: string; action: string }>;
   context: ContextUsage;
 }
-export interface SettingsPatch { timezone?: string; digestStartHour?: number; digestEndHour?: number; paused?: boolean; language?: Lang; }
+export interface SettingsPatch { timezone?: string; digestStartHour?: number; digestEndHour?: number; paused?: boolean; language?: Lang; activeDays?: number[]; }
 
 function isHour(v: unknown, max: number): v is number {
   return typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= max;
@@ -18,6 +18,12 @@ function isValidTimezone(tz: string): boolean {
 }
 function isValidLanguage(v: unknown): v is Lang {
   return v === "en" || v === "he";
+}
+// Weekdays 0 (Sunday) … 6 (Saturday), unique, at least one: "Pause briefs" covers none.
+function isActiveDays(v: unknown): v is number[] {
+  return Array.isArray(v) && v.length > 0
+    && v.every(d => typeof d === "number" && Number.isInteger(d) && d >= 0 && d <= 6)
+    && new Set(v).size === v.length;
 }
 
 export function validateSettingsPatch(body: unknown): SettingsPatch | { error: string } {
@@ -29,6 +35,7 @@ export function validateSettingsPatch(body: unknown): SettingsPatch | { error: s
   if (p.digestEndHour !== undefined) { if (!isHour(p.digestEndHour, 24)) return { error: "invalid digestEndHour" }; out.digestEndHour = p.digestEndHour; }
   if (p.paused !== undefined) { if (typeof p.paused !== "boolean") return { error: "invalid paused" }; out.paused = p.paused; }
   if (p.language !== undefined) { if (!isValidLanguage(p.language)) return { error: "invalid language" }; out.language = p.language; }
+  if (p.activeDays !== undefined) { if (!isActiveDays(p.activeDays)) return { error: "invalid activeDays" }; out.activeDays = [...p.activeDays].sort((a, b) => a - b); }
   return out;
 }
 
@@ -39,6 +46,7 @@ export function mergePatch(eff: EffectiveSettings, patch: SettingsPatch): UserSe
     digestEndHour: patch.digestEndHour ?? eff.digestEndHour,
     paused: patch.paused ?? eff.paused,
     language: patch.language ?? eff.language,
+    activeDays: patch.activeDays ?? eff.activeDays,
   };
 }
 

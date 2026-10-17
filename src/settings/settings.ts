@@ -1,12 +1,15 @@
 // Per-user settings shape + defaults resolution. Pure.
 import { normalizeLang, type Lang } from "../i18n/index.js";
 
+export const ALL_DAYS: readonly number[] = [0, 1, 2, 3, 4, 5, 6]; // 0 = Sunday … 6 = Saturday
+
 export interface UserSettingsRow {
   timezone: string | null;
   digestStartHour: number;
   digestEndHour: number;
   paused: boolean;
   language: string | null;   // null → "en"
+  activeDays: number[];
 }
 export interface EffectiveSettings {
   timezone: string;
@@ -14,6 +17,7 @@ export interface EffectiveSettings {
   digestEndHour: number;
   paused: boolean;
   language: Lang;
+  activeDays: number[];
 }
 export interface SettingsRepo {
   get(userId: number): Promise<UserSettingsRow | null>;
@@ -27,6 +31,7 @@ export function effectiveSettings(row: UserSettingsRow | null, defaultTz: string
     digestEndHour: row?.digestEndHour ?? 24,
     paused: row?.paused ?? false,
     language: normalizeLang(row?.language) ?? "en",
+    activeDays: row?.activeDays ?? [...ALL_DAYS],
   };
 }
 

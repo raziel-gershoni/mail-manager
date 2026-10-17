@@ -1,4 +1,5 @@
 // src/db/schema.ts
+import { sql } from "drizzle-orm";
 import { pgTable, serial, integer, text, timestamp, boolean, bigint, uniqueIndex, jsonb } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
@@ -36,6 +37,7 @@ export const userSettings = pgTable("user_settings", {
   digestStartHour: integer("digest_start_hour").notNull().default(0),
   digestEndHour: integer("digest_end_hour").notNull().default(24),   // 0–24 = always-on
   paused: boolean("paused").notNull().default(false),
+  activeDays: integer("active_days").array().notNull().default(sql`'{0,1,2,3,4,5,6}'::integer[]`), // 0 = Sunday … 6 = Saturday
   language: text("language"),                                  // null → "en"
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
