@@ -33,6 +33,7 @@ export interface PollDeps {
 }
 export interface PollResult {
   firstRun: boolean;
+  cursorExpired: boolean; // the stored cursor was older than Gmail's history: restarted from head, nothing covered or acted on
   important: DigestItem[];
   processed: number;
   guardedTrashed: number;
@@ -54,9 +55,21 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
   const cursor = await deps.sync.get(deps.userId);
   if (cursor === null) {
     await deps.sync.set(deps.userId, headId);
-    return { firstRun: true, important: [], processed: 0, guardedTrashed: 0, guardedArchived: 0, plainTrashed: 0, plainArchived: 0, prefTrashed: 0, prefArchived: 0, acted: [], unruled: [], remaining: 0, commit: async () => {} };
+    return { firstRun: true, cursorExpired: false, important: [], processed: 0, guardedTrashed: 0, guardedArchived: 0, plainTrashed: 0, plainArchived: 0, prefTrashed: 0, prefArchived: 0, acted: [], unruled: [], remaining: 0, commit: async () => {} };
   }
-  const ids = await deps.gmail.listAddedMessageIds(cursor);
+  let ids: string[];
+  try {
+    ids = await deps.gmail.listAddedMessageIds(cursor);
+  } catch (err) {
+    // The cursor is older than the history Gmail keeps, so history.list 404s. Retrying
+    // would fail the same way every hour, so restart from head instead. Nothing is acted
+    // on, and the owner is told to look through Gmail for what arrived in between. The
+    // cursor moves only in commit(), after that notice is delivered.
+    if (!isNotFound(err)) throw err;
+    log("poll.cursor_expired", { userId: deps.userId });
+    return { firstRun: false, cursorExpired: true, important: [], processed: 0, guardedTrashed: 0, guardedArchived: 0, plainTrashed: 0, plainArchived: 0, prefTrashed: 0, prefArchived: 0, acted: [], unruled: [], remaining: 0,
+      commit: async () => { await deps.sync.set(deps.userId, headId); } };
+  }
   // A held cursor re-lists everything earlier runs already covered: drop it with one
   // batched lookup, then walk the rest NEWEST-first so fresh mail isn't stuck behind a
   // backlog. Order can't lose mail: covered ids are seen-recorded, and the cursor is
@@ -291,5 +304,5 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
     // next run re-lists from here, skips everything now recorded as seen, and continues.
     if (remaining === 0) await deps.sync.set(deps.userId, headId);
   };
-  return { firstRun: false, important, processed, guardedTrashed, guardedArchived, plainTrashed, plainArchived, prefTrashed, prefArchived, acted, unruled: [...unruledSenders.values()], remaining, commit };
+  return { firstRun: false, cursorExpired: false, important, processed, guardedTrashed, guardedArchived, plainTrashed, plainArchived, prefTrashed, prefArchived, acted, unruled: [...unruledSenders.values()], remaining, commit };
 }

@@ -65,8 +65,8 @@ export async function POST(req: Request): Promise<Response> {
         const hasImportant = res.important.length > 0;
         const trashed = res.guardedTrashed + res.plainTrashed + res.prefTrashed;
         const archived = res.guardedArchived + res.plainArchived + res.prefArchived;
-        const message = composePollMessage(brief, { processed: res.processed, surfaced: res.important.length, trashed, archived, unruled: res.unruled, remaining: res.remaining }, language);
-        const sentId = await sendFormatted(bot, chatId, message, { silent: pollSilent(hasImportant, res.remaining) });
+        const message = composePollMessage(brief, { processed: res.processed, surfaced: res.important.length, trashed, archived, unruled: res.unruled, remaining: res.remaining, cursorExpired: res.cursorExpired }, language);
+        const sentId = await sendFormatted(bot, chatId, message, { silent: pollSilent(hasImportant, res.remaining, res.cursorExpired) });
         // Only genuinely-important briefs are stored in the conversation context.
         // Routine activity is NOT auto-stored — it goes to the activity log instead
         // (queryable on demand via the recent_activity tool), keeping context lean.

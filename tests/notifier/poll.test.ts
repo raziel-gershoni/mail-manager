@@ -463,6 +463,49 @@ function charged(d: { gmail: any; seen: any }, stepMs = 50): () => number {
   return () => t;
 }
 
+// The shape googleapis throws for an HTTP 404 (a GaxiosError: status on the error and
+// on its response). history.list returns it when startHistoryId is older than the
+// history Gmail still keeps.
+function gaxiosError(status: number, message: string): Error {
+  return Object.assign(new Error(message), { status, response: { status, data: { error: { code: status, message } } } });
+}
+
+describe("runPoll with an expired history cursor", () => {
+  it("restarts from head and says so, acting on nothing", async () => {
+    const d = guardedDeps(); // would trash gjunk if anything were walked
+    let classified = 0;
+    const classify = d.llm.classifyImportance.bind(d.llm);
+    d.llm.classifyImportance = async (i: any) => { classified++; return classify(i); };
+    d.gmail.listAddedMessageIds = async () => { throw gaxiosError(404, "Requested entity was not found."); };
+    await d.sync.set(1, "100");
+    const r = await runPoll(d);
+    expect(r).toMatchObject({ firstRun: false, cursorExpired: true, processed: 0, remaining: 0, important: [], acted: [], unruled: [],
+      guardedTrashed: 0, guardedArchived: 0, plainTrashed: 0, plainArchived: 0, prefTrashed: 0, prefArchived: 0 });
+    expect(classified).toBe(0);
+    expect(d.gmail.trashedIds!()).toEqual([]);
+    expect(d.gmail.archivedIds!()).toEqual([]);
+    expect(await d.actionLog.lastUndoable(1)).toBeNull();
+    expect(await d.sync.get(1)).toBe("100"); // not moved until the notice is delivered
+    await r.commit();
+    expect(await d.sync.get(1)).toBe("200"); // restarted from head
+  });
+
+  it("still throws any other listing error, leaving the cursor where it was", async () => {
+    const d = deps();
+    d.gmail.listAddedMessageIds = async () => { throw gaxiosError(500, "Backend Error"); };
+    await d.sync.set(1, "100");
+    await expect(runPoll(d)).rejects.toThrow("Backend Error");
+    expect(await d.sync.get(1)).toBe("100");
+  });
+
+  it("reports cursorExpired false on a first run and on an ordinary run", async () => {
+    const d = deps();
+    expect((await runPoll(d)).cursorExpired).toBe(false); // first run
+    await d.sync.set(1, "100");
+    expect((await runPoll(d)).cursorExpired).toBe(false);
+  });
+});
+
 describe("runPoll continuation (held cursor over mail already covered)", () => {
   it("skips a large covered prefix with one batched lookup and reaches the new mail", async () => {
     const covered = Array.from({ length: 1000 }, (_, i) => `old${i}`);

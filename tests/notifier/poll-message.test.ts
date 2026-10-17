@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { composePollMessage, pollSilent } from "../../src/notifier/brief.js";
 
-const act = (o: Partial<{ processed: number; surfaced: number; trashed: number; archived: number; unruled: string[]; remaining: number }>) =>
-  ({ processed: 0, surfaced: 0, trashed: 0, archived: 0, unruled: [], remaining: 0, ...o });
+const act = (o: Partial<{ processed: number; surfaced: number; trashed: number; archived: number; unruled: string[]; remaining: number; cursorExpired: boolean }>) =>
+  ({ processed: 0, surfaced: 0, trashed: 0, archived: 0, unruled: [], remaining: 0, cursorExpired: false, ...o });
 
 describe("composePollMessage", () => {
   it("sends a heartbeat when no mail arrived", () => {
@@ -63,11 +63,26 @@ describe("composePollMessage — catch-up that couldn't finish", () => {
   });
 });
 
+describe("composePollMessage — expired history cursor", () => {
+  const EXPIRED_EN = "⚠️ I lost track of your mail since my last check — Gmail no longer keeps that much history. I've restarted from now, so please look through Gmail for anything that came in before this.";
+  const EXPIRED_HE = "⚠️ איבדתי מעקב אחרי הדואר מאז הבדיקה האחרונה — Gmail כבר לא שומר היסטוריה כל כך ארוכה. התחלתי מחדש מעכשיו, אז כדאי לעבור ב־Gmail על מה שהגיע לפני כן.";
+  it("sends the restart notice instead of the heartbeat", () => {
+    expect(composePollMessage(null, act({ cursorExpired: true }), "en")).toBe(EXPIRED_EN);
+  });
+  it("localizes the restart notice in Hebrew", () => {
+    expect(composePollMessage(null, act({ cursorExpired: true }), "he")).toBe(EXPIRED_HE);
+  });
+});
+
 describe("pollSilent", () => {
   it("is silent only for a routine report that finished", () => {
-    expect(pollSilent(false, 0)).toBe(true);
-    expect(pollSilent(true, 0)).toBe(false);
-    expect(pollSilent(false, 4)).toBe(false); // an unfinished catch-up always buzzes
-    expect(pollSilent(true, 4)).toBe(false);
+    expect(pollSilent(false, 0, false)).toBe(true);
+    expect(pollSilent(true, 0, false)).toBe(false);
+    expect(pollSilent(false, 4, false)).toBe(false); // an unfinished catch-up always buzzes
+    expect(pollSilent(true, 4, false)).toBe(false);
+    expect(pollSilent(false, 0, true)).toBe(false);  // so does a restart after an expired cursor
+    expect(pollSilent(true, 0, true)).toBe(false);
+    expect(pollSilent(false, 4, true)).toBe(false);
+    expect(pollSilent(true, 4, true)).toBe(false);
   });
 });
