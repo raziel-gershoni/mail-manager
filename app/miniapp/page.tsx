@@ -1,9 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
-import { t, dir, type Lang } from "../../src/i18n/index.js";
+import { t, dir, type Lang, type MsgKey } from "../../src/i18n/index.js";
 
 type View = {
-  timezone: string; digestStartHour: number; digestEndHour: number; paused: boolean; language: Lang;
+  timezone: string; digestStartHour: number; digestEndHour: number; paused: boolean; language: Lang; activeDays: number[];
   gmail: { email: string | null; connected: boolean; needsReconnect: boolean };
   rules: Array<{ matchValue: string; scope: string; verdict: string; action: string }>;
   context: { totalTokens: number; systemTokens: number; summaryTokens: number; windowTokens: number; windowTurns: number; compactAtTokens: number };
@@ -18,10 +18,12 @@ function initData(): string {
 }
 
 const HOURS = Array.from({ length: 25 }, (_, i) => i); // 0..24
+const DAYS = [0, 1, 2, 3, 4, 5, 6]; // 0 = Sunday … 6 = Saturday
 
 export default function MiniApp() {
   const [view, setView] = useState<View | null>(null);
   const [status, setStatus] = useState<string>(t("en", "mini_loading"));
+  const [days, setDays] = useState<number[]>([]);
   const [provId, setProvId] = useState("");
   const [provLang, setProvLang] = useState<Lang>("he");
   const [provBusy, setProvBusy] = useState(false);
@@ -34,7 +36,9 @@ export default function MiniApp() {
     try {
       const r = await fetch("/api/settings", { headers });
       if (!r.ok) throw new Error(String(r.status));
-      setView(await r.json());
+      const v: View = await r.json();
+      setView(v);
+      setDays(v.activeDays);
       setStatus("");
     } catch { setStatus(t(lang, "mini_load_error")); }
   }
@@ -49,6 +53,13 @@ export default function MiniApp() {
       const r = await fetch("/api/settings", { method: "POST", headers, body: JSON.stringify(patch) });
       setStatus(r.ok ? t(lang, "mini_saved") : t(lang, "mini_save_failed"));
     } catch { setStatus(t(lang, "mini_save_failed")); }
+  }
+  // At least one day stays active ("Pause briefs" covers none); the server enforces it too.
+  function toggleDay(d: number) {
+    const next = days.includes(d) ? days.filter(x => x !== d) : [...days, d].sort((a, b) => a - b);
+    if (next.length === 0) return;
+    setDays(next);
+    save({ activeDays: next });
   }
   // Changing the language re-fetches so every label + the layout direction update.
   async function saveLanguage(next: Lang) {
@@ -123,6 +134,20 @@ export default function MiniApp() {
           <select defaultValue={view.digestEndHour} onChange={e => save({ digestEndHour: Number(e.target.value) } as Partial<View>)}>
             {HOURS.map(h => <option key={h} value={h}>{String(h).padStart(2, "0")}:00</option>)}
           </select>
+        </span>
+      </div>
+
+      <div style={S.row}>{t(lang, "mini_active_days")}
+        <span style={S.days}>
+          {DAYS.map(d => {
+            const active = days.includes(d);
+            return (
+              <button key={d} type="button" aria-pressed={active} disabled={active && days.length === 1}
+                style={active ? S.dayOn : S.dayOff} onClick={() => toggleDay(d)}>
+                {t(lang, `mini_day_${d}` as MsgKey)}
+              </button>
+            );
+          })}
         </span>
       </div>
 
@@ -206,6 +231,9 @@ const S: Record<string, React.CSSProperties> = {
   row: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "8px 0", borderBottom: "1px solid var(--tg-theme-hint-color, #eee)" },
   input: { flex: 1, maxWidth: 200 },
   btn: { padding: "4px 10px", background: "var(--tg-theme-button-color, #2ea6ff)", color: "var(--tg-theme-button-text-color, #fff)", border: "none", borderRadius: 6, cursor: "pointer" },
+  days: { display: "flex", flexWrap: "wrap", gap: 4, justifyContent: "flex-end" },
+  dayOn: { minWidth: 34, padding: "4px 6px", background: "var(--tg-theme-button-color, #2ea6ff)", color: "var(--tg-theme-button-text-color, #fff)", border: "1px solid transparent", borderRadius: 6, cursor: "pointer" },
+  dayOff: { minWidth: 34, padding: "4px 6px", background: "transparent", color: "var(--tg-theme-hint-color, #888)", border: "1px solid var(--tg-theme-hint-color, #ccc)", borderRadius: 6, cursor: "pointer" },
   list: { paddingInlineStart: 18 },
   dim: { color: "var(--tg-theme-hint-color, #888)", fontSize: 13 },
   details: { margin: "12px 0", borderBottom: "1px solid var(--tg-theme-hint-color, #eee)", paddingBottom: 8 },
