@@ -43,7 +43,7 @@ export interface PollResult {
   prefArchived: number;  // standing-preference matches archived after a body read
   acted: ActedItem[]; // itemized trashed/archived this cycle (sender+subject) — for replyable digests
   unruled: string[]; // senders left in the inbox that have no rule yet (deduped) — surfaced so the owner can teach one
-  remaining: number; // listed messages not reached before the deadline (an estimate); 0 = complete
+  remaining: number; // unseen listed messages not reached before the deadline (an estimate); 0 = complete
   commit: () => Promise<void>;
 }
 
@@ -57,6 +57,12 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
     return { firstRun: true, important: [], processed: 0, guardedTrashed: 0, guardedArchived: 0, plainTrashed: 0, plainArchived: 0, prefTrashed: 0, prefArchived: 0, acted: [], unruled: [], remaining: 0, commit: async () => {} };
   }
   const ids = await deps.gmail.listAddedMessageIds(cursor);
+  // A held cursor re-lists everything earlier runs already covered: drop it with one
+  // batched lookup, then walk the rest NEWEST-first so fresh mail isn't stuck behind a
+  // backlog. Order can't lose mail: covered ids are seen-recorded, and the cursor is
+  // held until every listed id is covered.
+  const covered = await deps.seen.hasMany(deps.userId, ids);
+  const unseen = ids.filter(id => !covered.has(id)).reverse();
   const important: DigestItem[] = [];
   const toCommit: { id: string; reason: string }[] = [];
   const actedToCommit: string[] = []; // auto-acted (guarded OR plain trashed/archived) ids: seen-recorded at commit, so the report survives a failed send + retry
@@ -73,12 +79,11 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
   let processed = 0;
   const clock = deps.now ?? Date.now;
   let remaining = 0;
-  for (let i = 0; i < ids.length; i++) {
+  for (let i = 0; i < unseen.length; i++) {
     // Out of time: stop taking on new mail. Everything covered so far is still acted on,
     // briefed and committed below; the rest waits for the next run (the cursor is held).
-    if (deps.deadline !== undefined && clock() >= deps.deadline) { remaining = ids.length - i; break; }
-    const id = ids[i]!;
-    if (await deps.seen.has(deps.userId, id)) continue;
+    if (deps.deadline !== undefined && clock() >= deps.deadline) { remaining = unseen.length - i; break; }
+    const id = unseen[i]!;
     let email: EmailMeta;
     try {
       email = await deps.gmail.getMeta(id);
@@ -87,7 +92,13 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
       // could fetch it → messages.get 404s. Skip it: one dead message must not abort
       // the whole poll, which would leave the cursor un-advanced and re-404 every
       // cycle until it ages out of the history window (a silent, days-long stall).
-      if (isNotFound(err)) { log("poll.msg", { userId: deps.userId, id, action: "skipped-gone" }); continue; }
+      // Recorded as seen right away (it is never briefed or acted on), so a held cursor
+      // doesn't re-fetch it on every continuation run.
+      if (isNotFound(err)) {
+        log("poll.msg", { userId: deps.userId, id, action: "skipped-gone" });
+        await deps.seen.record(deps.userId, { messageId: id, surfaced: false, verdict: "skipped", reason: "gone" });
+        continue;
+      }
       throw err;
     }
     // A message Gmail tagged SENT is one the OWNER sent — not incoming mail. Self-
@@ -97,7 +108,12 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
     // before counting/ruling/surfacing: the poll reports incoming mail, and keying
     // off the authoritative SENT label (not a "From == me" match) means a phishing
     // mail that spoofs the owner's own address is still surfaced, not silently hidden.
-    if (email.labelIds.includes("SENT")) { log("poll.msg", { userId: deps.userId, ...logMeta(email), action: "skipped-self" }); continue; }
+    // Recorded as seen right away, like a gone message: never briefed or acted on.
+    if (email.labelIds.includes("SENT")) {
+      log("poll.msg", { userId: deps.userId, ...logMeta(email), action: "skipped-self" });
+      await deps.seen.record(deps.userId, { messageId: id, surfaced: false, verdict: "skipped", reason: "self" });
+      continue;
+    }
     processed++;
     const rule = deps.store.findRuleFor(email.fromEmail, email.fromDomain);
     if (rule?.action === "review") { guardedTrash.push(email); log("poll.msg", { userId: deps.userId, ...logMeta(email), rule: "review", action: "guarded-queued" }); continue; }

@@ -120,7 +120,9 @@ function sharedBudgetDeps() {
     userId: 1, store,
     gmail: fakeGmailClient({
       historyId: "200",
-      addedSince: { "100": allIds },
+      // History lists oldest first and the poll walks newest first: listed reversed,
+      // the walk meets crypto, then junk, then spam, each in id order.
+      addedSince: { "100": [...allIds].reverse() },
       messages, bodies,
     }),
     llm: {
@@ -224,7 +226,8 @@ function groupCapDeps() {
   const calls: { preference: string; ids: string[] }[] = [];
   return {
     userId: 1, store, keys, ids, calls,
-    gmail: fakeGmailClient({ historyId: "200", addedSince: { "100": ids }, messages, bodies }),
+    // Listed reversed so the newest-first walk meets m1, m2, … in order.
+    gmail: fakeGmailClient({ historyId: "200", addedSince: { "100": [...ids].reverse() }, messages, bodies }),
     llm: {
       // Each sender's domain names its own preference → one group per preference.
       async classifyImportance(i: any) {

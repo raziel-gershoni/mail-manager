@@ -1,5 +1,5 @@
 // src/db/adapters.ts
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { db, schema } from "./client.js";
 import { matchRuleIn, keyFromSlug } from "../memory/store.js";
 import type { MemoryStore, RuleMatch, MemoryIndexEntry, MemoryRow, Verdict } from "../memory/store.js";
@@ -99,12 +99,28 @@ export async function dbMemoryStore(userId: number): Promise<MemoryStore & { flu
   };
 }
 
+// Ids per hasMany query: keeps each IN (...) list a bounded size however long the
+// listed backlog is.
+const SEEN_LOOKUP_CHUNK = 500;
+
 export function dbSeenRepo(): SeenRepo {
   return {
     async has(userId, messageId) {
       const r = await db().select().from(schema.seenMessages)
         .where(and(eq(schema.seenMessages.userId, userId), eq(schema.seenMessages.messageId, messageId))).limit(1);
       return r.length > 0;
+    },
+    async hasMany(userId, messageIds) {
+      // One query per chunk, not one per id: a held cursor re-lists every id the earlier
+      // runs already covered, and a round trip each would eat the poll's time budget.
+      const found = new Set<string>();
+      for (let i = 0; i < messageIds.length; i += SEEN_LOOKUP_CHUNK) {
+        const chunk = messageIds.slice(i, i + SEEN_LOOKUP_CHUNK);
+        const rows = await db().select({ messageId: schema.seenMessages.messageId }).from(schema.seenMessages)
+          .where(and(eq(schema.seenMessages.userId, userId), inArray(schema.seenMessages.messageId, chunk)));
+        for (const r of rows) found.add(r.messageId);
+      }
+      return found;
     },
     async record(userId, row) {
       await db().insert(schema.seenMessages).values({ userId, messageId: row.messageId,

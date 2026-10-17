@@ -62,7 +62,7 @@ export const seenMessages = pgTable("seen_messages", {
   userId: integer("user_id").notNull().references(() => users.id),
   messageId: text("message_id").notNull(),
   surfaced: boolean("surfaced").notNull(),
-  verdict: text("verdict").notNull(),    // 'important' | 'unimportant' | 'suspicious'
+  verdict: text("verdict").notNull(),    // 'important' | 'unimportant' | 'suspicious' | 'skipped' (gone/self-sent)
   reason: text("reason").notNull().default(""),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => ({ msgUx: uniqueIndex("seen_user_msg_ux").on(t.userId, t.messageId) }));

@@ -12,6 +12,8 @@ export interface SeenRow {
 
 export interface SeenRepo {
   has(userId: number, messageId: string): Promise<boolean>;
+  // The subset of messageIds already recorded, in one lookup (not one query per id).
+  hasMany(userId: number, messageIds: string[]): Promise<Set<string>>;
   record(userId: number, row: SeenRow): Promise<void>;
   recentSuspicious(userId: number, limit: number): Promise<SeenRow[]>;
   get(userId: number, messageId: string): Promise<SeenRow | null>;
@@ -36,6 +38,9 @@ export function fakeSeenRepo(): SeenRepo {
   return {
     async has(u, id) {
       return m.has(k(u, id));
+    },
+    async hasMany(u, ids) {
+      return new Set(ids.filter(id => m.has(k(u, id))));
     },
     async record(u, row) {
       if (!m.has(k(u, row.messageId))) order.push({ u, id: row.messageId });

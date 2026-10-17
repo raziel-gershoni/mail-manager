@@ -52,6 +52,16 @@ describe("fakeSeenRepo", () => {
     expect(sus.map(x => x.messageId)).toEqual(["third", "second"]);
   });
 
+  it("hasMany returns exactly the recorded ids, per user", async () => {
+    const r = fakeSeenRepo();
+    await r.record(1, { messageId: "a", surfaced: false, verdict: "unimportant", reason: "" });
+    await r.record(1, { messageId: "c", surfaced: true, verdict: "important", reason: "" });
+    await r.record(2, { messageId: "b", surfaced: false, verdict: "unimportant", reason: "" });
+    expect([...await r.hasMany(1, ["a", "b", "c", "d"])].sort()).toEqual(["a", "c"]);
+    expect([...await r.hasMany(2, ["a", "b"])]).toEqual(["b"]);
+    expect((await r.hasMany(1, [])).size).toBe(0);
+  });
+
   it("recentSuspicious returns empty array when limit is 0", async () => {
     const r = fakeSeenRepo();
     await r.record(1, { messageId: "a", surfaced: false, verdict: "suspicious", reason: "r" });

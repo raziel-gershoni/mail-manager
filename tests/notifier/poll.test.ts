@@ -29,6 +29,7 @@ function deps(over: Partial<any> = {}) {
 // A poll scenario with a guarded (action:"review") rule for shop.com: two bulk
 // messages from that sender (one junk, one that reads important) plus a normal
 // important message. reviewTrash keeps iff the body mentions an invoice.
+// History lists oldest first and the poll walks newest first, so gjunk is reached first.
 function guardedDeps() {
   const store = inMemoryStore();
   store.upsertRule({ matchValue: "shop.com", scope: "domain", verdict: "unimportant", description: "shop", action: "review" });
@@ -37,7 +38,7 @@ function guardedDeps() {
     store,
     gmail: fakeGmailClient({
       historyId: "200",
-      addedSince: { "100": ["gjunk", "gkeep", "jane"] },
+      addedSince: { "100": ["jane", "gkeep", "gjunk"] },
       messages: {
         gjunk: { id: "gjunk", threadId: "t", snippet: "", payload: { headers: [{ name: "From", value: "promo@shop.com" }, { name: "Subject", value: "50% off" }, { name: "List-Unsubscribe", value: "<x>" }] } },
         gkeep: { id: "gkeep", threadId: "t", snippet: "", payload: { headers: [{ name: "From", value: "promo@shop.com" }, { name: "Subject", value: "newsletter" }, { name: "List-Unsubscribe", value: "<x>" }] } },
@@ -142,7 +143,8 @@ describe("runPoll", () => {
     // The 404'd message is skipped (not surfaced, not counted, no throw); b still processes.
     expect(r.important).toEqual([]);
     expect(r.processed).toBe(1);          // only b was actually fetched; the phantom doesn't inflate the count
-    expect(await d.seen.has(1, "a")).toBe(false); // nothing recorded for the gone message
+    // Recorded as skipped (never briefed or acted on), so a held cursor never re-fetches it.
+    expect(await d.seen.get(1, "a")).toEqual({ messageId: "a", surfaced: false, verdict: "skipped", reason: "gone" });
 
     await r.commit();
     expect(await d.sync.get(1)).toBe("200"); // cursor advanced despite the dead message — no stall
@@ -169,7 +171,8 @@ describe("runPoll", () => {
     expect(r.important.map((i: any) => i.messageId)).toEqual(["a"]); // jane surfaced, the self-sent message never is
     expect(r.unruled).toEqual([]);                               // not flagged as an un-ruled sender either
     expect(d.gmail.trashedIds!()).toEqual([]);                    // and never acted on
-    expect(await d.seen.has(1, "mine")).toBe(false);              // just ignored — nothing recorded
+    // Recorded as skipped (never briefed or acted on), so a held cursor never re-fetches it.
+    expect(await d.seen.get(1, "mine")).toEqual({ messageId: "mine", surfaced: false, verdict: "skipped", reason: "self" });
   });
 
   it("skips messages already seen", async () => {
@@ -353,12 +356,12 @@ describe("runPoll deadline (catch-up that can't finish in one run)", () => {
     const r = await runPoll({ ...d, deadline: 25_000, now }); // checks at t=0,10k,20k pass; t=30k stops
     expect(r.processed).toBe(3);
     expect(r.remaining).toBe(2);
-    expect(r.important.map(i => i.messageId)).toEqual(["a", "c"]);
-    expect(classified).toEqual(["a", "b", "c"]);
+    expect(r.important.map(i => i.messageId)).toEqual(["e", "c"]);
+    expect(classified).toEqual(["e", "d", "c"]);
     await r.commit();
-    expect(await d.seen.has(1, "a")).toBe(true);   // important, committed
+    expect(await d.seen.has(1, "e")).toBe(true);   // important, committed
     expect(await d.seen.has(1, "c")).toBe(true);
-    expect(await d.seen.has(1, "d")).toBe(false);  // never reached
+    expect(await d.seen.has(1, "b")).toBe(false);  // never reached
     expect(await d.sync.get(1)).toBe("100");       // cursor HELD so the next run continues
   });
 
@@ -371,8 +374,22 @@ describe("runPoll deadline (catch-up that can't finish in one run)", () => {
     const r2 = await runPoll(d); // next hour, no pressure
     expect(r2.processed).toBe(2);
     expect(r2.remaining).toBe(0);
-    expect(r2.important.map(i => i.messageId)).toEqual(["e"]);
-    expect(classified).toEqual(["a", "b", "c", "d", "e"]); // each exactly once across both runs
+    expect(r2.important.map(i => i.messageId)).toEqual(["a"]);
+    expect(classified).toEqual(["e", "d", "c", "b", "a"]); // each exactly once across both runs
+    await r2.commit();
+    expect(await d.sync.get(1)).toBe("200");
+  });
+
+  it("walks unseen mail newest-first, so fresh mail isn't stuck behind a backlog", async () => {
+    const { deps: d, classified } = backlogDeps(); // history lists a..e oldest first
+    await d.sync.set(1, "100");
+    const r1 = await runPoll({ ...d, deadline: 25_000, now: clocked(d) });
+    expect(classified).toEqual(["e", "d", "c"]);
+    expect(r1.remaining).toBe(2);
+    await r1.commit();
+    const r2 = await runPoll(d);
+    expect(classified.slice(3)).toEqual(["b", "a"]);
+    expect(r2.remaining).toBe(0);
     await r2.commit();
     expect(await d.sync.get(1)).toBe("200");
   });
@@ -419,5 +436,79 @@ describe("runPoll deadline (catch-up that can't finish in one run)", () => {
   it("a first run reports nothing remaining", async () => {
     const r = await runPoll(deps());
     expect(r.remaining).toBe(0);
+  });
+
+  it("counts only unseen mail as remaining", async () => {
+    const { deps: d } = backlogDeps();
+    await d.sync.set(1, "100");
+    await d.seen.record(1, { messageId: "b", surfaced: false, verdict: "unimportant", reason: "x" });
+    await d.seen.record(1, { messageId: "d", surfaced: false, verdict: "unimportant", reason: "x" });
+    const r = await runPoll({ ...d, deadline: 0, now: () => 0 });
+    expect(r.remaining).toBe(3); // a, c, e — b and d were covered by an earlier run
+  });
+});
+
+// Every seen lookup (one DB round trip each in production) and every getMeta cost
+// 50ms on a fake clock. A run that looked covered ids up one by one would spend its
+// whole budget on them before reaching any new mail.
+function charged(d: { gmail: any; seen: any }, stepMs = 50): () => number {
+  let t = 0;
+  const wrap = (o: any, name: string) => {
+    const orig = o[name]?.bind(o);
+    if (orig) o[name] = async (...a: any[]) => { t += stepMs; return orig(...a); };
+  };
+  wrap(d.seen, "has");
+  wrap(d.seen, "hasMany");
+  wrap(d.gmail, "getMeta");
+  return () => t;
+}
+
+describe("runPoll continuation (held cursor over mail already covered)", () => {
+  it("skips a large covered prefix with one batched lookup and reaches the new mail", async () => {
+    const covered = Array.from({ length: 1000 }, (_, i) => `old${i}`);
+    const d = deps({
+      gmail: fakeGmailClient({
+        historyId: "200",
+        addedSince: { "100": [...covered, "n1", "n2", "n3"] },
+        messages: { n1: msg("n1", "jane@x.com", "Lunch"), n2: msg("n2", "n@linkedin.com", "Searches"), n3: msg("n3", "jane@x.com", "Dinner") },
+      }),
+    });
+    await d.sync.set(1, "100");
+    for (const id of covered) await d.seen.record(1, { messageId: id, surfaced: false, verdict: "unimportant", reason: "x" });
+    const r = await runPoll({ ...d, deadline: 25_000, now: charged(d) });
+    expect(r.processed).toBe(3);
+    expect(r.remaining).toBe(0);
+    await r.commit();
+    expect(await d.sync.get(1)).toBe("200");
+  });
+
+  it("seen-records gone and self-sent mail at skip time, so a held cursor never re-fetches it", async () => {
+    const d = deps({
+      gmail: fakeGmailClient({
+        historyId: "200",
+        addedSince: { "100": ["a", "gone", "mine"] },
+        messages: {
+          a: msg("a", "jane@x.com", "Lunch"),
+          mine: { id: "mine", threadId: "t", snippet: "", labelIds: ["SENT", "INBOX"], payload: { headers: [{ name: "From", value: "me@x.com" }, { name: "Subject", value: "my own reply" }] } },
+        },
+      }),
+    });
+    const fetched: string[] = [];
+    const orig = d.gmail.getMeta.bind(d.gmail);
+    d.gmail.getMeta = async (id: string) => {
+      fetched.push(id);
+      if (id === "gone") { const e: any = new Error("Requested entity was not found."); e.code = 404; e.status = 404; throw e; }
+      return orig(id);
+    };
+    await d.sync.set(1, "100");
+    await runPoll(d);
+    expect(await d.seen.get(1, "gone")).toEqual({ messageId: "gone", surfaced: false, verdict: "skipped", reason: "gone" });
+    expect(await d.seen.get(1, "mine")).toEqual({ messageId: "mine", surfaced: false, verdict: "skipped", reason: "self" });
+    // The send failed, so nothing was committed and the cursor is held: the next run
+    // re-lists the same ids and fetches only the one still owed a brief.
+    fetched.length = 0;
+    const r2 = await runPoll(d);
+    expect(fetched).toEqual(["a"]);
+    expect(r2.important.map(i => i.messageId)).toEqual(["a"]);
   });
 });
