@@ -84,8 +84,8 @@ describe("pollAllUsers", () => {
     const deadlines: number[] = [];
     await pollAllUsers({ ownerTelegramId: OWNER, links, directory: fakeUserDirectory([1]), now: IN_WINDOW,
       settingsFor: async () => on(), pollUser: async (_u, _c, _tz, _l, deadline) => { deadlines.push(deadline); } });
-    expect(POLL_LOOP_BUDGET_MS).toBe(25_000);
-    expect(deadlines).toEqual([IN_WINDOW.getTime() + 25_000]);
+    expect(POLL_LOOP_BUDGET_MS).toBe(200_000);
+    expect(deadlines).toEqual([IN_WINDOW.getTime() + 200_000]);
   });
 
   it("polls users concurrently, so one user's long catch-up can't hold up another", async () => {

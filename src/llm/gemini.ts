@@ -188,17 +188,15 @@ function prompt(i: ClassifyInput): string {
   ].join("\n\n");
 }
 
-// Per-call HTTP timeout so a single hung Gemini request can't eat the whole
-// Vercel /api/worker 60s budget. Must stay comfortably under 60s: worst case is
-// pre-work (~3s: OAuth refresh + DB load) + this call + the forced-final reply
-// (FORCE_FINAL_MS = 12s) + post-work (~3s: flush + Telegram send) ≤ 60s, so this
-// caps at ~42s. 40s is the safe ceiling; the agent loop's own remaining-budget
-// race (AGENT_BUDGET_MS) is the tighter, primary bound — this is the HTTP backstop.
+// Per-call HTTP timeout so a single hung Gemini request can't eat a function's budget
+// (300s maxDuration on /api/worker and /api/poll). A healthy call takes 2–8s, so 40s is
+// already generous; the agent loop's remaining-budget race (AGENT_BUDGET_MS) and the
+// poll's deadline are the primary bounds — this is the HTTP backstop.
 //
 // Since @google/genai 2.16 this is a PER-ATTEMPT deadline, not a total one. That is
 // harmless only because we pass no `retryOptions`: the SDK short-circuits to a single
 // fetch, so per-attempt and total are the same 40s. Adding retryOptions would silently
-// multiply this cap by the attempt count and blow the 60s worker budget — if you ever
+// multiply this cap by the attempt count and blow the worker/poll budget — if you ever
 // want SDK-level retries, lower this number to match.
 const GEMINI_TIMEOUT_MS = 40_000;
 

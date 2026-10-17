@@ -6,10 +6,11 @@ import { log } from "../util/log.js";
 import { t, type Lang } from "../i18n/index.js";
 
 export const MAX_TOOL_ITERS = 10;
-// Wall-clock budgets keep a single turn under Vercel's 60s worker cap: stop *planning*
-// after AGENT_BUDGET_MS, then force one bounded final-answer call so the owner always
-// gets a reply instead of a silent timeout.
-export const AGENT_BUDGET_MS = 45_000;
+// Wall-clock budgets keep a single turn well under the worker's 300s cap and keep the
+// owner from waiting minutes on Telegram: stop *planning* after AGENT_BUDGET_MS, then
+// force one bounded final-answer call so the owner always gets a reply instead of a
+// silent timeout.
+export const AGENT_BUDGET_MS = 120_000;
 export const FORCE_FINAL_MS = 12_000;
 
 export interface AgentResult { text: string; toolNote: string; }

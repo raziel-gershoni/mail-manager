@@ -1,14 +1,15 @@
 // src/queue/idempotency.ts
 
 // How long a claim may sit unfinished before a retry is allowed to take it over.
-// Vercel kills the function at its 60s maxDuration, so a claim older than this
-// CANNOT belong to a still-running attempt — the previous worker is provably dead.
+// Vercel kills the function at its 300s maxDuration (app/api/worker/route.ts), so a
+// claim older than this CANNOT belong to a still-running attempt — the previous worker
+// is provably dead. Keep it above that maxDuration if either changes.
 //
 // This exists because a killed function runs no catch and no finally: without a
 // takeover rule the claim survived forever, the QStash retry saw it, returned 200,
 // and QStash recorded a successful delivery. The owner's message was then never
 // answered and never retried — silent, permanent loss.
-export const CLAIM_STALE_MS = 90_000;
+export const CLAIM_STALE_MS = 360_000;
 
 export interface IdempotencyRepo {
   claim(updateId: string): Promise<boolean>;  // true iff this worker now owns the update

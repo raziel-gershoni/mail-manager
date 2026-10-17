@@ -5,10 +5,11 @@ import type { EffectiveSettings } from "../settings/settings.js";
 import { isActiveDay, isWithinDigestWindow } from "../settings/window.js";
 
 // How long each user's poll may keep taking on new mail, measured from the start of the
-// run. The rest of the 60s budget covers that user's guarded/preference vets, the brief
-// (~7.5s on Gemini 3.8), sending and committing. Users are polled concurrently, so each
-// gets this same window instead of waiting behind the others.
-export const POLL_LOOP_BUDGET_MS = 25_000;
+// run. The rest of the 300s maxDuration (~100s) covers that user's guarded/preference
+// vets, the brief, sending and committing, plus one slow in-flight Gemini call (40s
+// HTTP timeout). Users are polled concurrently, so each gets this same window instead
+// of waiting behind the others.
+export const POLL_LOOP_BUDGET_MS = 200_000;
 
 export interface FanoutDeps {
   ownerTelegramId: number;
