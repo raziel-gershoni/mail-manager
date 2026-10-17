@@ -141,9 +141,10 @@ export default function MiniApp() {
         <span style={S.days}>
           {DAYS.map(d => {
             const active = days.includes(d);
+            const disabled = active && days.length === 1; // the last active day can't be turned off
             return (
-              <button key={d} type="button" aria-pressed={active} disabled={active && days.length === 1}
-                style={active ? S.dayOn : S.dayOff} onClick={() => toggleDay(d)}>
+              <button key={d} type="button" aria-pressed={active} disabled={disabled}
+                style={{ ...(active ? S.dayOn : S.dayOff), ...(disabled ? S.dayDisabled : {}) }} onClick={() => toggleDay(d)}>
                 {t(lang, `mini_day_${d}` as MsgKey)}
               </button>
             );
@@ -234,6 +235,7 @@ const S: Record<string, React.CSSProperties> = {
   days: { display: "flex", flexWrap: "wrap", gap: 4, justifyContent: "flex-end" },
   dayOn: { minWidth: 34, padding: "4px 6px", background: "var(--tg-theme-button-color, #2ea6ff)", color: "var(--tg-theme-button-text-color, #fff)", border: "1px solid transparent", borderRadius: 6, cursor: "pointer" },
   dayOff: { minWidth: 34, padding: "4px 6px", background: "transparent", color: "var(--tg-theme-hint-color, #888)", border: "1px solid var(--tg-theme-hint-color, #ccc)", borderRadius: 6, cursor: "pointer" },
+  dayDisabled: { opacity: 0.5, cursor: "not-allowed" },
   list: { paddingInlineStart: 18 },
   dim: { color: "var(--tg-theme-hint-color, #888)", fontSize: 13 },
   details: { margin: "12px 0", borderBottom: "1px solid var(--tg-theme-hint-color, #eee)", paddingBottom: 8 },

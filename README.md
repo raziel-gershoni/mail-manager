@@ -25,7 +25,7 @@ Mail Manager polls each linked Gmail account on a schedule, classifies incoming 
 - **Learns your preferences.** Tell it "the bank is always important" or "crypto pitches are noise" and it remembers — as sender/domain rules or topic-based standing preferences that shape future triage.
 - **Guarded, recoverable cleanup.** Ask it to clean a category and it proposes a vetted set and waits for your approval before trashing or archiving. Every destructive action is logged and reversible with a simple "undo."
 - **Multi-user.** The owner provisions additional users with per-user OAuth consent URLs; each gets their own linked account, rules, and schedule.
-- **Telegram Mini App** for settings — language, timezone, and the daily digest window.
+- **Telegram Mini App** for settings — language, timezone, **active hours** and **active days**.
 - **Bilingual.** Full English and Hebrew support, including right-to-left rendering.
 
 ## 🏗️ How it works
@@ -38,7 +38,7 @@ Mail Manager polls each linked Gmail account on a schedule, classifies incoming 
 
 **Classification: cheap rules first, LLM second.** For each new message (`src/notifier/classify.ts`) an explicit sender/domain rule always wins; only unruled mail reaches the Gemini importance pass, and an LLM error fails safe by treating the message as important-and-suspicious rather than silently dropping it.
 
-**Correct, idempotent sync.** Polling captures Gmail's head history id *once* before listing so the cursor can't race past mail arriving mid-poll, and the cursor is only advanced after the brief is actually delivered — a failed send leaves the cursor un-advanced so the same mail is retried, never lost. Telegram updates are processed at most once per update id, and QStash deliveries are signature-verified before any work runs.
+**Correct, idempotent sync.** Polling captures Gmail's head history id *once* before listing so the cursor can't race past mail arriving mid-poll, and the cursor is only advanced after the brief is actually delivered — a failed send leaves the cursor un-advanced so the same mail is retried, never lost. The hourly brief runs only on your active days within your active hours, and the first run back catches up on everything that arrived in between. If a catch-up can't finish within one run, it briefs what it covered, ends with a ⚠️ warning, and continues at the next check, newest mail first — and if Gmail's history has expired in the meantime, it restarts from now and says so. Telegram updates are processed at most once per update id, and QStash deliveries are signature-verified before any work runs.
 
 **Security throughout.** OAuth refresh tokens are encrypted at rest with AES-256-GCM (`src/lib/crypto.ts`). The Telegram webhook is gated by a shared secret, and Mini App requests are authenticated by recomputing Telegram's `initData` HMAC and comparing with `timingSafeEqual` (`src/telegram/initdata.ts`). Google access is limited to the `gmail.modify` scope.
 

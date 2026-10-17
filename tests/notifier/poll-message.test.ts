@@ -41,8 +41,8 @@ describe("composePollMessage", () => {
 });
 
 describe("composePollMessage — catch-up that couldn't finish", () => {
-  const WARN_EN = "⚠️ I haven't got to about 23 more emails yet — I'll keep going next hour. Check Gmail if you don't want to wait.";
-  const WARN_HE = "⚠️ עוד לא הגעתי לכ־23 מיילים נוספים — אמשיך בשעה הבאה. אפשר לבדוק ישירות ב־Gmail אם לא רוצים לחכות.";
+  const WARN_EN = "⚠️ I haven't got to about 23 more emails yet — I'll pick up where I left off at the next check. Check Gmail if you don't want to wait.";
+  const WARN_HE = "⚠️ עוד לא הגעתי לכ־23 מיילים נוספים — אמשיך מאיפה שעצרתי בבדיקה הבאה. אפשר לבדוק ישירות ב־Gmail אם לא רוצים לחכות.";
   it("ends the brief with the warning", () => {
     expect(composePollMessage("your brief", act({ processed: 5, surfaced: 1, remaining: 23 }), "en"))
       .toBe(`your brief\n\n_📬 5 new_\n${WARN_EN}`);
