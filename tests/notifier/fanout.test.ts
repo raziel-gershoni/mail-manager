@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { pollAllUsers } from "../../src/notifier/fanout.js";
+import { pollAllUsers, POLL_LOOP_BUDGET_MS } from "../../src/notifier/fanout.js";
+import { weekdayInZone } from "../../src/settings/window.js";
+import { ALL_DAYS } from "../../src/settings/settings.js";
 import { fakeTelegramLinkRepo, fakeUserDirectory } from "../../src/users/identity.js";
 import type { EffectiveSettings } from "../../src/settings/settings.js";
 
@@ -58,6 +60,57 @@ describe("pollAllUsers", () => {
     const ok: number[] = [];
     const res = await pollAllUsers({ ownerTelegramId: OWNER, links, directory: dir, now: IN_WINDOW,
       settingsFor: async () => on(), pollUser: async (u) => { if (u === 1) throw new Error("boom"); ok.push(u); } });
+    expect(ok).toEqual([2]);
+    expect(res).toEqual({ polled: 1, skipped: 0, gated: 0, errored: 1 });
+  });
+
+  it("gates a user on an inactive day, polls them on an active one", async () => {
+    const today = weekdayInZone(IN_WINDOW, "UTC");
+    const links = fakeTelegramLinkRepo([{ userId: 1, telegramUserId: OWNER, chatId: OWNER }]);
+    const dir = fakeUserDirectory([1]);
+    const calls: number[] = [];
+    const off = await pollAllUsers({ ownerTelegramId: OWNER, links, directory: dir, now: IN_WINDOW,
+      settingsFor: async () => on({ activeDays: ALL_DAYS.filter(d => d !== today) }), pollUser: async (u) => { calls.push(u); } });
+    expect(calls).toEqual([]);
+    expect(off).toEqual({ polled: 0, skipped: 0, gated: 1, errored: 0 });
+    const onDay = await pollAllUsers({ ownerTelegramId: OWNER, links, directory: dir, now: IN_WINDOW,
+      settingsFor: async () => on({ activeDays: [today] }), pollUser: async (u) => { calls.push(u); } });
+    expect(calls).toEqual([1]);
+    expect(onDay).toEqual({ polled: 1, skipped: 0, gated: 0, errored: 0 });
+  });
+
+  it("hands each poll a deadline POLL_LOOP_BUDGET_MS after the run started", async () => {
+    const links = fakeTelegramLinkRepo([{ userId: 1, telegramUserId: OWNER, chatId: OWNER }]);
+    const deadlines: number[] = [];
+    await pollAllUsers({ ownerTelegramId: OWNER, links, directory: fakeUserDirectory([1]), now: IN_WINDOW,
+      settingsFor: async () => on(), pollUser: async (_u, _c, _tz, _l, deadline) => { deadlines.push(deadline); } });
+    expect(POLL_LOOP_BUDGET_MS).toBe(25_000);
+    expect(deadlines).toEqual([IN_WINDOW.getTime() + 25_000]);
+  });
+
+  it("polls users concurrently, so one user's long catch-up can't hold up another", async () => {
+    // User 1's poll can only finish once user 2's poll has started. Run one after the
+    // other, this deadlocks and the test times out.
+    const links = fakeTelegramLinkRepo([
+      { userId: 1, telegramUserId: OWNER, chatId: OWNER },
+      { userId: 2, telegramUserId: 222, chatId: 222 },
+    ]);
+    let release!: () => void;
+    const user2Started = new Promise<void>(r => { release = r; });
+    const res = await pollAllUsers({ ownerTelegramId: OWNER, links, directory: fakeUserDirectory([1, 2]), now: IN_WINDOW,
+      settingsFor: async () => on(), pollUser: async (u) => { if (u === 1) await user2Started; else release(); } });
+    expect(res).toEqual({ polled: 2, skipped: 0, gated: 0, errored: 0 });
+  }, 2_000);
+
+  it("isolates a failing settings lookup: the other user is still polled, the failure counted", async () => {
+    const links = fakeTelegramLinkRepo([
+      { userId: 1, telegramUserId: OWNER, chatId: OWNER },
+      { userId: 2, telegramUserId: 222, chatId: 222 },
+    ]);
+    const ok: number[] = [];
+    const res = await pollAllUsers({ ownerTelegramId: OWNER, links, directory: fakeUserDirectory([1, 2]), now: IN_WINDOW,
+      settingsFor: async (u) => { if (u === 1) throw new Error("db down"); return on(); },
+      pollUser: async (u) => { ok.push(u); } });
     expect(ok).toEqual([2]);
     expect(res).toEqual({ polled: 1, skipped: 0, gated: 0, errored: 1 });
   });

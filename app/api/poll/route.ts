@@ -42,12 +42,12 @@ export async function POST(req: Request): Promise<Response> {
     directory: dbUserDirectory(),
     now: new Date(),
     settingsFor: async (userId) => effectiveSettings(await settingsRepo.get(userId), e.OWNER_TZ),
-    pollUser: async (userId, chatId, timezone, language) => {
+    pollUser: async (userId, chatId, timezone, language, deadline) => {
       try {
         const auth = await authedGmailFor(userId, e);
         const gmail = googleGmailClient(auth);
         const store = await dbMemoryStore(userId);
-        const res = await runPoll({ userId, gmail, store, llm, sync: dbSyncRepo(), seen: dbSeenRepo(), actionLog: dbActionLogRepo() });
+        const res = await runPoll({ userId, gmail, store, llm, sync: dbSyncRepo(), seen: dbSeenRepo(), actionLog: dbActionLogRepo(), deadline });
         if (res.firstRun) return;
         const ids = res.important.map(i => i.messageId);
         let brief: string | null = null;
