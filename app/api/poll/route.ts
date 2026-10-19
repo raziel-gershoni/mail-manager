@@ -17,7 +17,7 @@ import { activityItemsFrom } from "../../../src/notifier/activity.js";
 import { dbActivityRepo } from "../../../src/db/activity-adapter.js";
 import { buildDigestRefs } from "../../../src/notifier/refs.js";
 import { dbDigestRefRepo } from "../../../src/db/refs-adapter.js";
-import { generateBrief, composePollMessage, pollSilent } from "../../../src/notifier/brief.js";
+import { generateBrief, composePollMessage, pollSilent, BRIEF_ATTACHMENT_GRACE_MS } from "../../../src/notifier/brief.js";
 import { pollAllUsers } from "../../../src/notifier/fanout.js";
 import { sendFormatted } from "../../../src/telegram/send.js";
 import { log } from "../../../src/util/log.js";
@@ -52,7 +52,9 @@ export async function POST(req: Request): Promise<Response> {
         const ids = res.important.map(i => i.messageId);
         let brief: string | null = null;
         if (ids.length > 0) {
-          brief = await generateBrief(ids, { gmail, llm, timezone, language, store });
+          // Attachment reads may start until 40s past the loop deadline (run start + 240s);
+          // later than that the brief names the files only.
+          brief = await generateBrief(ids, { gmail, llm, timezone, language, store, readAttachmentsBy: deadline + BRIEF_ATTACHMENT_GRACE_MS });
           if (!brief || brief.trim() === "") {
             brief = `${t(language, "poll_fallback_head", { n: ids.length })}\n` +
               res.important.map(i => `• ${i.subject || t(language, "poll_no_subject")} — ${i.from}`).join("\n");

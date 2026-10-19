@@ -4,6 +4,7 @@ import type { RiskSignals } from "../gmail/risk.js";
 import type { MemoryIndexEntry } from "../memory/store.js";
 import type { AgentMessage } from "../context/assemble.js";
 import type { RuleTag } from "../agent/rule-tag.js";
+import type { AttachmentRead } from "../attachments/read.js";
 
 export interface ClassifyInput { email: EmailMeta; risk: RiskSignals; memoryIndex: MemoryIndexEntry[]; }
 export interface ClassifyResult { important: boolean; suspicious: boolean; reason: string; matched?: string; }
@@ -21,7 +22,9 @@ export interface StreamSink {
   onText(delta: string): void; // a user-visible text delta (never the model's reasoning)
   onToolCall(): void;          // this step is calling a tool, so its prose was not the answer
 }
-export interface BriefEmail { from: string; subject: string; bodyText: string; rule?: RuleTag | null; }
+// attachments: what was read of the email's files (extracts are UNTRUSTED), and the
+// ones that weren't, with why; absent when it has none.
+export interface BriefEmail { from: string; subject: string; bodyText: string; rule?: RuleTag | null; attachments?: AttachmentRead[]; }
 
 // attachmentLine: the message's files as one compact line (attachmentLine() in
 // src/gmail/parts.ts); absent when it has none.
