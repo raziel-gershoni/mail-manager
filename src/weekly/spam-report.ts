@@ -5,11 +5,13 @@ import { t, type Lang } from "../i18n/index.js";
 import type { FlaggedSpam, SpamCheck } from "./spam.js";
 
 export const MAX_LISTED = 20;
-// Telegram rejects a message over 4096 characters and sendFormatted doesn't split. Its
-// plain-text fallback sends this text as it is, so the report keeps under this budget.
+// Telegram rejects a message over 4096 characters, and the weekly send (sendPlain) sends
+// this text as it is, without splitting, so the report keeps under this budget.
 export const MAX_REPORT_CHARS = 3800;
 
 // Sender, subject and reason come from the email or the model: one line each, bounded.
+// They're UNTRUSTED and shown verbatim. The report goes out as plain text (sendPlain, no
+// parse_mode), so markdown in them stays literal and never becomes a link.
 function clip(s: string, max: number): string {
   const one = s.replace(/\s+/g, " ").trim();
   return one.length > max ? `${one.slice(0, max - 1)}…` : one;

@@ -21,7 +21,7 @@ import { generateBrief, composePollMessage, pollSilent, BRIEF_ATTACHMENT_GRACE_M
 import { pollAllUsers, POLL_LOOP_BUDGET_MS } from "../../../src/notifier/fanout.js";
 import { runWeeklyTasks } from "../../../src/weekly/run.js";
 import { dbWeeklyRunRepo } from "../../../src/db/weekly-runs-adapter.js";
-import { sendFormatted } from "../../../src/telegram/send.js";
+import { sendFormatted, sendPlain } from "../../../src/telegram/send.js";
 import { log } from "../../../src/util/log.js";
 import { t } from "../../../src/i18n/index.js";
 import { Bot } from "grammy";
@@ -92,12 +92,14 @@ export async function POST(req: Request): Promise<Response> {
         // The weekly jobs (spam check, retrospect) run AFTER this hour's report is sent and
         // committed, in their own try/catch: they must never mark the hourly poll errored.
         // runWeeklyTasks guards its own start time and deadline and never throws; this catch
-        // covers building its dependencies.
+        // covers building its dependencies. The reports quote untrusted senders, subjects and
+        // reasons and carry no markdown of their own, so they go out as PLAIN text: a subject
+        // like "[Verify](https://phish)" must never become a link in the bot's own message.
         try {
           await runWeeklyTasks({
             userId, chatId, timezone, language, now: Date.now, runStart: deadline - POLL_LOOP_BUDGET_MS,
             gmail, llm, store, runs: dbWeeklyRunRepo(),
-            send: (text, opts) => sendFormatted(bot, chatId, text, opts),
+            send: (text, opts) => sendPlain(bot, chatId, text, opts),
             saveRefs: (messageId, refs) => dbDigestRefRepo().save(userId, messageId, refs),
           });
         } catch (err) {
