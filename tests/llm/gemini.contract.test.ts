@@ -163,4 +163,22 @@ describe.skipIf(!RUN)("gemini live contract", () => {
     expect(text).toContain("4821");
     expect(text).toMatch(/3,?240/);
   }, 60_000);
+
+  it("reviewActed returns well-typed verdicts, only for the ids it was given", async () => {
+    // The weekly retrospect's second look (default thinking, JSON). The CONTRACT, not the
+    // judgment: each verdict is well-typed and for one of our ids; the rest are counted.
+    const { geminiProvider } = await import("../../src/llm/gemini.js");
+    const res = await geminiProvider(KEY!).reviewActed([
+      { id: "t1", from: "Dana Levi <dana@example.com>", subject: "Re: contract — signed copy attached", snippet: "Hi, the signed copy is attached. Can you confirm by Thursday?",
+        action: "trashed", why: "a sender rule (acted on without reading the body)", attachmentLine: "contract-signed.pdf (PDF, 210 KB)" },
+      { id: "t2", from: "Deals <promo@shop.example>", subject: "48h flash sale — 70% off", snippet: "Don't miss our biggest sale of the season",
+        action: "archived", why: "a guarded sender rule (body read and judged first)" },
+    ]);
+    expect(res.verdicts.length + res.unjudged).toBe(2);
+    for (const v of res.verdicts) {
+      expect(["t1", "t2"]).toContain(v.id);
+      expect(typeof v.looksWrong).toBe("boolean");
+      expect(typeof v.reason).toBe("string");
+    }
+  }, 60_000);
 });

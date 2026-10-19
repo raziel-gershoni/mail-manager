@@ -31,6 +31,11 @@ export interface BriefEmail { from: string; subject: string; bodyText: string; r
 export interface TrashCandidate { id: string; from: string; subject: string; bulk: boolean; transactional: boolean; bodyText?: string; attachmentLine?: string; }
 export interface ReviewVerdict { id: string; keep: boolean; reason: string; }
 
+// The weekly retrospect's second look at one trashed/archived message. Everything but
+// id, action and why is copied from the email (UNTRUSTED); `why` is what made the bot act.
+export interface ActedCandidate { id: string; from: string; subject: string; snippet: string; action: "trashed" | "archived"; why: string; attachmentLine?: string }
+export interface ActedVerdict { id: string; looksWrong: boolean; reason: string }
+
 // The weekly spam check's view of one email in Spam. Everything but the two signals is
 // UNTRUSTED (it came from the email); attachmentLine is set only when it has attachments.
 export interface SpamCandidate { id: string; from: string; subject: string; snippet: string; bulk: boolean; transactional: boolean; attachmentLine?: string }
@@ -52,6 +57,10 @@ export interface LLMProvider {
   // One model call over one batch (the caller batches). Verdicts come back only for ids it
   // actually judged; `unjudged` counts the rest — see parseSpamJson.
   reviewSpam(candidates: SpamCandidate[]): Promise<{ verdicts: SpamVerdict[]; unjudged: number }>;
+  // The retrospect's second look (default thinking): one call for the items given — the
+  // caller batches. A missing or malformed verdict is NOT flagged and is counted in
+  // `unjudged` (parseActedJson).
+  reviewActed(items: ActedCandidate[]): Promise<{ verdicts: ActedVerdict[]; unjudged: number }>;
 }
 
 export function parseReviewJson(text: string, candidateIds: string[]): ReviewVerdict[] {
@@ -97,6 +106,35 @@ export function parseSpamJson(text: string, ids: string[]): { verdicts: SpamVerd
   return { verdicts, unjudged: ids.length - verdicts.length };
 }
 
+// Second-look verdicts, with the OPPOSITE default from parseReviewJson. Nothing here acts
+// on mail, so the safe error is a missed flag: an id the model left out, a verdict that
+// isn't a boolean, or output that isn't a JSON array is NOT flagged. It is counted in
+// `unjudged`, so the report can say "couldn't re-check N" instead of implying a clean
+// week. Only an explicit looksWrong:true flags.
+export function parseActedJson(text: string, ids: string[]): { verdicts: ActedVerdict[]; unjudged: number } {
+  let parsed: unknown;
+  try { parsed = JSON.parse(text); } catch { return { verdicts: [], unjudged: ids.length }; }
+  const byId = new Map<string, Record<string, unknown>>();
+  for (const v of Array.isArray(parsed) ? parsed : []) {
+    if (!v || typeof v !== "object") continue;
+    const o = v as Record<string, unknown>;
+    if (typeof o.id === "string" && !byId.has(o.id)) byId.set(o.id, o);
+  }
+  const verdicts: ActedVerdict[] = [];
+  for (const id of ids) {
+    const v = byId.get(id);
+    if (!v || typeof v.looksWrong !== "boolean") continue;
+    verdicts.push({ id, looksWrong: v.looksWrong, reason: typeof v.reason === "string" ? v.reason : "" });
+  }
+  return { verdicts, unjudged: ids.length - verdicts.length };
+}
+
+// What every fake's reviewActed does unless a test scripts its own: judges each item,
+// finds nothing wrong.
+async function fakeReviewActed(items: ActedCandidate[]): Promise<{ verdicts: ActedVerdict[]; unjudged: number }> {
+  return { verdicts: items.map(i => ({ id: i.id, looksWrong: false, reason: "fake" })), unjudged: 0 };
+}
+
 export function fakeReviewLLM(fn: (c: TrashCandidate[]) => ReviewVerdict[]): LLMProvider {
   return {
     async classifyImportance() { return { important: true, suspicious: false, reason: "fake" }; },
@@ -106,6 +144,7 @@ export function fakeReviewLLM(fn: (c: TrashCandidate[]) => ReviewVerdict[]): LLM
     async reviewTrash(c) { return fn(c); },
     async reviewPreference(c) { return fn(c); },
     async reviewSpam(c) { return { verdicts: [], unjudged: c.length }; },
+    reviewActed: fakeReviewActed,
   };
 }
 
@@ -118,6 +157,7 @@ export function fakeLLM(fn: (i: ClassifyInput) => ClassifyResult): LLMProvider {
     async reviewTrash() { return []; },
     async reviewPreference() { return []; },
     async reviewSpam(c) { return { verdicts: [], unjudged: c.length }; },
+    reviewActed: fakeReviewActed,
   };
 }
 
@@ -133,5 +173,6 @@ export function fakeAgentLLM(
     async reviewTrash() { return []; },
     async reviewPreference() { return []; },
     async reviewSpam(c) { return { verdicts: [], unjudged: c.length }; },
+    reviewActed: fakeReviewActed,
   };
 }

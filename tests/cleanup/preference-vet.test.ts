@@ -17,6 +17,7 @@ function llm(fn: (c: any[], p: string) => any[]): LLMProvider {
     async extractAttachment() { return ""; },
     async reviewTrash() { throw new Error("preferenceVet must NOT use reviewTrash"); },
     async reviewPreference(c, p) { return fn(c as any[], p); },
+    async reviewActed() { throw new Error("preferenceVet must NOT use reviewActed"); },
     async reviewSpam() { throw new Error("preferenceVet must NOT use reviewSpam"); } } as LLMProvider;
 }
 

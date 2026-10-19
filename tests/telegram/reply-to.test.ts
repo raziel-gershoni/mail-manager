@@ -16,6 +16,7 @@ function build(over: Partial<SecretaryDeps> = {}) {
     async extractAttachment() { return ""; },
     async reviewTrash() { return []; },
     async reviewPreference() { return []; },
+    async reviewActed() { return { verdicts: [], unjudged: 0 }; },
     async reviewSpam() { return { verdicts: [], unjudged: 0 }; },
     async agentStep(messages: unknown[]) { seen.push(messages); return { kind: "final", text: "ok" }; },
   };

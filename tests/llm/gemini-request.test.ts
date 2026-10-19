@@ -8,7 +8,7 @@
 // faster) and on attachment extraction (transcription, not judgment); the agent and the
 // reviewers stay at the model default on purpose.
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { ClassifyInput, SpamCandidate, StreamSink, TrashCandidate } from "../../src/llm/provider.js";
+import type { ActedCandidate, ClassifyInput, SpamCandidate, StreamSink, TrashCandidate } from "../../src/llm/provider.js";
 
 const sent = vi.hoisted(() => [] as { method: string; req: any }[]);
 const reply = vi.hoisted(() => ({ next: undefined as unknown }));
@@ -43,6 +43,7 @@ const classifyInput: ClassifyInput = {
   memoryIndex: [],
 };
 const candidates: TrashCandidate[] = [{ id: "a", from: "x@y.com", subject: "s", bulk: true, transactional: false }];
+const actedItems: ActedCandidate[] = [{ id: "t1", from: "Acme <billing@acme.com>", subject: "Invoice 4821", snippet: "Your invoice is attached", action: "trashed", why: "a sender rule (acted on without reading the body)" }];
 const spamCandidates: SpamCandidate[] = [{ id: "s1", from: "dana@x.com", subject: "Re: dinner", snippet: "see you at 8", bulk: false, transactional: false }];
 const tool = { name: "get_time", description: "time", parameters: { type: "object", properties: {} } };
 const sink: StreamSink = { onText: () => {}, onToolCall: () => {} };
@@ -58,6 +59,7 @@ async function exerciseEveryPath() {
   await llm.reviewPreference(candidates, "trash newsletters");
   await llm.extractAttachment({ name: "invoice.pdf", mimeType: "application/pdf", data: "JVBERi0xLjQK" });
   await llm.reviewSpam(spamCandidates);
+  await llm.reviewActed(actedItems);
 }
 
 describe("geminiProvider request config", () => {
@@ -65,7 +67,7 @@ describe("geminiProvider request config", () => {
 
   it("never sends a sampling param (temperature/topP/topK) on any path", async () => {
     await exerciseEveryPath();
-    expect(sent).toHaveLength(8); // every path above reached the SDK — none skipped
+    expect(sent).toHaveLength(9); // every path above reached the SDK — none skipped
     for (const { req } of sent) {
       for (const key of SAMPLING) expect(req.config ?? {}).not.toHaveProperty(key);
     }
@@ -87,6 +89,7 @@ describe("geminiProvider request config", () => {
       ["generateContent", { responseMimeType: "application/json" }], // reviewPreference
       ["generateContent", { thinkingConfig: { thinkingLevel: "LOW" } }], // extractAttachment
       ["generateContent", { responseMimeType: "application/json" }], // reviewSpam (default thinking)
+      ["generateContent", { responseMimeType: "application/json" }], // reviewActed (default thinking)
     ]);
   });
 
@@ -99,6 +102,21 @@ describe("geminiProvider request config", () => {
     expect(out).toEqual({ verdicts: [{ id: "s1", legitimate: true, suspicious: false, reason: "a personal reply" }], unjudged: 0 });
     expect(sent[0]!.req.contents).toContain('id=s1 from="dana@x.com" subject="Re: dinner"');
     expect(sent[0]!.req.contents).toContain("UNTRUSTED");
+  });
+
+  it("reviewActed: skips the SDK for no items, frames content as UNTRUSTED, and parses the verdicts", async () => {
+    const llm = geminiProvider("test-key");
+    expect(await llm.reviewActed([])).toEqual({ verdicts: [], unjudged: 0 });
+    expect(sent).toHaveLength(0);
+    reply.next = { text: '[{"id":"t1","looksWrong":true,"reason":"a real invoice"}]', candidates: [] };
+    const r = await llm.reviewActed(actedItems);
+    expect(sent).toHaveLength(1);
+    const prompt = sent[0]!.req.contents as string;
+    expect(prompt).toContain("SECOND LOOK");
+    expect(prompt).toContain("UNTRUSTED");
+    expect(prompt).toContain('id=t1 action=trashed why="a sender rule (acted on without reading the body)"');
+    expect(prompt).toContain('"looksWrong":boolean');
+    expect(r).toEqual({ verdicts: [{ id: "t1", looksWrong: true, reason: "a real invoice" }], unjudged: 0 });
   });
 
   it("round-trips a function call's id: read off the response, sent back on both sides", async () => {

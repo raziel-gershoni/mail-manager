@@ -26,6 +26,7 @@ it("a scripted agent runs propose_trash then confirm_trash and the email is tras
     async extractAttachment() { return ""; },
     async reviewTrash() { return []; },
     async reviewPreference() { return []; },
+    async reviewActed() { return { verdicts: [], unjudged: 0 }; },
     async reviewSpam() { return { verdicts: [], unjudged: 0 }; },
     async agentStep(): Promise<AgentStep> {
       step++;
