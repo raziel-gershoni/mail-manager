@@ -18,7 +18,9 @@ import { dbActivityRepo } from "../../../src/db/activity-adapter.js";
 import { buildDigestRefs } from "../../../src/notifier/refs.js";
 import { dbDigestRefRepo } from "../../../src/db/refs-adapter.js";
 import { generateBrief, composePollMessage, pollSilent, BRIEF_ATTACHMENT_GRACE_MS } from "../../../src/notifier/brief.js";
-import { pollAllUsers } from "../../../src/notifier/fanout.js";
+import { pollAllUsers, POLL_LOOP_BUDGET_MS } from "../../../src/notifier/fanout.js";
+import { runWeeklyTasks } from "../../../src/weekly/run.js";
+import { dbWeeklyRunRepo } from "../../../src/db/weekly-runs-adapter.js";
 import { sendFormatted } from "../../../src/telegram/send.js";
 import { log } from "../../../src/util/log.js";
 import { t } from "../../../src/i18n/index.js";
@@ -87,6 +89,20 @@ export async function POST(req: Request): Promise<Response> {
           log("poll.side_record_failed", { userId, error: err instanceof Error ? err.message : String(err) });
         }
         log("poll.brief", { userId, important: ids.length, processed: res.processed, guardedTrashed: res.guardedTrashed, guardedArchived: res.guardedArchived, plainTrashed: res.plainTrashed, plainArchived: res.plainArchived, prefTrashed: res.prefTrashed, prefArchived: res.prefArchived, remaining: res.remaining });
+        // The weekly jobs (spam check, retrospect) run AFTER this hour's report is sent and
+        // committed, in their own try/catch: they must never mark the hourly poll errored.
+        // runWeeklyTasks guards its own start time and deadline and never throws; this catch
+        // covers building its dependencies.
+        try {
+          await runWeeklyTasks({
+            userId, chatId, timezone, language, now: Date.now, runStart: deadline - POLL_LOOP_BUDGET_MS,
+            gmail, llm, store, runs: dbWeeklyRunRepo(),
+            send: (text, opts) => sendFormatted(bot, chatId, text, opts),
+            saveRefs: (messageId, refs) => dbDigestRefRepo().save(userId, messageId, refs),
+          });
+        } catch (err) {
+          log("weekly.failed", { userId, error: err instanceof Error ? err.message : String(err) });
+        }
       } catch (err) {
         if (isInvalidGrant(err)) {
           log("poll.reconnect", { userId });

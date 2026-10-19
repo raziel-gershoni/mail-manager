@@ -1,6 +1,6 @@
 // src/db/schema.ts
 import { sql } from "drizzle-orm";
-import { pgTable, serial, integer, text, timestamp, boolean, bigint, uniqueIndex, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, boolean, bigint, uniqueIndex, jsonb, primaryKey } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -136,3 +136,13 @@ export const actionLog = pgTable("action_log", {
   undone: boolean("undone").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// The weekly jobs' bookkeeping: per user and job, the week key ("YYYY-MM-DD" of that
+// week's Sunday in the user's timezone) of the last report actually SENT. Its own table,
+// not user_settings, so settings literals and their tests stay untouched.
+export const weeklyRuns = pgTable("weekly_runs", {
+  userId: integer("user_id").notNull().references(() => users.id),
+  kind: text("kind").notNull(),                                        // 'spam' | 'retro'
+  week: text("week").notNull(),
+  at: timestamp("at", { withTimezone: true }).defaultNow().notNull(), // when that report was sent
+}, (t) => ({ pk: primaryKey({ columns: [t.userId, t.kind] }) }));
