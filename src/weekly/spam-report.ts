@@ -13,6 +13,7 @@ export const MAX_REPORT_CHARS = 3800;
 // Sender, subject and reason come from the email or the model: one line each, bounded
 // (clipLine). They're UNTRUSTED and shown verbatim. The report goes out as plain text
 // (sendPlain, no parse_mode), so markdown in them stays literal and never becomes a link.
+// A rule-matched sender says so, and that Gmail put it in Spam anyway: check it's them.
 function item(f: FlaggedSpam, n: number, lang: Lang): string {
   const reason = f.byRule ? t(lang, "spam_by_rule") : clipLine(f.reason, 100);
   const subject = clipLine(f.subject, 80) || t(lang, "poll_no_subject");

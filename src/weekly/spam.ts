@@ -54,26 +54,24 @@ export async function checkSpam(deps: { gmail: GmailClient; llm: LLMProvider; st
 
   if (ids.length > 0 && metas.every(m => !m) && (unjudged > 0 || incomplete)) throw new Error("spam check: no message could be read");
 
-  const flagged: FlaggedSpam[] = [];
   const candidates: SpamCandidate[] = [];
-  const metaById = new Map<string, EmailMeta>();
+  // A sender or domain the owner ruled important, or told to keep, is flagged whatever the
+  // model says ("you have a rule for this sender"). But Spam is where forged From headers
+  // land (SPF/DKIM failures), so a rule is no proof the mail is from them: rule-matched mail
+  // goes to the model like the rest, and ITS verdict says whether it looks like phishing.
+  const ruled = new Map<string, string>(); // id → the matching rule's slug
   for (const m of metas) {
     if (!m) continue;
-    // Sender rules first: a sender or domain the owner ruled important, or told to keep,
-    // is flagged as it is ("you have a rule for this sender") — no model call.
     const rule = deps.store.findRuleFor(m.fromEmail, m.fromDomain);
-    if (rule && (rule.verdict === "important" || rule.action === "keep")) {
-      flagged.push({ id: m.id, from: m.from, subject: m.subject, reason: `rule:${rule.slug}`, suspicious: false, byRule: true });
-      continue;
-    }
+    if (rule && (rule.verdict === "important" || rule.action === "keep")) ruled.set(m.id, rule.slug);
     const r = riskSignals(m);
     const line = attachmentLine(m.attachments);
     candidates.push({ id: m.id, from: m.from, subject: m.subject, snippet: m.snippet, bulk: r.bulk, transactional: r.transactional, ...(line ? { attachmentLine: line } : {}) });
-    metaById.set(m.id, m);
   }
 
   let judged = 0;
   let batchesBack = 0; // model calls that came back at all (their verdicts may still be unusable)
+  const verdictById = new Map<string, SpamVerdict>(); // a candidate with no entry was not judged
   for (let i = 0; i < candidates.length; i += SPAM_BATCH) {
     if (deps.now() >= deps.deadline) { incomplete = true; break; }
     const batch = candidates.slice(i, i + SPAM_BATCH);
@@ -81,7 +79,7 @@ export async function checkSpam(deps: { gmail: GmailClient; llm: LLMProvider; st
     try {
       res = await beforeDeadline(deps.llm.reviewSpam(batch), deps.deadline - deps.now());
     } catch (err) {
-      // A failed call judged nothing: the whole batch is "couldn't judge", never flagged.
+      // A failed call judged nothing: the whole batch is "couldn't judge".
       unjudged += batch.length;
       log("weekly.spam_review_failed", { n: batch.length, error: errText(err) });
       continue;
@@ -95,12 +93,27 @@ export async function checkSpam(deps: { gmail: GmailClient; llm: LLMProvider; st
     for (const v of res.verdicts) {
       if (!open.has(v.id)) continue;
       open.delete(v.id);
+      verdictById.set(v.id, v);
       judged++;
-      if (v.legitimate !== true) continue;
-      const m = metaById.get(v.id)!;
-      flagged.push({ id: v.id, from: m.from, subject: m.subject, reason: v.reason, suspicious: v.suspicious === true, byRule: false });
     }
   }
   if (candidates.length > 0 && batchesBack === 0) throw new Error("spam check: no batch could be judged");
+
+  // Rule-matched first, then what the model judged legitimate; each in the order read.
+  const flagged: FlaggedSpam[] = [];
+  for (const c of candidates) {
+    const slug = ruled.get(c.id);
+    if (slug === undefined) continue;
+    const v = verdictById.get(c.id);
+    // Not judged (a missing or malformed verdict, a failed batch, the deadline): suspicious.
+    // Rescuing a forged sender is the costly error, so caution is the default — a
+    // "spam-phishing" ref needs the owner's explicit confirmation.
+    flagged.push({ id: c.id, from: c.from, subject: c.subject, reason: `rule:${slug}`, suspicious: v ? v.suspicious === true : true, byRule: true });
+  }
+  for (const c of candidates) {
+    const v = verdictById.get(c.id);
+    if (ruled.has(c.id) || v?.legitimate !== true) continue;
+    flagged.push({ id: c.id, from: c.from, subject: c.subject, reason: v.reason, suspicious: v.suspicious === true, byRule: false });
+  }
   return { total: ids.length, flagged, judged, unjudged, capped, incomplete };
 }

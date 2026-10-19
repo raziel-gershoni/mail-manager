@@ -15,7 +15,7 @@ describe("composeSpamReport", () => {
     const r = composeSpamReport(check({ flagged: [acme, paypal, dana] }), "en");
     expect(r.text).toBe([
       "🧹 Spam check (last 7 days): 143 in spam, 3 look legitimate:",
-      "1. Acme Billing <billing@acme.com> — Invoice 12 (you have a rule for this sender)",
+      "1. Acme Billing <billing@acme.com> — Invoice 12 (you have a rule for this sender, but Gmail put it in Spam — check it's really them)",
       "2. Dana <dana@x.com> — Re: dinner (a personal reply)",
       "3. PayPaI <alert@paypa1.com> — Account locked (claims to be PayPal)",
       "   ⚠️ looks like phishing — rescue only if you're sure",
@@ -31,6 +31,19 @@ describe("composeSpamReport", () => {
       { id: "s3", from: "Dana <dana@x.com>", subject: "Re: dinner", kind: "spam" },
       { id: "s2", from: "PayPaI <alert@paypa1.com>", subject: "Account locked", kind: "spam-phishing" },
     ]);
+  });
+
+  it("a rule-matched sender the model marked suspicious is listed last, warned, and needs explicit confirmation", () => {
+    const forged: FlaggedSpam = { ...acme, suspicious: true };
+    const r = composeSpamReport(check({ flagged: [forged, dana] }), "en");
+    expect(r.text).toBe([
+      "🧹 Spam check (last 7 days): 143 in spam, 2 look legitimate:",
+      "1. Dana <dana@x.com> — Re: dinner (a personal reply)",
+      "2. Acme Billing <billing@acme.com> — Invoice 12 (you have a rule for this sender, but Gmail put it in Spam — check it's really them)",
+      "   ⚠️ looks like phishing — rescue only if you're sure",
+      'Reply "rescue 1 3" or "rescue all".',
+    ].join("\n"));
+    expect(r.refs.map(x => [x.id, x.kind])).toEqual([["s3", "spam"], ["s1", "spam-phishing"]]);
   });
 
   it("says 'looks' for exactly one", () => {
@@ -49,7 +62,7 @@ describe("composeSpamReport", () => {
     const r = composeSpamReport(check({ flagged: [acme, paypal, dana] }), "he");
     expect(r.text).toBe([
       "🧹 בדיקת ספאם (7 הימים האחרונים): 143 בספאם, 3 נראים לגיטימיים:",
-      "1. Acme Billing <billing@acme.com> — Invoice 12 (יש לך כלל לשולח הזה)",
+      "1. Acme Billing <billing@acme.com> — Invoice 12 (יש לך כלל לשולח הזה, אבל Gmail שם אותו בספאם — כדאי לוודא שזה באמת השולח)",
       "2. Dana <dana@x.com> — Re: dinner (a personal reply)",
       "3. PayPaI <alert@paypa1.com> — Account locked (claims to be PayPal)",
       "   ⚠️ נראה כמו פישינג — לחלץ רק אם את/ה בטוח/ה",

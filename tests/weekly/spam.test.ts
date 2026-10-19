@@ -32,7 +32,10 @@ const rule = (over: Partial<MemoryRow>): MemoryRow =>
   ({ userId: 1, slug: "", description: "", body: "", scope: "sender", matchType: "sender", matchValue: "", verdict: "important", action: null, ...over });
 
 describe("checkSpam", () => {
-  it("flags a sender the owner ruled important or keep straight away, without asking the model about it", async () => {
+  // Spam is where forged From headers land (SPF/DKIM failures): a rule for the sender is
+  // no proof the mail is from them. Rule-matched mail is still flagged ("you have a rule
+  // for this sender"), but it goes to the model too, which judges whether it's phishing.
+  it("flags a sender the owner ruled important or keep, and still has the model check it for phishing", async () => {
     const gmail = spamFolder([
       raw("d1", "Dana <dana@x.com>", "Re: dinner"),
       raw("k1", "Shop <orders@shop.com>", "Your order"),
@@ -46,20 +49,59 @@ describe("checkSpam", () => {
     ]);
     const { llm, batches } = reviewer(nothingLegit);
     const r = await checkSpam({ gmail, llm, store, deadline: DEADLINE, now: () => NOW });
+    expect(batches.map(b => b.map(c => c.id))).toEqual([["d1", "k1", "j1", "u1"]]);
+    // Flagged whatever the model says about legitimacy; a trash rule is no reason to flag.
     expect(r.flagged).toEqual([
       { id: "d1", from: "Dana <dana@x.com>", subject: "Re: dinner", reason: "rule:sender:dana@x.com", suspicious: false, byRule: true },
       { id: "k1", from: "Shop <orders@shop.com>", subject: "Your order", reason: "rule:domain:shop.com", suspicious: false, byRule: true },
     ]);
-    expect(batches.map(b => b.map(c => c.id))).toEqual([["j1", "u1"]]); // a trash rule is no reason to flag
-    expect(r).toMatchObject({ total: 4, unjudged: 0, capped: false, incomplete: false });
+    expect(r).toMatchObject({ total: 4, judged: 4, unjudged: 0, capped: false, incomplete: false });
   });
 
-  it("makes no model call when every message is covered by a rule", async () => {
-    const gmail = spamFolder([raw("d1", "dana@x.com", "Hi")]);
-    const { llm, batches } = reviewer(nothingLegit);
+  it("takes a rule-matched message's phishing mark from the model", async () => {
+    const gmail = spamFolder([raw("d1", "Dana <dana@x.com>", "Urgent: wire the deposit today"), raw("d2", "Dana <dana@x.com>", "Re: dinner")]);
+    const { llm } = reviewer(() => ({ verdicts: [
+      { id: "d1", legitimate: false, suspicious: true, reason: "spoofed sender asking for money" },
+      { id: "d2", legitimate: true, suspicious: false, reason: "a personal reply" },
+    ], unjudged: 0 }));
     const r = await checkSpam({ gmail, llm, store: inMemoryStore([rule({ slug: "sender:dana@x.com", matchValue: "dana@x.com" })]), deadline: DEADLINE, now: () => NOW });
-    expect(batches).toEqual([]);
-    expect(r.flagged.map(f => f.id)).toEqual(["d1"]);
+    expect(r.flagged.map(f => [f.id, f.byRule, f.suspicious])).toEqual([["d1", true, true], ["d2", true, false]]);
+  });
+
+  it("a rule-matched message the model couldn't judge is marked suspicious — missing, malformed, failed batch or cut by the deadline", async () => {
+    const store = inMemoryStore([rule({ slug: "sender:dana@x.com", matchValue: "dana@x.com" })]);
+    const ruled = (n: number, prefix: string) => Array.from({ length: n }, (_, i) => raw(`${prefix}${i + 1}`, "Dana <dana@x.com>", `Hi ${i + 1}`));
+
+    // Left out of the model's answer, or a verdict that isn't a real boolean.
+    const sloppy = reviewer(c => parseSpamJson(JSON.stringify([{ id: c[1]!.id, legitimate: "yes" }, { id: c[2]!.id, legitimate: true, suspicious: false, reason: "ok" }]), c.map(x => x.id)));
+    const r1 = await checkSpam({ gmail: spamFolder(ruled(3, "d")), llm: sloppy.llm, store, deadline: DEADLINE, now: () => NOW });
+    expect(r1.flagged.map(f => [f.id, f.suspicious])).toEqual([["d1", true], ["d2", true], ["d3", false]]);
+    expect(r1.unjudged).toBe(2);
+
+    // A failed batch (another batch came back, so the check still reports).
+    let call = 0;
+    const flaky = reviewer(c => {
+      if (++call === 1) throw new Error("504 DEADLINE_EXCEEDED");
+      return nothingLegit(c);
+    });
+    const r2 = await checkSpam({ gmail: spamFolder([...ruled(1, "d"), ...many(44)]), llm: flaky.llm, store, deadline: DEADLINE, now: () => NOW });
+    expect(r2.flagged).toEqual([{ id: "d1", from: "Dana <dana@x.com>", subject: "Hi 1", reason: "rule:sender:dana@x.com", suspicious: true, byRule: true }]);
+
+    // Cut by the deadline before its batch was judged.
+    let clock = NOW;
+    const slow = reviewer(c => { clock = DEADLINE; return nothingLegit(c); });
+    const r3 = await checkSpam({ gmail: spamFolder([...many(40), ...ruled(1, "d")]), llm: slow.llm, store, deadline: DEADLINE, now: () => clock });
+    expect(slow.batches).toHaveLength(1);
+    expect(r3.incomplete).toBe(true);
+    expect(r3.flagged).toEqual([{ id: "d1", from: "Dana <dana@x.com>", subject: "Hi 1", reason: "rule:sender:dana@x.com", suspicious: true, byRule: true }]);
+  });
+
+  it("rule-matched messages count as candidates: when no batch comes back, the check fails rather than report", async () => {
+    const { llm, batches } = reviewer(() => { throw new Error("503 UNAVAILABLE"); });
+    const store = inMemoryStore([rule({ slug: "sender:dana@x.com", matchValue: "dana@x.com" })]);
+    await expect(checkSpam({ gmail: spamFolder([raw("d1", "dana@x.com", "Hi")]), llm, store, deadline: DEADLINE, now: () => NOW }))
+      .rejects.toThrow("spam check: no batch could be judged");
+    expect(batches.map(b => b.map(c => c.id))).toEqual([["d1"]]);
   });
 
   it("flags only an explicit legitimate verdict, carrying the model's reason and phishing mark", async () => {
