@@ -68,6 +68,14 @@ describe("SYSTEM_PROMPT classification guidance", () => {
     expect(SYSTEM_PROMPT).toMatch(/If a number has no matching \[n\] ref, or the owner gives numbers without replying to a message that has refs, do NOT guess ids/);
   });
 
+  // Nothing leaves Spam without the owner, and a possible-phishing entry needs an explicit yes.
+  it("routes a reply of \"rescue …\" to rescue_from_spam, with the phishing confirmation", () => {
+    expect(SYSTEM_PROMPT).toMatch(/call rescue_from_spam with exactly the ids of those \[n\] refs/);
+    expect(SYSTEM_PROMPT).toMatch(/spam-phishing ref was flagged as possible phishing: before rescuing it, name it and ask the owner to confirm explicitly/);
+    expect(SYSTEM_PROMPT).toMatch(/nothing leaves Spam without the owner/);
+    expect(SYSTEM_PROMPT).toMatch(/undo_last puts the last rescue back in Spam/);
+  });
+
   it("documents the rule-sign legend for mail listings", () => {
     for (const sign of ["🗑", "📥", "🛡🗑", "🛡📥", "✅", "⭐", "🔕"]) expect(SYSTEM_PROMPT).toContain(sign);
     expect(SYSTEM_PROMPT).toMatch(/rule: null means no rule/i);

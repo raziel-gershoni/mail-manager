@@ -1,0 +1,1 @@
+ALTER TABLE "action_log" ADD COLUMN "undone_at" timestamp;

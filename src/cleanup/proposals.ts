@@ -5,11 +5,14 @@ export interface ProposalRepo {
   get(userId: number, id: number): Promise<Proposal | null>;
   markConfirmed(userId: number, id: number): Promise<void>;
 }
-export interface ActionRun { runId: string; messageIds: string[]; action: "trash" | "archive"; }
+// What a logged run did, so undo_last knows how to reverse it: trash ↔ untrash,
+// archive ↔ unarchive, unspam (a rescue out of Spam) ↔ respam.
+export type ActionVerb = "trash" | "archive" | "unspam";
+export interface ActionRun { runId: string; messageIds: string[]; action: ActionVerb; }
 export interface ActionLogRepo {
-  record(userId: number, runId: string, messageIds: string[], action: "trash" | "archive"): Promise<void>;
+  record(userId: number, runId: string, messageIds: string[], action: ActionVerb): Promise<void>;
   lastUndoable(userId: number): Promise<ActionRun | null>;
-  markUndone(userId: number, runId: string): Promise<void>;
+  markUndone(userId: number, runId: string): Promise<void>; // also stamps when (undone_at)
 }
 
 export function fakeProposalRepo(): ProposalRepo {
@@ -31,10 +34,11 @@ export function fakeProposalRepo(): ProposalRepo {
   };
 }
 
-export function fakeActionLogRepo(): ActionLogRepo {
-  const rows: { userId: number; runId: string; messageIds: string[]; action: "trash" | "archive"; undone: boolean }[] = [];
+// `now` is a test seam for the timestamps; `undoneAt` is test-only introspection.
+export function fakeActionLogRepo(now: () => Date = () => new Date()): ActionLogRepo & { undoneAt(userId: number, runId: string): Date | null } {
+  const rows: { userId: number; runId: string; messageIds: string[]; action: ActionVerb; undone: boolean; at: Date; undoneAt: Date | null }[] = [];
   return {
-    async record(userId, runId, messageIds, action) { rows.push({ userId, runId, messageIds: [...messageIds], action, undone: false }); },
+    async record(userId, runId, messageIds, action) { rows.push({ userId, runId, messageIds: [...messageIds], action, undone: false, at: now(), undoneAt: null }); },
     async lastUndoable(userId) {
       for (let i = rows.length - 1; i >= 0; i--) {
         const r = rows[i]!;
@@ -44,7 +48,8 @@ export function fakeActionLogRepo(): ActionLogRepo {
     },
     async markUndone(userId, runId) {
       const r = rows.find(x => x.userId === userId && x.runId === runId);
-      if (r) r.undone = true;
+      if (r) { r.undone = true; r.undoneAt = now(); }
     },
+    undoneAt(userId, runId) { return rows.find(x => x.userId === userId && x.runId === runId)?.undoneAt ?? null; },
   };
 }

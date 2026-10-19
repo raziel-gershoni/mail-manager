@@ -132,8 +132,9 @@ export const actionLog = pgTable("action_log", {
   userId: integer("user_id").notNull().references(() => users.id),
   runId: text("run_id").notNull(),
   messageIds: jsonb("message_ids").$type<string[]>().notNull(),
-  action: text("action").notNull().default("trash"),  // 'trash' | 'archive'
+  action: text("action").notNull().default("trash"),  // 'trash' | 'archive' | 'unspam'
   undone: boolean("undone").notNull().default(false),
+  undoneAt: timestamp("undone_at"),                    // set by undo_last; null if never undone (or undone before this column existed)
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

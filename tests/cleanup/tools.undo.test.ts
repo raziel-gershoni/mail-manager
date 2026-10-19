@@ -42,8 +42,34 @@ describe("undoLastTool archive reversal", () => {
   });
 });
 
+describe("undoLastTool, one explicit branch per verb", () => {
+  it("stamps undone_at when it undoes a trash run", async () => {
+    const at = new Date("2026-10-18T07:00:00Z");
+    const gmail = fakeGmailClient({ historyId: "1", addedSince: {}, messages: {} });
+    const actionLog = fakeActionLogRepo(() => at);
+    await gmail.trash(["a"]);
+    await actionLog.record(1, "run1", ["a"], "trash");
+    const c = { userId: 1, memory: inMemoryStore(), proposals: fakeProposalRepo(), actionLog, llm: fakeReviewLLM(() => []), gmail };
+    expect((await undoLastTool().run({}, c) as any).action).toBe("trash");
+    expect(actionLog.undoneAt(1, "run1")).toEqual(at);
+  });
+
+  it("refuses an action it doesn't know — never silently untrashes it — and leaves it un-undone", async () => {
+    const c = ctx();
+    await c.gmail.trash(["m1"]);
+    const untrashed: string[][] = [];
+    c.gmail.untrash = async (ids: string[]) => { untrashed.push(ids); };
+    await c.actionLog.record(1, "odd", ["m1"], "restore" as any); // e.g. a verb a newer deploy wrote
+    const res = await undoLastTool().run({}, c) as any;
+    expect(res).toEqual({ ok: false, error: 'can\'t undo a "restore" action' });
+    expect(untrashed).toEqual([]);
+    expect(c.gmail.trashedIds!()).toEqual(["m1"]);
+    expect((await c.actionLog.lastUndoable(1))?.runId).toBe("odd");
+  });
+});
+
 describe("trashTools", () => {
-  it("exposes exactly the seven cleanup tools", () => {
-    expect(trashTools().map(t => t.schema.name)).toEqual(["propose_trash", "confirm_trash", "undo_last", "archive_messages", "trash_messages", "restore_messages", "apply_action_rules"]);
+  it("exposes exactly the eight cleanup tools", () => {
+    expect(trashTools().map(t => t.schema.name)).toEqual(["propose_trash", "confirm_trash", "undo_last", "archive_messages", "trash_messages", "restore_messages", "apply_action_rules", "rescue_from_spam"]);
   });
 });

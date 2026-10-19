@@ -72,7 +72,7 @@ function summarize(result: unknown): unknown {
   if (result && typeof result === "object") {
     const o = result as Record<string, unknown>;
     const out: Record<string, unknown> = {};
-    for (const k of ["ok", "count", "query", "counts", "archived", "trashed", "kept", "guardedTrashed", "guardedArchived", "skipped", "gated", "willTrash", "setAside", "undecided", "capped", "error", "proposalId", "restored"]) {
+    for (const k of ["ok", "count", "query", "counts", "archived", "trashed", "kept", "guardedTrashed", "guardedArchived", "skipped", "gated", "willTrash", "setAside", "undecided", "capped", "error", "proposalId", "restored", "rescued"]) {
       if (k in o) out[k] = o[k];
     }
     if (Array.isArray(o.guardedKept)) out.guardedKept = (o.guardedKept as unknown[]).map(projectItem);

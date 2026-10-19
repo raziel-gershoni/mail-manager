@@ -5,6 +5,7 @@ import type { MemoryStore, Verdict } from "../memory/store.js";
 import type { ToolSchema, LLMProvider } from "../llm/provider.js";
 import type { ProposalRepo, ActionLogRepo } from "../cleanup/proposals.js";
 import type { ActivityRepo } from "../notifier/activity.js";
+import type { DigestRef } from "../notifier/refs.js";
 import { mapLimit } from "../util/concurrency.js";
 import { validatePreference, normalizeKey } from "../memory/preferences.js";
 import { keyFromSlug } from "../memory/store.js";
@@ -20,6 +21,8 @@ export interface ToolContext {
   actionLog?: ActionLogRepo;
   llm?: LLMProvider;
   activity?: ActivityRepo;
+  // The exact emails of the message the owner replied to this turn (its [n] refs), if any.
+  replyRefs?: DigestRef[];
   // Keys proposed by propose_preference during THIS agent turn. Created fresh per
   // turn by runAgentTurn, which makes the propose→confirm barrier structural rather
   // than prompt-only: confirm_preference refuses a key in this set, so a single

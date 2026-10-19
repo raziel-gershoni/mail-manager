@@ -1,7 +1,7 @@
 // src/db/cleanup-adapters.ts
 import { and, desc, eq } from "drizzle-orm";
 import { db, schema } from "./client.js";
-import type { ProposalRepo, ActionLogRepo, Proposal, ProposalStatus, ActionRun } from "../cleanup/proposals.js";
+import type { ProposalRepo, ActionLogRepo, Proposal, ProposalStatus, ActionRun, ActionVerb } from "../cleanup/proposals.js";
 
 export function dbProposalRepo(): ProposalRepo {
   return {
@@ -31,10 +31,10 @@ export function dbActionLogRepo(): ActionLogRepo {
       const [row] = await db().select().from(schema.actionLog)
         .where(and(eq(schema.actionLog.userId, userId), eq(schema.actionLog.undone, false)))
         .orderBy(desc(schema.actionLog.createdAt)).limit(1);
-      return row ? { runId: row.runId, messageIds: row.messageIds, action: row.action as "trash" | "archive" } : null;
+      return row ? { runId: row.runId, messageIds: row.messageIds, action: row.action as ActionVerb } : null;
     },
     async markUndone(userId, runId) {
-      await db().update(schema.actionLog).set({ undone: true })
+      await db().update(schema.actionLog).set({ undone: true, undoneAt: new Date() })
         .where(and(eq(schema.actionLog.userId, userId), eq(schema.actionLog.runId, runId)));
     },
   };

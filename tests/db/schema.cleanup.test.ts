@@ -9,6 +9,6 @@ describe("cleanup schema", () => {
   });
   it("proposals has status + messageIds, actionLog has runId + undone", () => {
     expect(Object.keys(schema.proposals as any)).toEqual(expect.arrayContaining(["userId","messageIds","summary","status"]));
-    expect(Object.keys(schema.actionLog as any)).toEqual(expect.arrayContaining(["userId","runId","messageIds","undone"]));
+    expect(Object.keys(schema.actionLog as any)).toEqual(expect.arrayContaining(["userId","runId","messageIds","undone","undoneAt"]));
   });
 });

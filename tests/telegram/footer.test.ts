@@ -26,6 +26,8 @@ describe("activityFooter", () => {
     expect(activityFooter("propose_preference,confirm_preference", "he")).toBe("\n\n_· ניסחתי העדפה · שמרתי העדפה_");
     expect(activityFooter("restore_messages", "he")).toBe("\n\n_· שחזרתי_");
     expect(activityFooter("recent_activity", "he")).toBe("\n\n_· בדקתי פעילות אחרונה_");
+    expect(activityFooter("rescue_from_spam", "en")).toBe("\n\n_· rescued from spam_");
+    expect(activityFooter("rescue_from_spam", "he")).toBe("\n\n_· חילצתי מהספאם_");
   });
 
   it("has a verb for EVERY callable tool — no raw English name can reach a Hebrew footer", () => {

@@ -39,6 +39,10 @@ export interface GmailClient {
   unarchive(ids: string[]): Promise<void>;
   archivedIds?(): string[]; // test-only introspection (fake)
   listSpam(max: number): Promise<string[]>; // ids in Spam from the last 7 days, newest first, at most `max`
+  unspam(ids: string[]): Promise<void>; // out of Spam and into the inbox (removes SPAM, adds INBOX) — Gmail's "Not spam"
+  respam(ids: string[]): Promise<void>; // back into Spam (adds SPAM, removes INBOX) — undoes unspam
+  spammedIds?(): string[]; // test-only introspection (fake)
+  unspammedIds?(): string[]; // test-only introspection (fake)
 }
 
 export function googleGmailClient(auth: OAuth2Client): GmailClient {
@@ -150,6 +154,15 @@ export function googleGmailClient(auth: OAuth2Client): GmailClient {
       if (ids.length === 0) return;
       await gmail.users.messages.batchModify({ userId: "me", requestBody: { ids, addLabelIds: ["INBOX"] } });
     },
+    async unspam(ids) {
+      // Removing SPAM is what Gmail's own "Not spam" does, so it also teaches Gmail's filter.
+      if (ids.length === 0) return;
+      await gmail.users.messages.batchModify({ userId: "me", requestBody: { ids, removeLabelIds: ["SPAM"], addLabelIds: ["INBOX"] } });
+    },
+    async respam(ids) {
+      if (ids.length === 0) return;
+      await gmail.users.messages.batchModify({ userId: "me", requestBody: { ids, addLabelIds: ["SPAM"], removeLabelIds: ["INBOX"] } });
+    },
   };
   return c;
 }
@@ -167,6 +180,7 @@ export function fakeGmailClient(opts: {
   const archivedFromInbox = new Set<string>();
   const restored = new Set<string>();
   const spamBox = new Set<string>(opts.spam ?? []);
+  const unspammed = new Set<string>();
   const c: GmailClient = {
     async currentHistoryId() { return opts.historyId; },
     async listAddedMessageIds(start) { return opts.addedSince[start] ?? []; },
@@ -208,6 +222,10 @@ export function fakeGmailClient(opts: {
     async unarchive(ids) { for (const id of ids) archivedFromInbox.delete(id); },
     archivedIds() { return [...archivedFromInbox]; },
     async listSpam(max) { return [...spamBox].slice(0, max); },
+    async unspam(ids) { for (const id of ids) { spamBox.delete(id); unspammed.add(id); } },
+    async respam(ids) { for (const id of ids) { unspammed.delete(id); spamBox.add(id); } },
+    spammedIds() { return [...spamBox]; },
+    unspammedIds() { return [...unspammed]; },
   };
   return c;
 }

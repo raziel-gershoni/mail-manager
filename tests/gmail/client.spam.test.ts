@@ -77,3 +77,36 @@ describe("fakeGmailClient spam folder", () => {
     expect(await fakeGmailClient({ historyId: "1", addedSince: {}, messages: {} }).listSpam(10)).toEqual([]);
   });
 });
+
+describe("googleGmailClient unspam / respam", () => {
+  beforeEach(() => { api.batchModify.length = 0; });
+
+  it("unspam takes mail out of Spam and into the inbox in one batchModify", async () => {
+    await real().unspam(["a", "b"]);
+    expect(api.batchModify).toEqual([{ userId: "me", requestBody: { ids: ["a", "b"], removeLabelIds: ["SPAM"], addLabelIds: ["INBOX"] } }]);
+  });
+
+  it("respam puts it back: into Spam and out of the inbox", async () => {
+    await real().respam(["a"]);
+    expect(api.batchModify).toEqual([{ userId: "me", requestBody: { ids: ["a"], addLabelIds: ["SPAM"], removeLabelIds: ["INBOX"] } }]);
+  });
+
+  it("makes no call for an empty id list", async () => {
+    await real().unspam([]);
+    await real().respam([]);
+    expect(api.batchModify).toEqual([]);
+  });
+});
+
+describe("fakeGmailClient unspam / respam", () => {
+  it("unspam leaves the Spam folder; respam returns it; the folder listing follows", async () => {
+    const g = fakeGmailClient({ historyId: "1", addedSince: {}, messages: {}, spam: ["s1", "s2"] });
+    await g.unspam(["s1"]);
+    expect(g.spammedIds!()).toEqual(["s2"]);
+    expect(g.unspammedIds!()).toEqual(["s1"]);
+    expect(await g.listSpam(10)).toEqual(["s2"]);
+    await g.respam(["s1"]);
+    expect(g.spammedIds!().sort()).toEqual(["s1", "s2"]);
+    expect(g.unspammedIds!()).toEqual([]);
+  });
+});

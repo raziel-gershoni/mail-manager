@@ -69,14 +69,18 @@ export function confirmTrashTool(): ToolDef {
 export function undoLastTool(): ToolDef {
   return {
     mutating: true,
-    schema: { name: "undo_last", description: "Undo the most recent cleanup action (restores trashed or un-archives the last batch).",
+    schema: { name: "undo_last", description: "Undo the most recent cleanup action: un-trashes a trashed batch, un-archives an archived one, or puts a batch rescued from spam back in Spam.",
       parameters: { type: "object", properties: {} } },
     async run(_args, ctx) {
       const dep = requireCleanup(ctx);
       const run = await dep.actionLog.lastUndoable(ctx.userId);
       if (!run) return { ok: false, error: "nothing to undo" };
-      if (run.action === "archive") await ctx.gmail.unarchive(run.messageIds);
-      else await ctx.gmail.untrash(run.messageIds);
+      // One explicit branch per verb. An action this code doesn't know must never fall
+      // through to another verb's reversal — it is refused, and left un-undone.
+      if (run.action === "trash") await ctx.gmail.untrash(run.messageIds);
+      else if (run.action === "archive") await ctx.gmail.unarchive(run.messageIds);
+      else if (run.action === "unspam") await ctx.gmail.respam(run.messageIds);
+      else return { ok: false, error: `can't undo a "${String(run.action)}" action` };
       await dep.actionLog.markUndone(ctx.userId, run.runId);
       return { ok: true, restored: run.messageIds.length, action: run.action };
     },
@@ -134,6 +138,42 @@ export function restoreMessagesTool(): ToolDef {
   };
 }
 
+// A spam report lists at most 300 messages, and Gmail's batchModify takes up to 1000 ids.
+const RESCUE_CAP = 300;
+
+export function rescueFromSpamTool(): ToolDef {
+  return {
+    mutating: true,
+    schema: { name: "rescue_from_spam", description: "Move specific messages OUT of Spam and into the inbox (marks them not-spam, which also teaches Gmail). ONLY for ids from the [n] refs of the weekly spam report the owner replied to, or ids the owner gave explicitly — never guessed ids. Every id must currently be in Spam, or nothing is moved. Recoverable: undo_last puts them back in Spam.",
+      parameters: { type: "object", properties: { ids: { type: "array", items: { type: "string" } }, reason: { type: "string" } }, required: ["ids"] } },
+    async run(args, ctx) {
+      const dep = requireCleanup(ctx);
+      const ids = [...new Set((Array.isArray(args.ids) ? args.ids : []).filter((x): x is string => typeof x === "string" && x.trim() !== ""))];
+      if (ids.length === 0) return { ok: false, error: "no ids" };
+      if (ids.length > RESCUE_CAP) return { ok: false, error: `too many ids (max ${RESCUE_CAP})` };
+      // Replying to a spam report: only that report's own refs may be rescued, so a number
+      // with no matching [n] can't be "resolved" to some other message in Spam.
+      const reportIds = new Set((ctx.replyRefs ?? []).filter(r => r.kind === "spam" || r.kind === "spam-phishing").map(r => r.id));
+      if (reportIds.size > 0) {
+        const notInReport = ids.filter(id => !reportIds.has(id));
+        if (notInReport.length > 0) return { ok: false, error: "not in the spam report the owner replied to — use its [n] refs, or ask the owner", notInReport };
+      }
+      // Act only on mail that IS in Spam right now. An id the model guessed, mistyped or
+      // took from the wrong message fails this check, and then nothing at all is moved.
+      const notInSpam = (await mapLimit(ids, GMAIL_FETCH_CONCURRENCY, async (id) => {
+        try { return (await ctx.gmail.getMeta(id)).labelIds.includes("SPAM") ? null : id; }
+        catch { return id; } // unreadable or gone: not a message we can vouch for
+      })).filter((x): x is string => x !== null);
+      if (notInSpam.length > 0) return { ok: false, error: "not in spam — use the ids from the spam report's [n] refs, or ask the owner", notInSpam };
+      const runId = randomUUID();
+      await dep.actionLog.record(ctx.userId, runId, ids, "unspam"); // record before mutating so undo always covers it
+      await ctx.gmail.unspam(ids);
+      log("cleanup.rescue_from_spam", { userId: ctx.userId, runId, n: ids.length, ids: ids.slice(0, 100), reason: args.reason });
+      return { ok: true, rescued: ids.length, runId };
+    },
+  };
+}
+
 export function applyActionRulesTool(): ToolDef {
   return {
     mutating: true,
@@ -178,5 +218,5 @@ export function applyActionRulesTool(): ToolDef {
 }
 
 export function trashTools(): ToolDef[] {
-  return [proposeTrashTool(), confirmTrashTool(), undoLastTool(), archiveMessagesTool(), trashMessagesTool(), restoreMessagesTool(), applyActionRulesTool()];
+  return [proposeTrashTool(), confirmTrashTool(), undoLastTool(), archiveMessagesTool(), trashMessagesTool(), restoreMessagesTool(), applyActionRulesTool(), rescueFromSpamTool()];
 }
