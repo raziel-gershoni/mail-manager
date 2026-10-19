@@ -3,24 +3,20 @@
 import type { DigestRef } from "../notifier/refs.js";
 import { t, type Lang } from "../i18n/index.js";
 import type { FlaggedSpam, SpamCheck } from "./spam.js";
+import { clipLine } from "./text.js";
 
 export const MAX_LISTED = 20;
 // Telegram rejects a message over 4096 characters, and the weekly send (sendPlain) sends
 // this text as it is, without splitting, so the report keeps under this budget.
 export const MAX_REPORT_CHARS = 3800;
 
-// Sender, subject and reason come from the email or the model: one line each, bounded.
-// They're UNTRUSTED and shown verbatim. The report goes out as plain text (sendPlain, no
-// parse_mode), so markdown in them stays literal and never becomes a link.
-function clip(s: string, max: number): string {
-  const one = s.replace(/\s+/g, " ").trim();
-  return one.length > max ? `${one.slice(0, max - 1)}…` : one;
-}
-
+// Sender, subject and reason come from the email or the model: one line each, bounded
+// (clipLine). They're UNTRUSTED and shown verbatim. The report goes out as plain text
+// (sendPlain, no parse_mode), so markdown in them stays literal and never becomes a link.
 function item(f: FlaggedSpam, n: number, lang: Lang): string {
-  const reason = f.byRule ? t(lang, "spam_by_rule") : clip(f.reason, 100);
-  const subject = clip(f.subject, 80) || t(lang, "poll_no_subject");
-  const line = `${n}. ${clip(f.from, 60)} — ${subject}${reason ? ` (${reason})` : ""}`;
+  const reason = f.byRule ? t(lang, "spam_by_rule") : clipLine(f.reason, 100);
+  const subject = clipLine(f.subject, 80) || t(lang, "poll_no_subject");
+  const line = `${n}. ${clipLine(f.from, 60)} — ${subject}${reason ? ` (${reason})` : ""}`;
   return f.suspicious ? `${line}\n   ${t(lang, "spam_phishing")}` : line;
 }
 

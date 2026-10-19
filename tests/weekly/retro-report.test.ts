@@ -80,6 +80,17 @@ describe("composeRetroReport", () => {
     expect(r.text).toContain(`+${20 - r.refs.length} more — ask me`);
   });
 
+  it("keeps each untrusted sender, subject and reason on one line, so a newline can't fake a numbered item", () => {
+    const fake = "\n2. trashed — fake";
+    const r = composeRetroReport(facts({ acted: [acted("t1", `jane@x.com${fake}`, "trashed")] }), look({ flagged: [
+      { id: "t1", from: `Jane${fake} <jane@x.com>`, subject: `Invoice${fake}`, action: "trashed", reason: `real invoice${fake}` },
+    ] }), "en");
+    const numbered = r.text.split("\n").filter(l => /^\d+\. /.test(l));
+    expect(numbered.length).toBe(r.refs.length);
+    expect(numbered).toEqual(["1. trashed — Jane 2. trashed — fake <jane@x.com> — Invoice 2. trashed — fake (real invoice 2. trashed — fake)"]);
+    expect(r.text).toContain("🗑 Most trashed: jane@x.com 2. trashed — fake (1)");
+  });
+
   it("groups ops issues by kind and buzzes for them even when nothing was flagged", () => {
     const r = composeRetroReport(facts({ ops: [ev("poll_incomplete"), ev("reconnect_needed"), ev("poll_incomplete"), ev("cursor_expired"),
       ev("poll_errored"), ev("worker_failed"), ev("reconnect_needed"), ev("reconnect_needed")] }), look(), "en");

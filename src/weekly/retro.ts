@@ -8,6 +8,7 @@ import { OPS_RETENTION_MS, type OpsEvent, type OpsEventKind } from "../ops/event
 import { log } from "../util/log.js";
 import { gatherWeek, retroSince, retroUntil, type WeekFacts } from "./gather.js";
 import { secondLook, checkableActed, SECOND_LOOK_CAP, type SecondLook } from "./second-look.js";
+import { clipLine } from "./text.js";
 import type { WeeklyDeps } from "./run.js";
 
 // At most this many "worth a look" items are numbered (R8), and the whole message stays
@@ -30,8 +31,8 @@ const OPS_KEY: Record<OpsEventKind, MsgKey> = {
   worker_failed: "retro_ops_worker",
 };
 
-const clip = (s: string, max: number): string => (s.length > max ? `${s.slice(0, max - 1)}…` : s);
-
+// Sender, subject and the model's reason are UNTRUSTED: each is shown through clipLine,
+// one line and bounded, so a newline in one can't add a fake numbered item.
 function senderKey(from: string): string {
   const m = from.match(/<([^>]+)>/);
   return (m ? m[1]! : from).trim().toLowerCase();
@@ -47,7 +48,7 @@ function topSenders(items: ReadonlyArray<{ from: string }>): string {
     if (k) counts.set(k, (counts.get(k) ?? 0) + 1);
   }
   return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, TOP_SENDERS)
-    .map(([k, n]) => `${clip(k, FROM_MAX)} (${n})`).join(", ");
+    .map(([k, n]) => `${clipLine(k, FROM_MAX)} (${n})`).join(", ");
 }
 
 function opsLines(events: readonly OpsEvent[], lang: Lang): string[] {
@@ -89,9 +90,9 @@ export function composeRetroReport(facts: WeekFacts, look: SecondLook, lang: Lan
       middle.push("", t(lang, "retro_worth_look"));
       listed.forEach((f, i) => {
         const verb = t(lang, f.action === "trashed" ? "retro_item_trashed" : "retro_item_archived");
-        const subject = clip(f.subject, SUBJECT_MAX) || t(lang, "poll_no_subject");
-        const reason = f.reason.trim() ? ` (${clip(f.reason.trim(), REASON_MAX)})` : "";
-        middle.push(`${i + 1}. ${verb} — ${clip(f.from, FROM_MAX)} — ${subject}${reason}`);
+        const subject = clipLine(f.subject, SUBJECT_MAX) || t(lang, "poll_no_subject");
+        const reason = clipLine(f.reason, REASON_MAX);
+        middle.push(`${i + 1}. ${verb} — ${clipLine(f.from, FROM_MAX)} — ${subject}${reason ? ` (${reason})` : ""}`);
       });
       if (look.flagged.length > k) middle.push(t(lang, "retro_more", { n: look.flagged.length - k }));
       if (k > 0) middle.push(t(lang, "retro_reply_hint"));
