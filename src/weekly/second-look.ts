@@ -10,6 +10,7 @@ import { attachmentLine } from "../gmail/parts.js";
 import type { LLMProvider, ActedCandidate } from "../llm/provider.js";
 import type { ActedSource } from "../notifier/activity.js";
 import { mapLimit } from "../util/concurrency.js";
+import { beforeDeadline, TIMED_OUT } from "../util/deadline.js";
 import { log } from "../util/log.js";
 import type { WeekFacts } from "./gather.js";
 
@@ -45,23 +46,6 @@ export function checkableActed(facts: WeekFacts): { id: string; action: "trashed
     out.push({ id: a.messageId, action: a.action, ...(a.source ? { source: a.source } : {}) });
   }
   return out;
-}
-
-const TIMED_OUT = Symbol("timed-out");
-const MAX_TIMER_MS = 2_147_483_647; // setTimeout fires at once past this
-
-// Stop WAITING for a model call once the deadline passes (same pattern as B2's checkSpam,
-// whose helper is module-private): a Gemini call can take its whole 40s HTTP timeout, and
-// the report must still be sent before Vercel's 300s cap. The abandoned call keeps
-// running; its late settlement is swallowed.
-async function beforeDeadline<T>(p: Promise<T>, ms: number): Promise<T | typeof TIMED_OUT> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  p.catch(() => {});
-  try {
-    return await Promise.race([p, new Promise<typeof TIMED_OUT>(r => { timer = setTimeout(() => r(TIMED_OUT), Math.min(Math.max(0, ms), MAX_TIMER_MS)); })]);
-  } finally {
-    if (timer !== undefined) clearTimeout(timer);
-  }
 }
 
 export async function secondLook(

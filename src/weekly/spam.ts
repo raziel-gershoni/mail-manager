@@ -11,6 +11,7 @@ import { attachmentLine } from "../gmail/parts.js";
 import type { LLMProvider, SpamCandidate, SpamVerdict } from "../llm/provider.js";
 import type { MemoryStore } from "../memory/store.js";
 import { mapLimit } from "../util/concurrency.js";
+import { beforeDeadline, TIMED_OUT } from "../util/deadline.js";
 import { log } from "../util/log.js";
 
 export const SPAM_SCAN_CAP = 300; // a week of spam; past this the report says it checked the newest 300
@@ -18,22 +19,6 @@ export const SPAM_BATCH = 40;     // emails per reviewSpam call
 
 export interface FlaggedSpam { id: string; from: string; subject: string; reason: string; suspicious: boolean; byRule: boolean }
 export interface SpamCheck { total: number; flagged: FlaggedSpam[]; unjudged: number; capped: boolean; incomplete: boolean }
-
-const TIMED_OUT = Symbol("timed-out");
-const MAX_TIMER_MS = 2_147_483_647; // setTimeout fires at once past this
-
-// Stop WAITING for a call once the deadline passes. A Gemini call can take up to its 40s
-// HTTP timeout, and the weekly work must end by its deadline to leave room for the send
-// before Vercel's 300s cap. The abandoned call keeps running; its late settlement is swallowed.
-async function beforeDeadline<T>(p: Promise<T>, ms: number): Promise<T | typeof TIMED_OUT> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  p.catch(() => {});
-  try {
-    return await Promise.race([p, new Promise<typeof TIMED_OUT>(r => { timer = setTimeout(() => r(TIMED_OUT), Math.min(Math.max(0, ms), MAX_TIMER_MS)); })]);
-  } finally {
-    if (timer !== undefined) clearTimeout(timer);
-  }
-}
 
 const errText = (err: unknown) => err instanceof Error ? err.message : String(err);
 
