@@ -26,9 +26,10 @@ function item(f: FlaggedSpam, n: number, lang: Lang): string {
 // it never says "nothing looks legitimate": it says how many it could judge and how many
 // it couldn't, because the owner should look). Otherwise a silent one-liner. The refs couple
 // the message to the exact Gmail ids in the report's numbered order (so "rescue 1 3"
-// resolves exactly), one per flagged email — the ones past the listed 20 continue the
-// numbering. A possible-phishing ref is kind "spam-phishing", so the agent knows to ask
-// before rescuing it.
+// resolves exactly), one per LISTED email and nothing more: "rescue all" means every ref,
+// so it covers only what the owner was shown. The rest stay behind "+N more — ask me", like
+// the retrospect's. A possible-phishing ref is kind "spam-phishing", so the agent knows to
+// ask before rescuing it.
 export function composeSpamReport(c: SpamCheck, lang: Lang): { text: string; silent: boolean; refs: DigestRef[] } {
   const total = c.capped ? `${c.total}+` : String(c.total);
   const notes: string[] = [];
@@ -64,6 +65,6 @@ export function composeSpamReport(c: SpamCheck, lang: Lang): { text: string; sil
   }
   if (ordered.length > listed) lines.push(t(lang, "spam_more", { n: ordered.length - listed }));
   lines.push(...tail);
-  const refs = ordered.map(f => ({ id: f.id, from: f.from, subject: f.subject, kind: f.suspicious ? "spam-phishing" : "spam" }));
+  const refs = ordered.slice(0, listed).map(f => ({ id: f.id, from: f.from, subject: f.subject, kind: f.suspicious ? "spam-phishing" : "spam" }));
   return { text: lines.join("\n"), silent: false, refs };
 }

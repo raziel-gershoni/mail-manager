@@ -109,21 +109,27 @@ describe("composeSpamReport", () => {
       .toBe("🧹 בדיקת ספאם: 143 בספאם — אף אחד מ־100 שהצלחתי לשפוט לא נראה לגיטימי; לא הצלחתי לשפוט 43.");
   });
 
-  it("lists at most 20, says how many more, and keeps refs for all of them in order", () => {
+  // "rescue all" means every ref, so the refs are exactly what the owner was shown: the
+  // listed items, in report order. The rest are behind "+N more — ask me".
+  it("lists at most 20, says how many more, and keeps refs only for the listed ones, in order", () => {
     const r = composeSpamReport(check({ flagged: flagged(25) }), "en");
     const lines = r.text.split("\n");
     expect(lines.filter(l => /^\d+\. /.test(l))).toHaveLength(20);
     expect(lines).toContain("20. sender20[at]x[.]com — Subject 20 (looks real)");
     expect(lines).toContain("+5 more — ask me");
-    expect(r.refs.map(x => x.id)).toEqual(flagged(25).map(f => f.id)); // [21]..[25] continue the numbering
+    expect(r.refs.map(x => x.id)).toEqual(flagged(25).slice(0, 20).map(f => f.id));
   });
 
-  it("stays inside Telegram's limit however long the senders, subjects and reasons are", () => {
+  it("stays inside Telegram's limit however long the senders, subjects and reasons are — refs only for what fit", () => {
     const huge = "x".repeat(500);
     const r = composeSpamReport(check({ flagged: flagged(20, { from: huge, subject: huge, reason: huge, suspicious: true }) }), "he");
     expect(r.text.length).toBeLessThanOrEqual(MAX_REPORT_CHARS);
     expect(r.text).toContain("…");
-    expect(r.refs).toHaveLength(20);
+    const numbered = r.text.split("\n").filter(l => /^\d+\. /.test(l));
+    expect(numbered.length).toBeGreaterThan(0);
+    expect(numbered.length).toBeLessThan(20);
+    expect(r.refs.map(x => x.id)).toEqual(flagged(20).slice(0, numbered.length).map(f => f.id));
+    expect(r.text).toContain(`ועוד ${20 - numbered.length} — אפשר לשאול אותי`);
   });
 
   it("shows (no subject) for an empty subject", () => {
