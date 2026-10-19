@@ -95,6 +95,20 @@ describe("attachmentsFromPayload", () => {
     ]);
     expect(attachmentsFromPayload(payload).map(a => a.mimeType)).toEqual(["application/pdf", "image/jpeg", "application/octet-stream"]);
   });
+  it("never resolves a sender's type or extension through Object.prototype (`constructor`, `__proto__`)", () => {
+    // Both are keys of every plain object: a lookup table indexed with them returned the Object
+    // function / Object.prototype instead of undefined, and `mimeType.startsWith` then threw.
+    const payload = multipart("", "mixed", [
+      textPart("0", "hi"),
+      filePart("1", "x.constructor", "application/octet-stream", 10 * KB),
+      filePart("2", "y.bin", "constructor", 10 * KB),
+      filePart("3", "z.bin", "__proto__", 10 * KB),
+    ]);
+    const atts = attachmentsFromPayload(payload);
+    expect(atts.map(a => [a.filename, a.mimeType])).toEqual([["x.constructor", "application/octet-stream"], ["y.bin", "constructor"], ["z.bin", "__proto__"]]);
+    for (const a of atts) expect(typeof a.mimeType).toBe("string");
+    expect(attachmentLine(atts)).toBe("x.constructor (file, 10 KB), y.bin (BIN, 10 KB), z.bin (BIN, 10 KB)");
+  });
   it("flattens an untrusted file name to one bounded line", () => {
     const payload = multipart("", "mixed", [textPart("0", "hi"), filePart("1", `URGENT\r\ninvoice${"x".repeat(300)}.pdf`, "application/pdf", 10 * KB)]);
     const [a] = attachmentsFromPayload(payload);
@@ -138,6 +152,10 @@ describe("attachmentLine", () => {
   it("labels other types by extension, and rounds a tiny file up to 1 KB", () => {
     expect(attachmentLine([att("data.xyz", "application/x-thing", 100), att("sheet.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 9 * KB), att("notes", "application/x-thing", 2 * KB)]))
       .toBe("data.xyz (XYZ, 1 KB), sheet.xlsx (Excel, 9 KB), notes (file, 2 KB)");
+  });
+  it("labels a type that is an Object.prototype key by extension, never as a function's source", () => {
+    expect(attachmentLine([att("x.bin", "constructor", 2 * KB), att("y.dat", "__proto__", 3 * KB), att("z", "constructor", 4 * KB)]))
+      .toBe("x.bin (BIN, 2 KB), y.dat (DAT, 3 KB), z (file, 4 KB)");
   });
 });
 

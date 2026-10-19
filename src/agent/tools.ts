@@ -9,6 +9,7 @@ import { mapLimit } from "../util/concurrency.js";
 import { validatePreference, normalizeKey } from "../memory/preferences.js";
 import { keyFromSlug } from "../memory/store.js";
 import { ruleTag } from "./rule-tag.js";
+import { attachmentLine } from "../gmail/parts.js";
 
 export interface ToolContext {
   userId: number;
@@ -47,7 +48,9 @@ export function readOnlyTools(): ToolDef[] {
         parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
       async run(args, ctx) {
         const metas = await ctx.gmail.search(scopeSearchToInbox(String(args.query ?? "")));
-        return metas.map(m => ({ ...m, rule: ruleTag(ctx.memory.findRuleFor(m.fromEmail, m.fromDomain)) }));
+        // Attachments as one summary line: the raw list carries Gmail's attachment ids (long
+        // opaque tokens), and 25 rows of those could push the result past the 40k tool cap.
+        return metas.map(m => ({ ...m, attachments: attachmentLine(m.attachments), rule: ruleTag(ctx.memory.findRuleFor(m.fromEmail, m.fromDomain)) }));
       },
     },
     {

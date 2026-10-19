@@ -25,22 +25,25 @@ const MAX_NAME_CHARS = 120;
 
 // Senders often label a file generically (application/octet-stream) or with a non-standard
 // type; the standard name, or else the extension, tells Gemini what it is really getting.
-const MIME_ALIASES: Record<string, string> = { "image/jpg": "image/jpeg", "image/pjpeg": "image/jpeg", "application/x-pdf": "application/pdf" };
-const MIME_BY_EXTENSION: Record<string, string> = {
-  pdf: "application/pdf", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp",
-  heic: "image/heic", heif: "image/heif", txt: "text/plain", csv: "text/csv",
-};
-const TYPE_LABELS: Record<string, string> = {
-  "application/pdf": "PDF",
-  "application/msword": "Word",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "Word",
-  "application/vnd.ms-excel": "Excel",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "Excel",
-  "application/vnd.ms-powerpoint": "PowerPoint",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation": "PowerPoint",
-  "application/zip": "ZIP", "application/x-zip-compressed": "ZIP",
-  "text/plain": "text", "text/csv": "CSV", "text/calendar": "calendar", "message/rfc822": "email",
-};
+// These tables are indexed with SENDER-CONTROLLED keys (the declared type, the file
+// extension), so they are Maps: a plain object would resolve "constructor" / "__proto__"
+// through Object.prototype and hand back a function or an object instead of a string.
+const MIME_ALIASES: ReadonlyMap<string, string> = new Map([["image/jpg", "image/jpeg"], ["image/pjpeg", "image/jpeg"], ["application/x-pdf", "application/pdf"]]);
+const MIME_BY_EXTENSION: ReadonlyMap<string, string> = new Map([
+  ["pdf", "application/pdf"], ["png", "image/png"], ["jpg", "image/jpeg"], ["jpeg", "image/jpeg"], ["webp", "image/webp"],
+  ["heic", "image/heic"], ["heif", "image/heif"], ["txt", "text/plain"], ["csv", "text/csv"],
+]);
+const TYPE_LABELS: ReadonlyMap<string, string> = new Map([
+  ["application/pdf", "PDF"],
+  ["application/msword", "Word"],
+  ["application/vnd.openxmlformats-officedocument.wordprocessingml.document", "Word"],
+  ["application/vnd.ms-excel", "Excel"],
+  ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Excel"],
+  ["application/vnd.ms-powerpoint", "PowerPoint"],
+  ["application/vnd.openxmlformats-officedocument.presentationml.presentation", "PowerPoint"],
+  ["application/zip", "ZIP"], ["application/x-zip-compressed", "ZIP"],
+  ["text/plain", "text"], ["text/csv", "CSV"], ["text/calendar", "calendar"], ["message/rfc822", "email"],
+]);
 
 function header(p: GmailPart, name: string): string {
   return (p.headers ?? []).find(h => String(h.name).toLowerCase() === name)?.value ?? "";
@@ -99,10 +102,10 @@ function cleanName(name: string): string {
 }
 
 function effectiveMime(declared: string, name: string): string {
-  const mime = MIME_ALIASES[declared] ?? declared;
+  const mime = MIME_ALIASES.get(declared) ?? declared;
   if (mime && mime !== "application/octet-stream") return mime;
   const ext = /\.([a-z0-9]+)$/.exec(name.toLowerCase())?.[1];
-  return (ext ? MIME_BY_EXTENSION[ext] : undefined) ?? (mime || "application/octet-stream");
+  return (ext ? MIME_BY_EXTENSION.get(ext) : undefined) ?? (mime || "application/octet-stream");
 }
 
 function imageExt(mimeType: string): string {
@@ -183,7 +186,7 @@ function formatSize(bytes: number): string {
 }
 
 function typeLabel(a: AttachmentMeta): string {
-  const known = TYPE_LABELS[a.mimeType];
+  const known = TYPE_LABELS.get(a.mimeType);
   if (known) return known;
   if (isImage(a)) return `${imageExt(a.mimeType).toUpperCase()} image`;
   const ext = /\.([A-Za-z0-9]{1,8})$/.exec(a.filename)?.[1];
