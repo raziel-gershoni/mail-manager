@@ -50,7 +50,7 @@ describe("runPoll standing preferences", () => {
     expect(r.prefTrashed).toBe(1);
     expect(order).toEqual(["log", "trash"]);                       // undo always covers it
     expect(await d.actionLog.lastUndoable(1)).toMatchObject({ action: "trash", messageIds: ["c1"] });
-    expect(r.acted).toEqual([{ id: "c1", from: "p@coin.io", subject: "buy bitcoin", action: "trashed" }]);
+    expect(r.acted).toEqual([{ id: "c1", from: "p@coin.io", subject: "buy bitcoin", action: "trashed", source: "pref" }]);
     expect(r.important.map((i: any) => i.messageId)).toEqual(["keeper"]); // unrelated mail untouched
     expect(await d.seen.has(1, "c1")).toBe(false);                 // deferred until delivery
     await r.commit();

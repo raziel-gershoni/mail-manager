@@ -35,3 +35,21 @@ describe("fakeActionLogRepo", () => {
     expect(await r.lastUndoable(1)).toBeNull();
   });
 });
+
+describe("fakeActionLogRepo.runsSince", () => {
+  it("returns a user's runs made or undone at/after the date, oldest first, with their times", async () => {
+    let now = Date.UTC(2026, 9, 25);
+    const r = fakeActionLogRepo(() => new Date(now));
+    await r.record(1, "old", ["a"], "trash");               // made before the window...
+    now += 1000;
+    const since = new Date(now);
+    await r.record(1, "rescue", ["s1", "s2"], "unspam");    // made in it
+    await r.record(2, "other", ["x"], "trash");             // another user's
+    now += 1000;
+    await r.markUndone(1, "old");                           // ...but undone inside it
+    expect(await r.runsSince(1, since)).toEqual([
+      { runId: "old", messageIds: ["a"], action: "trash", at: new Date(since.getTime() - 1000), undoneAt: new Date(since.getTime() + 1000) },
+      { runId: "rescue", messageIds: ["s1", "s2"], action: "unspam", at: since, undoneAt: null },
+    ]);
+  });
+});

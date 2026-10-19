@@ -2,6 +2,7 @@
 import { randomUUID } from "node:crypto";
 import type { ToolDef, ToolContext } from "../agent/tools.js";
 import type { TrashCandidate } from "../llm/provider.js";
+import type { ActivityItem, ActedSource } from "../notifier/activity.js";
 import { riskSignals } from "../gmail/risk.js";
 import { attachmentLine } from "../gmail/parts.js";
 import { vetTrashSet, TRASH_CAP } from "./vet.js";
@@ -19,6 +20,32 @@ const GUARDED_CLEANUP_CAP = 20;
 function requireCleanup(ctx: ToolContext) {
   if (!ctx.proposals || !ctx.actionLog || !ctx.llm) throw new Error("cleanup deps unavailable");
   return { proposals: ctx.proposals, actionLog: ctx.actionLog, llm: ctx.llm };
+}
+
+// How many of a chat action's messages are looked up for the activity log's sender and
+// subject. The rest are still logged (by id) without them.
+const CHAT_ACTIVITY_LABEL_CAP = 50;
+
+// Trash/archive done from chat go into the activity log too, so recent_activity and the
+// weekly retrospect see them, not only the poll's actions. `source` is why: "chat" when
+// the owner named or approved the messages, "plain"/"guarded" when a sender rule picked
+// them during an owner-requested cleanup. Best-effort and AFTER the mutation: the action
+// log already covers undo, so a failure here is logged and never fails the tool. A
+// message that can't be read back is still logged by id, with an empty sender and subject.
+async function recordChatActivity(ctx: ToolContext, ids: string[], action: "trashed" | "archived", source: ActedSource = "chat"): Promise<void> {
+  if (!ctx.activity || ids.length === 0) return;
+  try {
+    const metas = await mapLimit(ids.slice(0, CHAT_ACTIVITY_LABEL_CAP), GMAIL_FETCH_CONCURRENCY, async (id) => {
+      try { return await ctx.gmail.getMeta(id); } catch { return null; }
+    });
+    const items: ActivityItem[] = ids.map((id, i) => {
+      const m = metas[i];
+      return { action, from: m?.from ?? "", subject: m?.subject ?? "", messageId: id, source };
+    });
+    await ctx.activity.record(ctx.userId, items);
+  } catch (err) {
+    log("cleanup.activity_record_failed", { userId: ctx.userId, action, n: ids.length, error: err instanceof Error ? err.message : String(err) });
+  }
 }
 
 export function proposeTrashTool(): ToolDef {
@@ -61,6 +88,7 @@ export function confirmTrashTool(): ToolDef {
       await dep.proposals.markConfirmed(ctx.userId, id);                   // burn the proposal before the failure-prone trash
       await ctx.gmail.trash(proposal.messageIds);
       log("cleanup.confirm_trash", { userId: ctx.userId, runId, n: proposal.messageIds.length, ids: proposal.messageIds.slice(0, 100) });
+      await recordChatActivity(ctx, proposal.messageIds, "trashed"); // never throws
       return { ok: true, trashed: proposal.messageIds.length, runId };
     },
   };
@@ -100,6 +128,7 @@ export function archiveMessagesTool(): ToolDef {
       await dep.actionLog.record(ctx.userId, runId, ids, "archive");
       await ctx.gmail.archive(ids);
       log("cleanup.archive_messages", { userId: ctx.userId, runId, n: ids.length, ids: ids.slice(0, 100), reason: args.reason });
+      await recordChatActivity(ctx, ids, "archived"); // never throws
       return { ok: true, archived: ids.length, runId };
     },
   };
@@ -118,6 +147,7 @@ export function trashMessagesTool(): ToolDef {
       await dep.actionLog.record(ctx.userId, runId, ids, "trash"); // record before mutating so undo always covers it
       await ctx.gmail.trash(ids);
       log("cleanup.trash_messages", { userId: ctx.userId, runId, n: ids.length, ids: ids.slice(0, 100), reason: args.reason });
+      await recordChatActivity(ctx, ids, "trashed"); // never throws
       return { ok: true, trashed: ids.length, runId };
     },
   };
@@ -195,6 +225,8 @@ export function applyActionRulesTool(): ToolDef {
       log("cleanup.apply", { userId: ctx.userId, total: items.length, decided: items.map(it => ({ id: it.id, from: it.from, subject: it.subject, action: it.action ?? "ask-owner" })).slice(0, 80) });
       if (b.archive.length) { await dep.actionLog.record(ctx.userId, randomUUID(), b.archive, "archive"); await ctx.gmail.archive(b.archive); }
       if (b.trash.length) { await dep.actionLog.record(ctx.userId, randomUUID(), b.trash, "trash"); await ctx.gmail.trash(b.trash); }
+      await recordChatActivity(ctx, b.archive, "archived", "plain"); // never throws
+      await recordChatActivity(ctx, b.trash, "trashed", "plain");
       // Guarded senders: read bodies (capped), then ACT on the junk (logged first)
       // and keep the rest. review → trash, review_archive → archive.
       let guardedTrashed = 0, guardedArchived = 0, guardedCapped = false;
@@ -206,6 +238,7 @@ export function applyActionRulesTool(): ToolDef {
           await dep.actionLog.record(ctx.userId, randomUUID(), g.act, verb); // record before mutating so undo always covers it
           if (verb === "trash") await ctx.gmail.trash(g.act); else await ctx.gmail.archive(g.act);
           if (verb === "trash") guardedTrashed += g.act.length; else guardedArchived += g.act.length;
+          await recordChatActivity(ctx, g.act, verb === "trash" ? "trashed" : "archived", "guarded"); // never throws
         }
         guardedKept.push(...g.keep);
         for (const id of g.act) log("cleanup.guarded", { userId: ctx.userId, id, action: verb === "trash" ? "trashed" : "archived" });

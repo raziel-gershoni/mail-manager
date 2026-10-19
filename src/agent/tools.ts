@@ -93,13 +93,13 @@ export function readOnlyTools(): ToolDef[] {
     },
     {
       mutating: false,
-      schema: { name: "recent_activity", description: "List what the hourly background poll recently DID for the owner — messages it auto-trashed or auto-archived (with sender + subject) and new un-ruled senders it flagged — newest first, with timestamps. Routine poll activity is NOT in the conversation, so use THIS to answer 'what did you do?' / 'what was that one you trashed?' when the owner asks about a report or digest.",
+      schema: { name: "recent_activity", description: "List what the hourly background poll recently DID for the owner — messages it auto-trashed or auto-archived (with sender + subject) and new un-ruled senders it flagged — newest first, with timestamps. Trash/archive the owner asked for in chat are listed too, marked source 'chat'. Routine poll activity is NOT in the conversation, so use THIS to answer 'what did you do?' / 'what was that one you trashed?' when the owner asks about a report or digest.",
         parameters: { type: "object", properties: { limit: { type: "number" } } } },
       async run(args, ctx) {
         if (!ctx.activity) return { items: [] };
         const limit = Math.min(Math.max(1, Number(args.limit ?? 30) || 30), 100);
         const items = await ctx.activity.recent(ctx.userId, limit);
-        return { items: items.map(i => ({ action: i.action, from: i.from, subject: i.subject, at: i.at.toISOString() })) };
+        return { items: items.map(i => ({ action: i.action, from: i.from, subject: i.subject, at: i.at.toISOString(), ...(i.source === "chat" ? { source: "chat" } : {}) })) };
       },
     },
     {

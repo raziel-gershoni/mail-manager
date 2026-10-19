@@ -127,6 +127,13 @@
       "when": 1792385125320,
       "tag": "0017_lethal_anthem",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792385601108,
+      "tag": "0018_foamy_madripoor",
+      "breakpoints": true
     }
   ]
 }

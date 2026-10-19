@@ -5,6 +5,7 @@ import type { MemoryStore } from "../memory/store.js";
 import type { LLMProvider } from "../llm/provider.js";
 import type { ActionLogRepo } from "../cleanup/proposals.js";
 import type { SyncStateRepo, SeenRepo } from "./sync.js";
+import type { ActedSource } from "./activity.js";
 import { classifyEmail } from "./classify.js";
 import { guardVet } from "../cleanup/guard.js";
 import { preferenceVet, PREF_POLL_CAP, PREF_GROUP_CAP } from "../cleanup/preference-vet.js";
@@ -14,8 +15,9 @@ import { log, logMeta } from "../util/log.js";
 export interface DigestItem { messageId: string; from: string; subject: string; reason: string; }
 // Itemized trashed/archived this cycle (sender + subject) — recorded to the
 // activity log so the owner can later ask "what was that one?" on demand, without
-// anything being auto-injected into the conversation context.
-export interface ActedItem { id: string; from: string; subject: string; action: "trashed" | "archived"; }
+// anything being auto-injected into the conversation context. `source` is why it was
+// acted on (the weekly retrospect shows it and hands it to its second look).
+export interface ActedItem { id: string; from: string; subject: string; action: "trashed" | "archived"; source: ActedSource; }
 
 // Per-cycle ceiling on guarded body-reads. A backstop against a flood from one
 // guarded sender blowing the 60s poll budget; overflow is kept + surfaced (never
@@ -180,7 +182,7 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
       if (verb === "trash") guardedTrashed += g.act.length; else guardedArchived += g.act.length;
       for (const id of g.act) {
         const m = metaById.get(id);
-        if (m) acted.push({ id: m.id, from: m.from, subject: m.subject, action: verb === "trash" ? "trashed" : "archived" });
+        if (m) acted.push({ id: m.id, from: m.from, subject: m.subject, action: verb === "trash" ? "trashed" : "archived", source: "guarded" });
         log("poll.guarded", { userId: deps.userId, ...(m ? logMeta(m) : { id }), action: verb === "trash" ? "trashed" : "archived" });
       }
     }
@@ -213,7 +215,7 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
     actedToCommit.push(...actIds);
     if (verb === "trash") plainTrashed += actIds.length; else plainArchived += actIds.length;
     for (const m of group) {
-      acted.push({ id: m.id, from: m.from, subject: m.subject, action: verb === "trash" ? "trashed" : "archived" });
+      acted.push({ id: m.id, from: m.from, subject: m.subject, action: verb === "trash" ? "trashed" : "archived", source: "plain" });
       log("poll.acted", { userId: deps.userId, ...logMeta(m), rule: verb, action: verb === "trash" ? "trashed" : "archived" });
     }
   }
@@ -264,7 +266,7 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
         if (verb === "trash") prefTrashed += g.act.length; else prefArchived += g.act.length;
         for (const id of g.act) {
           const m = metaById.get(id);
-          if (m) acted.push({ id: m.id, from: m.from, subject: m.subject, action: verb === "trash" ? "trashed" : "archived" });
+          if (m) acted.push({ id: m.id, from: m.from, subject: m.subject, action: verb === "trash" ? "trashed" : "archived", source: "pref" });
           log("poll.pref", { userId: deps.userId, ...(m ? logMeta(m) : { id }), pref: text, action: verb === "trash" ? "trashed" : "archived" });
         }
       }

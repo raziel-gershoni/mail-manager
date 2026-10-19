@@ -31,6 +31,14 @@ describe("recent_activity tool", () => {
     const res = await dispatchTool("recent_activity", { limit: 1 }, ctx({ activity }), readOnlyTools()) as { items: unknown[] };
     expect(res.items).toHaveLength(1);
   });
+  it("says which entries the owner asked for in chat (source), and leaves it off older rows", async () => {
+    const activity = fakeActivityRepo();
+    await activity.record(1, [{ action: "trashed", from: "promo@shop.com", subject: "50% off" }]);
+    await activity.record(1, [{ action: "archived", from: "jane@x.com", subject: "Lunch", messageId: "m1", source: "chat" }]);
+    const res = await dispatchTool("recent_activity", {}, ctx({ activity }), readOnlyTools()) as { items: Array<Record<string, unknown>> };
+    expect(res.items[0]).toMatchObject({ action: "archived", from: "jane@x.com", subject: "Lunch", source: "chat" });
+    expect(res.items[1]).not.toHaveProperty("source");
+  });
   it("returns nothing when no activity repo is wired", async () => {
     const res = await dispatchTool("recent_activity", {}, ctx(), readOnlyTools()) as { items: unknown[] };
     expect(res.items).toEqual([]);

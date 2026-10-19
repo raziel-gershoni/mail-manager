@@ -9,10 +9,14 @@ export interface ProposalRepo {
 // archive ↔ unarchive, unspam (a rescue out of Spam) ↔ respam.
 export type ActionVerb = "trash" | "archive" | "unspam";
 export interface ActionRun { runId: string; messageIds: string[]; action: ActionVerb; }
+// One logged run with its times, for the weekly retrospect: when it ran, and when (if
+// ever) it was undone.
+export interface ActionLogEntry { runId: string; messageIds: string[]; action: ActionVerb; at: Date; undoneAt: Date | null; }
 export interface ActionLogRepo {
   record(userId: number, runId: string, messageIds: string[], action: ActionVerb): Promise<void>;
   lastUndoable(userId: number): Promise<ActionRun | null>;
   markUndone(userId: number, runId: string): Promise<void>; // also stamps when (undone_at)
+  runsSince(userId: number, since: Date): Promise<ActionLogEntry[]>; // runs created OR undone at/after `since`, oldest first
 }
 
 export function fakeProposalRepo(): ProposalRepo {
@@ -51,5 +55,12 @@ export function fakeActionLogRepo(now: () => Date = () => new Date()): ActionLog
       if (r) { r.undone = true; r.undoneAt = now(); }
     },
     undoneAt(userId, runId) { return rows.find(x => x.userId === userId && x.runId === runId)?.undoneAt ?? null; },
+    async runsSince(userId, since) {
+      const t = since.getTime();
+      return rows
+        .filter(r => r.userId === userId && (r.at.getTime() >= t || (r.undoneAt !== null && r.undoneAt.getTime() >= t)))
+        .sort((a, b) => a.at.getTime() - b.at.getTime())
+        .map(r => ({ runId: r.runId, messageIds: [...r.messageIds], action: r.action, at: r.at, undoneAt: r.undoneAt }));
+    },
   };
 }

@@ -35,4 +35,16 @@ describe.skipIf(!RUN)("cleanup db adapters (integration)", () => {
     expect(row!.undone).toBe(true);
     expect(Math.abs(row!.undoneAt!.getTime() - before)).toBeLessThan(60_000);
   });
+  it("action log runsSince returns runs made or undone at/after the date, with their times", async () => {
+    const { dbActionLogRepo } = await import("../../src/db/cleanup-adapters.js");
+    const repo = dbActionLogRepo();
+    const from = new Date(Date.now() - 60_000); // margin for clock skew between Node and the DB
+    const runId = `since-${randomUUID()}`;
+    await repo.record(1, runId, ["x1", "x2"], "unspam");
+    await repo.markUndone(1, runId);
+    const mine = (await repo.runsSince(1, from)).find(r => r.runId === runId);
+    expect(mine).toMatchObject({ messageIds: ["x1", "x2"], action: "unspam" });
+    expect(mine!.at).toBeInstanceOf(Date);
+    expect(mine!.undoneAt).toBeInstanceOf(Date);
+  });
 });

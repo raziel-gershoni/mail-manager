@@ -1,7 +1,7 @@
 // src/db/cleanup-adapters.ts
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, gte, or } from "drizzle-orm";
 import { db, schema } from "./client.js";
-import type { ProposalRepo, ActionLogRepo, Proposal, ProposalStatus, ActionRun, ActionVerb } from "../cleanup/proposals.js";
+import type { ProposalRepo, ActionLogRepo, Proposal, ProposalStatus, ActionRun, ActionVerb, ActionLogEntry } from "../cleanup/proposals.js";
 
 export function dbProposalRepo(): ProposalRepo {
   return {
@@ -36,6 +36,12 @@ export function dbActionLogRepo(): ActionLogRepo {
     async markUndone(userId, runId) {
       await db().update(schema.actionLog).set({ undone: true, undoneAt: new Date() })
         .where(and(eq(schema.actionLog.userId, userId), eq(schema.actionLog.runId, runId)));
+    },
+    async runsSince(userId, since): Promise<ActionLogEntry[]> {
+      const rows = await db().select().from(schema.actionLog)
+        .where(and(eq(schema.actionLog.userId, userId), or(gte(schema.actionLog.createdAt, since), gte(schema.actionLog.undoneAt, since))))
+        .orderBy(asc(schema.actionLog.createdAt), asc(schema.actionLog.id));
+      return rows.map(r => ({ runId: r.runId, messageIds: r.messageIds, action: r.action as ActionVerb, at: r.createdAt, undoneAt: r.undoneAt ?? null }));
     },
   };
 }

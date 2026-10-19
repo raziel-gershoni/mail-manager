@@ -9,6 +9,11 @@ export interface MemoryRow {
   scope: string; matchType: string | null; matchValue: string | null; verdict: string | null;
   action: string | null;
   pending?: boolean; // optional: absent ⇒ active (keeps existing rows and row fixtures valid)
+  // Optional for the same reason: only dbMemoryStore fills them (memories.created_at /
+  // updated_at). The weekly retrospect counts a rule as new when createdAt is in its
+  // window, and as changed when only updatedAt is.
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 export interface MemoryStore {
   findRuleFor(fromEmail: string, fromDomain: string): RuleMatch | null;

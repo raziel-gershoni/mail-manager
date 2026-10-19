@@ -9,7 +9,8 @@ import type { SeenRepo, SeenRow, SyncStateRepo } from "../notifier/sync.js";
 export async function dbMemoryStore(userId: number): Promise<MemoryStore & { flush(): Promise<void> }> {
   const rows = await db().select().from(schema.memories).where(eq(schema.memories.userId, userId));
   const local: MemoryRow[] = rows.map(r => ({ userId, slug: r.slug, description: r.description, body: r.body,
-    scope: r.scope, matchType: r.matchType, matchValue: r.matchValue, verdict: r.verdict, action: r.action, pending: r.pending }));
+    scope: r.scope, matchType: r.matchType, matchValue: r.matchValue, verdict: r.verdict, action: r.action, pending: r.pending,
+    createdAt: r.createdAt, updatedAt: r.updatedAt }));
   const pending: Promise<unknown>[] = [];
   return {
     findRuleFor(email, domain): RuleMatch | null {

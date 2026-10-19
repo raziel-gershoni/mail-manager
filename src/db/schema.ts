@@ -54,6 +54,9 @@ export const memories = pgTable("memories", {
   verdict: text("verdict"),        // 'important' | 'unimportant' | null
   action: text("action"),          // 'trash' | 'archive' | 'review' | 'review_archive' | 'keep' | null (learned cleanup action)
   pending: boolean("pending").notNull().default(false), // standing preferences start inert until the owner confirms
+  // First insert. A re-upsert never touches it (only updated_at), so the weekly retrospect
+  // can tell a new rule from a changed one. Pre-0018 rows were backfilled from updated_at.
+  createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => ({ slugUx: uniqueIndex("memories_user_slug_ux").on(t.userId, t.slug) }));
 
@@ -124,6 +127,8 @@ export const pollActivity = pgTable("poll_activity", {
   action: text("action").notNull(),                    // 'trashed' | 'archived' | 'flagged'
   fromAddr: text("from_addr").notNull().default(""),
   subject: text("subject").notNull().default(""),
+  messageId: text("message_id"),                       // Gmail id of a trashed/archived message; null for flagged rows and rows before 0018
+  source: text("source"),                              // why: 'guarded' | 'plain' | 'pref' | 'chat'; null for flagged rows and rows before 0018
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
