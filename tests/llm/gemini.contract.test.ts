@@ -157,9 +157,10 @@ describe.skipIf(!RUN)("gemini live contract", () => {
     // Proves the exact model accepts application/pdf inline data and transcribes it. The
     // CONTRACT, not the wording: the reference number and the amount come back.
     const { geminiProvider } = await import("../../src/llm/gemini.js");
+    // With the brief's budget, so the live call carries maxOutputTokens beside LOW thinking.
     const text = await geminiProvider(KEY!).extractAttachment({
       name: "invoice.pdf", mimeType: "application/pdf", data: tinyPdf("Invoice 4821 total due 3240 ILS"),
-    });
+    }, { maxChars: 3_000 });
     expect(text).toContain("4821");
     expect(text).toMatch(/3,?240/);
   }, 60_000);

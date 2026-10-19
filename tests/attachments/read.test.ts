@@ -17,14 +17,22 @@ function setup(raw: GmailRawMessage, extract: (f: File) => string | Promise<stri
   const orig = gmail.getAttachment.bind(gmail);
   gmail.getAttachment = async (id: string, a: AttachmentMeta) => { fetched.push(a.filename); return orig(id, a); };
   const files: File[] = [];
+  const asked: ({ maxChars?: number } | undefined)[] = [];
   const llm: LLMProvider = {
     ...fakeLLM(() => ({ important: false, suspicious: false, reason: "" })),
-    async extractAttachment(f) { files.push(f); return extract(f); },
+    async extractAttachment(f, o) { files.push(f); asked.push(o); return extract(f); },
   };
-  return { gmail, llm, fetched, files, atts: async () => (await gmail.getMeta(raw.id)).attachments };
+  return { gmail, llm, fetched, files, asked, atts: async () => (await gmail.getMeta(raw.id)).attachments };
 }
 
 describe("readAttachments", () => {
+  it("asks the extractor for no more than the caller's per-file budget (maxChars)", async () => {
+    const raw = withAttachments("m9", "two files", [filePart("1", "a.pdf", "application/pdf", 10 * KB), filePart("2", "b.pdf", "application/pdf", 10 * KB)]);
+    const s = setup(raw);
+    await readAttachments("m9", await s.atts(), s, { ...CAPS, maxCharsPerFile: 3_000 });
+    expect(s.asked).toEqual([{ maxChars: 3_000 }, { maxChars: 3_000 }]);
+  });
+
   it("downloads each readable file and hands Gemini standard base64 with the file's type; unreadable ones are listed, not fetched", async () => {
     const raw = withAttachments("m1", "see attached", [filePart("1", "invoice.pdf", "application/pdf", 120 * KB), filePart("2", "terms.docx", WORD, 45 * KB)]);
     const s = setup(raw);

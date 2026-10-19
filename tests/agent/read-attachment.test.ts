@@ -34,13 +34,14 @@ function setup(raw: GmailRawMessage = docs, extract: (f: File) => string | Promi
   const orig = gmail.getAttachment.bind(gmail);
   gmail.getAttachment = async (id: string, a: AttachmentMeta) => { fetched.push(a.filename); return orig(id, a); };
   const files: File[] = [];
+  const asked: ({ maxChars?: number } | undefined)[] = [];
   const llm: LLMProvider = {
     ...fakeLLM(() => ({ important: false, suspicious: false, reason: "" })),
-    async extractAttachment(f) { files.push(f); return extract(f); },
+    async extractAttachment(f, o) { files.push(f); asked.push(o); return extract(f); },
   };
   const ctx: ToolContext = { userId: 1, gmail, memory: inMemoryStore(), llm };
   const run = async (args: Record<string, unknown>) => await dispatchTool("read_attachment", args, ctx, readOnlyTools()) as Result;
-  return { gmail, fetched, files, run };
+  return { gmail, fetched, files, asked, run };
 }
 
 describe("read_attachment", () => {
@@ -58,6 +59,15 @@ describe("read_attachment", () => {
     expect(r.files).toEqual([{ name: "invoice.pdf", mimeType: "application/pdf", size: 120 * KB, status: "read", untrustedText: "TEXT of invoice.pdf" }]);
     expect(s.fetched).toEqual(["invoice.pdf"]);
     expect(Buffer.from(s.files[0]!.data, "base64").toString("utf8")).toBe("m1:invoice.pdf");
+  });
+
+  it("asks the extractor for its budget: 20,000 for one named file, otherwise 35,000 split evenly", async () => {
+    const one = setup();
+    await one.run({ id: "m1", name: "invoice.pdf" });
+    expect(one.asked).toEqual([{ maxChars: READ_ATTACHMENT_ONE_CHARS }]);
+    const all = setup(threePdfs);
+    await all.run({ id: "m3" });
+    expect(all.asked).toEqual(Array(3).fill({ maxChars: Math.floor(READ_ATTACHMENT_TOTAL_CHARS / 3) }));
   });
 
   it("with no name, reads up to 7 by priority and lists the rest with the reason", async () => {

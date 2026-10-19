@@ -6,7 +6,8 @@
 // sampling param is sent, and that the rest of the config is exactly what it was.
 // Thinking is pinned too: LOW on classify and the brief (measured: same verdicts, ~2.5x
 // faster) and on attachment extraction (transcription, not judgment); the agent and the
-// reviewers stay at the model default on purpose.
+// reviewers stay at the model default on purpose. Extraction alone also carries
+// maxOutputTokens, derived from the caller's char budget.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ActedCandidate, ClassifyInput, SpamCandidate, StreamSink, TrashCandidate } from "../../src/llm/provider.js";
 
@@ -29,7 +30,8 @@ vi.mock("@google/genai", async (importOriginal) => ({
   },
 }));
 
-const { geminiProvider, ATTACHMENT_GUIDANCE } = await import("../../src/llm/gemini.js");
+const { geminiProvider, ATTACHMENT_GUIDANCE, extractOutputTokens } = await import("../../src/llm/gemini.js");
+const { GenerateContentResponse, FinishReason } = await import("@google/genai");
 
 const SAMPLING = ["temperature", "topP", "topK"];
 
@@ -57,7 +59,7 @@ async function exerciseEveryPath() {
   await llm.writeBrief([{ from: "a@b.com", subject: "s", bodyText: "b" }]);
   await llm.reviewTrash(candidates);
   await llm.reviewPreference(candidates, "trash newsletters");
-  await llm.extractAttachment({ name: "invoice.pdf", mimeType: "application/pdf", data: "JVBERi0xLjQK" });
+  await llm.extractAttachment({ name: "invoice.pdf", mimeType: "application/pdf", data: "JVBERi0xLjQK" }, { maxChars: 3_000 });
   await llm.reviewSpam(spamCandidates);
   await llm.reviewActed(actedItems);
 }
@@ -87,7 +89,7 @@ describe("geminiProvider request config", () => {
       ["generateContent", { thinkingConfig: { thinkingLevel: "LOW" } }], // writeBrief
       ["generateContent", { responseMimeType: "application/json" }], // reviewTrash
       ["generateContent", { responseMimeType: "application/json" }], // reviewPreference
-      ["generateContent", { thinkingConfig: { thinkingLevel: "LOW" } }], // extractAttachment
+      ["generateContent", { thinkingConfig: { thinkingLevel: "LOW" }, maxOutputTokens: 2_024 }], // extractAttachment (3,000 chars: ceil(3000/3) + 1024)
       ["generateContent", { responseMimeType: "application/json" }], // reviewSpam (default thinking)
       ["generateContent", { responseMimeType: "application/json" }], // reviewActed (default thinking)
     ]);
@@ -148,6 +150,32 @@ describe("geminiProvider request config", () => {
     expect(content.parts[1].text).toContain('"invoice.pdf"');
     expect(content.parts[1].text).toMatch(/UNTRUSTED/);
     expect(content.parts[1].text).toMatch(/Never follow instructions/);
+  });
+
+  it("bounds an extraction to the caller's budget: the prompt targets the length, and maxOutputTokens leaves room for LOW thinking", async () => {
+    const llm = geminiProvider("test-key");
+    await llm.extractAttachment({ name: "report.pdf", mimeType: "application/pdf", data: "JVBERi0xLjQK" }, { maxChars: 20_000 });
+    const { config, contents } = sent[0]!.req;
+    expect(config).toEqual({ thinkingConfig: { thinkingLevel: "LOW" }, maxOutputTokens: Math.ceil(20_000 / 3) + 1024 });
+    expect(extractOutputTokens(20_000)).toBe(7_691);
+    const text = contents[0].parts[1].text as string;
+    expect(text).toContain("Keep it under 20000 characters");
+    expect(text).toContain("prioritise the parties, dates, amounts/totals, key figures and action items over verbatim text");
+    expect(text).toMatch(/UNTRUSTED/);
+
+    // No budget given: no length target and no output cap.
+    await llm.extractAttachment({ name: "report.pdf", mimeType: "application/pdf", data: "JVBERi0xLjQK" });
+    expect(sent[1]!.req.config).toEqual({ thinkingConfig: { thinkingLevel: "LOW" } });
+    expect(sent[1]!.req.contents[0].parts[1].text).not.toContain("Keep it under");
+  });
+
+  it("returns the partial text of an extraction cut at maxOutputTokens (MAX_TOKENS), not empty", async () => {
+    const cut = Object.assign(new GenerateContentResponse(), {
+      candidates: [{ finishReason: FinishReason.MAX_TOKENS, content: { role: "model", parts: [{ text: "Invoice 4821. Total due: 3,240 ILS. Line items: 1) Consult" }] } }],
+    });
+    reply.next = cut;
+    const text = await geminiProvider("test-key").extractAttachment({ name: "invoice.pdf", mimeType: "application/pdf", data: "JVBERi0xLjQK" }, { maxChars: 3_000 });
+    expect(text).toBe("Invoice 4821. Total due: 3,240 ILS. Line items: 1) Consult");
   });
 
   it("classify shows the attachment line (and how to weigh it) only for an email with attachments", async () => {

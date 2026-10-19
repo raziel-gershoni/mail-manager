@@ -46,7 +46,9 @@ export async function readAttachments(
     // away every other file's extract (and fail the brief or the chat turn with it).
     try {
       const bytes = await deps.gmail.getAttachment(messageId, a);
-      const text = (await deps.llm.extractAttachment({ name: a.filename, mimeType: bytes.mimeType, data: bytes.data })).trim();
+      // The extractor is asked for no more than the caller keeps (maxChars), so a long PDF
+      // doesn't time out transcribing text that would be cut anyway.
+      const text = (await deps.llm.extractAttachment({ name: a.filename, mimeType: bytes.mimeType, data: bytes.data }, { maxChars: opts.maxCharsPerFile })).trim();
       // No text back (Gemini's SAFETY/RECITATION/OTHER finish, or no candidates, makes
       // res.text undefined → ""): "read" must mean text was obtained, so this is a failure.
       if (text === "") throw new Error("empty extract");

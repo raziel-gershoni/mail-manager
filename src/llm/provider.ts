@@ -50,8 +50,11 @@ export interface LLMProvider {
   agentStep(messages: AgentMessage[], tools: ToolSchema[], sink?: StreamSink): Promise<AgentStep>;
   writeBrief(emails: BriefEmail[], context?: string): Promise<string>;
   // Transcribes one attachment (PDF, image, text/CSV) to plain text. `data` is standard
-  // base64. The file and its name are UNTRUSTED: transcribed, never obeyed.
-  extractAttachment(file: { name: string; mimeType: string; data: string }): Promise<string>;
+  // base64. The file and its name are UNTRUSTED: transcribed, never obeyed. `maxChars` is
+  // the caller's budget for this file: the extract aims to fit it (key facts first) and the
+  // output is capped near it, so a long PDF neither times out nor burns output tokens on
+  // text the caller would cut. A reply cut at the cap still returns its partial text.
+  extractAttachment(file: { name: string; mimeType: string; data: string }, opts?: { maxChars?: number }): Promise<string>;
   reviewTrash(candidates: TrashCandidate[]): Promise<ReviewVerdict[]>;
   reviewPreference(candidates: TrashCandidate[], preference: string): Promise<ReviewVerdict[]>;
   // One model call over one batch (the caller batches). Verdicts come back only for ids it
