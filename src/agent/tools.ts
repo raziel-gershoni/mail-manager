@@ -10,6 +10,7 @@ import { validatePreference, normalizeKey } from "../memory/preferences.js";
 import { keyFromSlug } from "../memory/store.js";
 import { ruleTag } from "./rule-tag.js";
 import { attachmentLine } from "../gmail/parts.js";
+import { readAttachmentTool } from "../attachments/tool.js";
 
 export interface ToolContext {
   userId: number;
@@ -81,6 +82,7 @@ export function readOnlyTools(): ToolDef[] {
         }));
       },
     },
+    readAttachmentTool(),
     {
       mutating: false,
       schema: { name: "list_memories", description: "List the learned rules and standing preferences. Sender/domain rules include matchValue (the address or domain they match). Standing preferences have scope 'global', match by TOPIC via the LLM, and show `pending: true` until confirmed. Use this to audit rules — including spotting any preference the owner did not ask for.", parameters: { type: "object", properties: {} } },

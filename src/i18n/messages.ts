@@ -42,6 +42,7 @@ const en = {
   verb_confirm_pref: "saved a preference",
   verb_restore: "restored",
   verb_recent_activity: "checked recent activity",
+  verb_read_attachment: "read an attachment",
 
   // Poll / brief
   // Sent only after QStash has exhausted every retry, so it is a genuine dead end.
@@ -164,6 +165,7 @@ export const messages: Record<"en" | "he", Record<MsgKey, string>> = {
     verb_confirm_pref: "שמרתי העדפה",
     verb_restore: "שחזרתי",
     verb_recent_activity: "בדקתי פעילות אחרונה",
+    verb_read_attachment: "קראתי קובץ מצורף",
 
     // Poll / brief
     turn_failed: "⚠️ לא הצלחתי לסיים את זה — משהו נשבר אצלי, והפסקתי לנסות שוב. שום דבר בדואר שלך לא השתנה. רוצה לשאול שוב?",
