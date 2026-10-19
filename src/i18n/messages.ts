@@ -79,6 +79,11 @@ const en = {
   spam_incomplete: "⏱ I ran out of time before checking them all — look through Gmail's Spam folder for the rest.",
   spam_unjudged: "I couldn't judge {n} of them.",
 
+  // A weekly report that failed WEEKLY_MAX_ATTEMPTS times this week: sent instead of it,
+  // then the week is closed. Trusted text only.
+  weekly_gave_up_spam: "🧹 I couldn't put together this week's spam check — please look through Spam yourself.",
+  weekly_gave_up_retro: "🗓 I couldn't put together this week's review — ask me about my recent activity if you'd like to check what I trashed or archived.",
+
   // Weekly retrospect
   retro_head: "🗓 Week in review: trashed {trashed} · archived {archived} · rescued from spam {rescued} · undone {undone} · rules +{rules}",
   retro_rules_changed: " ({n} changed)",
@@ -96,6 +101,7 @@ const en = {
   retro_ops_reconnect: "{n}× Gmail needed reconnecting",
   retro_ops_errored: "{n}× an hourly check failed",
   retro_ops_worker: "{n}× a chat reply failed",
+  retro_ops_weekly: "{n}× a weekly report failed — I retried at the next check",
   retro_unjudged: "couldn't re-check {n}",
   retro_not_checked: "+{n} not re-checked",
   retro_gone: "{n} already deleted for good",
@@ -236,6 +242,10 @@ export const messages: Record<"en" | "he", Record<MsgKey, string>> = {
     spam_incomplete: "⏱ נגמר לי הזמן לפני שבדקתי את כולם — כדאי לעבור על השאר בתיקיית הספאם ב־Gmail.",
     spam_unjudged: "לא הצלחתי לשפוט {n} מהם.",
 
+    // Weekly report given up on
+    weekly_gave_up_spam: "🧹 לא הצלחתי להכין את בדיקת הספאם של השבוע — כדאי לעבור על תיקיית הספאם בעצמך.",
+    weekly_gave_up_retro: "🗓 לא הצלחתי להכין את סיכום השבוע — אפשר לשאול אותי על הפעילות האחרונה שלי כדי לבדוק מה זרקתי או ארכבתי.",
+
     // Weekly retrospect
     retro_head: "🗓 סיכום השבוע: נזרקו {trashed} · אורכבו {archived} · חולצו מספאם {rescued} · בוטלו {undone} · כללים +{rules}",
     retro_rules_changed: " ({n} שונו)",
@@ -253,6 +263,7 @@ export const messages: Record<"en" | "he", Record<MsgKey, string>> = {
     retro_ops_reconnect: "{n}× היה צריך לחבר מחדש את Gmail",
     retro_ops_errored: "{n}× בדיקה שעתית נכשלה",
     retro_ops_worker: "{n}× תשובה בצ׳אט נכשלה",
+    retro_ops_weekly: "{n}× דוח שבועי נכשל — ניסיתי שוב בבדיקה הבאה",
     retro_unjudged: "לא הצלחתי לבדוק שוב {n}",
     retro_not_checked: "עוד {n} לא נבדקו שוב",
     retro_gone: "{n} כבר נמחקו לצמיתות",

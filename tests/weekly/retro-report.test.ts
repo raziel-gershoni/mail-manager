@@ -105,6 +105,20 @@ describe("composeRetroReport", () => {
     expect(r.silent).toBe(false);
   });
 
+  it("groups weekly reports that failed under Ops (en/he)", () => {
+    const failed = (kind: string): OpsEvent => ({ kind: "weekly_failed", at: T, detail: { kind, week: "2026-10-25", error: "gemini 503" } });
+    const en = composeRetroReport(facts({ ops: [failed("spam"), ev("poll_errored"), failed("retro"), failed("spam")] }), look(), "en");
+    expect(en.text).toContain([
+      "🛠 Ops:",
+      "• 1× an hourly check failed",
+      "• 3× a weekly report failed — I retried at the next check",
+    ].join("\n"));
+    expect(en.text).not.toContain("gemini 503"); // counts only, never the error text
+    expect(en.silent).toBe(false);
+    const he = composeRetroReport(facts({ ops: [failed("spam")] }), look(), "he");
+    expect(he.text).toContain("• 1× דוח שבועי נכשל — ניסיתי שוב בבדיקה הבאה");
+  });
+
   it("says what it couldn't cover: unjudged, over the cap, deleted for good, older entries, out of time", () => {
     const many = Array.from({ length: 305 }, (_, i) => acted(`m${i}`, "a@x.com", "trashed"));
     const r = composeRetroReport(facts({ acted: [...many, acted(undefined, "b@x.com", "archived")] }),

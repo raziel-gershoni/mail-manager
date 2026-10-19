@@ -158,7 +158,7 @@ export const weeklyRuns = pgTable("weekly_runs", {
 export const opsEvents = pgTable("ops_events", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id),
-  kind: text("kind").notNull(),                                // 'poll_incomplete' | 'cursor_expired' | 'reconnect_needed' | 'poll_errored' | 'worker_failed'
+  kind: text("kind").notNull(),                                // 'poll_incomplete' | 'cursor_expired' | 'reconnect_needed' | 'poll_errored' | 'worker_failed' | 'weekly_failed'
   detail: jsonb("detail").$type<Record<string, unknown>>(),   // small context (counts, an error message); null when there is none
   at: timestamp("at").defaultNow().notNull(),
 }, (t) => ({ userAtIx: index("ops_events_user_at_ix").on(t.userId, t.at) }));

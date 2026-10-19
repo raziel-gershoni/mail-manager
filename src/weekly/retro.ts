@@ -22,13 +22,14 @@ const FROM_MAX = 60;
 const SUBJECT_MAX = 80;
 const REASON_MAX = 100;
 
-const OPS_ORDER: readonly OpsEventKind[] = ["poll_incomplete", "cursor_expired", "reconnect_needed", "poll_errored", "worker_failed"];
+const OPS_ORDER: readonly OpsEventKind[] = ["poll_incomplete", "cursor_expired", "reconnect_needed", "poll_errored", "worker_failed", "weekly_failed"];
 const OPS_KEY: Record<OpsEventKind, MsgKey> = {
   poll_incomplete: "retro_ops_incomplete",
   cursor_expired: "retro_ops_cursor",
   reconnect_needed: "retro_ops_reconnect",
   poll_errored: "retro_ops_errored",
   worker_failed: "retro_ops_worker",
+  weekly_failed: "retro_ops_weekly", // both kinds in one count; the error text is never shown
 };
 
 // Sender, subject and the model's reason are UNTRUSTED: each is shown through clipLine,

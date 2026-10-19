@@ -1,12 +1,14 @@
 // src/ops/events.ts
 // Operational issues the owner should hear about in the weekly retrospect: a catch-up
 // that didn't finish in one run, an expired Gmail cursor, a dead Google token, a failed
-// hourly poll, a chat turn that failed for good. Until now these were console logs only.
+// hourly poll, a chat turn that failed for good, a weekly report that failed (it is
+// retried the next hour, at most WEEKLY_MAX_ATTEMPTS times a week — src/weekly/run.ts
+// counts these events). Until now these were console logs only.
 // They are written through recordOpsEvent, which NEVER throws: recording an event must
 // never break the path it observes. Kept for 30 days (the retrospect prunes).
 import { log } from "../util/log.js";
 
-export type OpsEventKind = "poll_incomplete" | "cursor_expired" | "reconnect_needed" | "poll_errored" | "worker_failed";
+export type OpsEventKind = "poll_incomplete" | "cursor_expired" | "reconnect_needed" | "poll_errored" | "worker_failed" | "weekly_failed";
 export interface OpsEvent { kind: OpsEventKind; at: Date; detail: Record<string, unknown> | null }
 export interface OpsEventRepo {
   record(userId: number, kind: OpsEventKind, detail?: Record<string, unknown>): Promise<void>;
