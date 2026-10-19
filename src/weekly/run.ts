@@ -11,6 +11,8 @@ import type { DigestRef } from "../notifier/refs.js";
 import type { Lang } from "../i18n/index.js";
 import type { WeeklyKind, WeeklyRunRepo } from "./runs.js";
 import { weekKey } from "./week.js";
+import { checkSpam } from "./spam.js";
+import { composeSpamReport } from "./spam-report.js";
 import { log } from "../util/log.js";
 
 // Both measured from the start of the poll run (runStart = deadline − POLL_LOOP_BUDGET_MS),
@@ -37,8 +39,17 @@ export interface WeeklyReport { text: string; silent: boolean; refs: DigestRef[]
 export type WeeklyRunner = (deps: WeeklyDeps, deadline: number) => Promise<WeeklyReport>;
 export interface WeeklyJob { kind: WeeklyKind; run: WeeklyRunner }
 
+// The spam check: judge last week's Spam, then report what looks legitimate.
+async function spamJob(deps: WeeklyDeps, deadline: number): Promise<WeeklyReport> {
+  const check = await checkSpam({ gmail: deps.gmail, llm: deps.llm, store: deps.store, deadline, now: deps.now });
+  log("weekly.spam", { userId: deps.userId, total: check.total, flagged: check.flagged.length, unjudged: check.unjudged, capped: check.capped, incomplete: check.incomplete });
+  return composeSpamReport(check, deps.language);
+}
+
 // The weekly jobs, in the order they run.
-export const WEEKLY_JOBS: readonly WeeklyJob[] = [];
+export const WEEKLY_JOBS: readonly WeeklyJob[] = [
+  { kind: "spam", run: spamJob },
+];
 
 export async function runWeeklyJobs(deps: WeeklyDeps, jobs: readonly WeeklyJob[]): Promise<void> {
   const startBy = deps.runStart + WEEKLY_START_BY_MS;

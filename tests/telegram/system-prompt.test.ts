@@ -61,6 +61,13 @@ describe("SYSTEM_PROMPT classification guidance", () => {
   // The mail-listing sign legend (search_gmail/read_messages carry a trusted `rule`
   // field the model renders as a per-email sign). Pin every sign + the null contract
   // so a revert or a dropped emoji fails this test.
+  // Weekly reports are coupled to numbered refs; "1 3" must map to [1] and [3], never to
+  // a guess. Pin that a missing [n] (or no refs at all) makes the model ask.
+  it("maps a reply's numbers to the [n] refs and asks instead of guessing when there is no match", () => {
+    expect(SYSTEM_PROMPT).toMatch(/a number means the \[n\] ref with that number/);
+    expect(SYSTEM_PROMPT).toMatch(/If a number has no matching \[n\] ref, or the owner gives numbers without replying to a message that has refs, do NOT guess ids/);
+  });
+
   it("documents the rule-sign legend for mail listings", () => {
     for (const sign of ["🗑", "📥", "🛡🗑", "🛡📥", "✅", "⭐", "🔕"]) expect(SYSTEM_PROMPT).toContain(sign);
     expect(SYSTEM_PROMPT).toMatch(/rule: null means no rule/i);

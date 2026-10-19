@@ -65,6 +65,19 @@ const en = {
   poll_fallback_head: "{n} new important email(s):",
   poll_no_subject: "(no subject)",
 
+  // Weekly spam check
+  spam_head: "🧹 Spam check (last 7 days): {total} in spam, {n} look legitimate:",
+  spam_head_one: "🧹 Spam check (last 7 days): {total} in spam, 1 looks legitimate:",
+  spam_none: "🧹 Spam check: {total} in spam, nothing looks legitimate.",
+  spam_empty: "🧹 Spam check: nothing in spam from the last 7 days.",
+  spam_by_rule: "you have a rule for this sender",
+  spam_phishing: "⚠️ looks like phishing — rescue only if you're sure",
+  spam_more: "+{n} more — ask me",
+  spam_reply_hint: 'Reply "rescue 1 3" or "rescue all".',
+  spam_capped: "There were more than {n} — I checked the newest {n}.",
+  spam_incomplete: "⏱ I ran out of time before checking them all — look through Gmail's Spam folder for the rest.",
+  spam_unjudged: "I couldn't judge {n} of them.",
+
   // Action labels (settings view)
   action_guarded_trash: "guarded trash",
   action_guarded_archive: "guarded archive",
@@ -184,6 +197,19 @@ export const messages: Record<"en" | "he", Record<MsgKey, string>> = {
     poll_more: " ועוד {n}",
     poll_fallback_head: "{n} מיילים חדשים וחשובים:",
     poll_no_subject: "(ללא נושא)",
+
+    // Weekly spam check
+    spam_head: "🧹 בדיקת ספאם (7 הימים האחרונים): {total} בספאם, {n} נראים לגיטימיים:",
+    spam_head_one: "🧹 בדיקת ספאם (7 הימים האחרונים): {total} בספאם, אחד נראה לגיטימי:",
+    spam_none: "🧹 בדיקת ספאם: {total} בספאם, שום דבר לא נראה לגיטימי.",
+    spam_empty: "🧹 בדיקת ספאם: אין כלום בספאם מ־7 הימים האחרונים.",
+    spam_by_rule: "יש לך כלל לשולח הזה",
+    spam_phishing: "⚠️ נראה כמו פישינג — לחלץ רק אם את/ה בטוח/ה",
+    spam_more: "ועוד {n} — אפשר לשאול אותי",
+    spam_reply_hint: "השב/י \"חלץ 1 3\" או \"חלץ הכול\".",
+    spam_capped: "היו יותר מ־{n} — בדקתי את {n} החדשים ביותר.",
+    spam_incomplete: "⏱ נגמר לי הזמן לפני שבדקתי את כולם — כדאי לעבור על השאר בתיקיית הספאם ב־Gmail.",
+    spam_unjudged: "לא הצלחתי לשפוט {n} מהם.",
 
     // Action labels
     action_guarded_trash: "זריקה עם בקרה",

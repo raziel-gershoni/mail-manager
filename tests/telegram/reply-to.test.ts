@@ -65,4 +65,22 @@ describe("handleMessage reply-to injection", () => {
     expect(joined).toContain("do NOT guess");     // precise-mode instruction
     expect(joined).not.toContain('"""');          // used refs, not the untrusted-text fallback
   });
+
+  it("numbers the refs [1], [2]… in saved order, so \"rescue 1 3\" resolves to exact ids", async () => {
+    const { deps, seen } = build({
+      replyRefs: [
+        { id: "s1", from: "dana@x.com", subject: "Re: dinner", kind: "spam" },
+        { id: "s2", from: "bank@x.com", subject: "Card blocked", kind: "spam-phishing" },
+        { id: "s3", from: "shop@x.com", subject: "Your order", kind: "spam" },
+      ],
+    });
+    await handleMessage("rescue 1 3", deps);
+    const userMsg = (seen[0] as Array<{ role: string; content: string }>).find(m => m.role === "user")!.content;
+    expect(userMsg).toContain('[1] id=s1 (spam) — from/subject (UNTRUSTED labels): dana@x.com — "Re: dinner"');
+    expect(userMsg).toContain("[2] id=s2 (spam-phishing)");
+    expect(userMsg).toContain("[3] id=s3 (spam)");
+    expect(userMsg.indexOf("[1] id=s1")).toBeLessThan(userMsg.indexOf("[2] id=s2"));
+    expect(userMsg).toContain("do NOT guess");
+    expect(userMsg.endsWith("rescue 1 3")).toBe(true);
+  });
 });

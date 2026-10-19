@@ -1,0 +1,103 @@
+// tests/weekly/spam-report.test.ts
+import { describe, it, expect } from "vitest";
+import { composeSpamReport, MAX_REPORT_CHARS } from "../../src/weekly/spam-report.js";
+import type { FlaggedSpam, SpamCheck } from "../../src/weekly/spam.js";
+
+const acme: FlaggedSpam = { id: "s1", from: "Acme Billing <billing@acme.com>", subject: "Invoice 12", reason: "rule:sender:billing@acme.com", suspicious: false, byRule: true };
+const paypal: FlaggedSpam = { id: "s2", from: "PayPaI <alert@paypa1.com>", subject: "Account locked", reason: "claims to be PayPal", suspicious: true, byRule: false };
+const dana: FlaggedSpam = { id: "s3", from: "Dana <dana@x.com>", subject: "Re: dinner", reason: "a personal reply", suspicious: false, byRule: false };
+const check = (over: Partial<SpamCheck> = {}): SpamCheck => ({ total: 143, flagged: [], unjudged: 0, capped: false, incomplete: false, ...over });
+const flagged = (n: number, over: Partial<FlaggedSpam> = {}): FlaggedSpam[] =>
+  Array.from({ length: n }, (_, i) => ({ id: `f${i + 1}`, from: `sender${i + 1}@x.com`, subject: `Subject ${i + 1}`, reason: "looks real", suspicious: false, byRule: false, ...over }));
+
+describe("composeSpamReport", () => {
+  it("lists what looks legitimate, numbered, possible phishing last and marked, and buzzes", () => {
+    const r = composeSpamReport(check({ flagged: [acme, paypal, dana] }), "en");
+    expect(r.text).toBe([
+      "🧹 Spam check (last 7 days): 143 in spam, 3 look legitimate:",
+      "1. Acme Billing <billing@acme.com> — Invoice 12 (you have a rule for this sender)",
+      "2. Dana <dana@x.com> — Re: dinner (a personal reply)",
+      "3. PayPaI <alert@paypa1.com> — Account locked (claims to be PayPal)",
+      "   ⚠️ looks like phishing — rescue only if you're sure",
+      'Reply "rescue 1 3" or "rescue all".',
+    ].join("\n"));
+    expect(r.silent).toBe(false);
+  });
+
+  it("couples the message to the exact ids in the report's numbered order, marking the phishing one", () => {
+    const r = composeSpamReport(check({ flagged: [acme, paypal, dana] }), "en");
+    expect(r.refs).toEqual([
+      { id: "s1", from: "Acme Billing <billing@acme.com>", subject: "Invoice 12", kind: "spam" },
+      { id: "s3", from: "Dana <dana@x.com>", subject: "Re: dinner", kind: "spam" },
+      { id: "s2", from: "PayPaI <alert@paypa1.com>", subject: "Account locked", kind: "spam-phishing" },
+    ]);
+  });
+
+  it("says 'looks' for exactly one", () => {
+    expect(composeSpamReport(check({ flagged: [dana] }), "en").text.split("\n")[0]).toBe("🧹 Spam check (last 7 days): 143 in spam, 1 looks legitimate:");
+  });
+
+  it("is a silent one-liner, with no refs, when nothing looks legitimate", () => {
+    expect(composeSpamReport(check(), "en")).toEqual({ text: "🧹 Spam check: 143 in spam, nothing looks legitimate.", silent: true, refs: [] });
+  });
+
+  it("says so when Spam is empty", () => {
+    expect(composeSpamReport(check({ total: 0 }), "en")).toEqual({ text: "🧹 Spam check: nothing in spam from the last 7 days.", silent: true, refs: [] });
+  });
+
+  it("writes Hebrew", () => {
+    const r = composeSpamReport(check({ flagged: [acme, paypal, dana] }), "he");
+    expect(r.text).toBe([
+      "🧹 בדיקת ספאם (7 הימים האחרונים): 143 בספאם, 3 נראים לגיטימיים:",
+      "1. Acme Billing <billing@acme.com> — Invoice 12 (יש לך כלל לשולח הזה)",
+      "2. Dana <dana@x.com> — Re: dinner (a personal reply)",
+      "3. PayPaI <alert@paypa1.com> — Account locked (claims to be PayPal)",
+      "   ⚠️ נראה כמו פישינג — לחלץ רק אם את/ה בטוח/ה",
+      'השב/י "חלץ 1 3" או "חלץ הכול".',
+    ].join("\n"));
+    expect(composeSpamReport(check(), "he").text).toBe("🧹 בדיקת ספאם: 143 בספאם, שום דבר לא נראה לגיטימי.");
+  });
+
+  it("notes the cap, a check that ran out of time, and what it couldn't judge — before the reply hint", () => {
+    const r = composeSpamReport(check({ total: 300, capped: true, incomplete: true, unjudged: 4, flagged: [dana] }), "en");
+    expect(r.text).toBe([
+      "🧹 Spam check (last 7 days): 300+ in spam, 1 looks legitimate:",
+      "1. Dana <dana@x.com> — Re: dinner (a personal reply)",
+      "There were more than 300 — I checked the newest 300.",
+      "⏱ I ran out of time before checking them all — look through Gmail's Spam folder for the rest.",
+      "I couldn't judge 4 of them.",
+      'Reply "rescue 1 3" or "rescue all".',
+    ].join("\n"));
+  });
+
+  it("keeps the notes on the silent one-liner too", () => {
+    const r = composeSpamReport(check({ incomplete: true, unjudged: 2 }), "en");
+    expect(r.text).toBe([
+      "🧹 Spam check: 143 in spam, nothing looks legitimate.",
+      "⏱ I ran out of time before checking them all — look through Gmail's Spam folder for the rest.",
+      "I couldn't judge 2 of them.",
+    ].join("\n"));
+    expect(r.silent).toBe(true);
+  });
+
+  it("lists at most 20, says how many more, and keeps refs for all of them in order", () => {
+    const r = composeSpamReport(check({ flagged: flagged(25) }), "en");
+    const lines = r.text.split("\n");
+    expect(lines.filter(l => /^\d+\. /.test(l))).toHaveLength(20);
+    expect(lines).toContain("20. sender20@x.com — Subject 20 (looks real)");
+    expect(lines).toContain("+5 more — ask me");
+    expect(r.refs.map(x => x.id)).toEqual(flagged(25).map(f => f.id)); // [21]..[25] continue the numbering
+  });
+
+  it("stays inside Telegram's limit however long the senders, subjects and reasons are", () => {
+    const huge = "x".repeat(500);
+    const r = composeSpamReport(check({ flagged: flagged(20, { from: huge, subject: huge, reason: huge, suspicious: true }) }), "he");
+    expect(r.text.length).toBeLessThanOrEqual(MAX_REPORT_CHARS);
+    expect(r.text).toContain("…");
+    expect(r.refs).toHaveLength(20);
+  });
+
+  it("shows (no subject) for an empty subject", () => {
+    expect(composeSpamReport(check({ flagged: [{ ...dana, subject: "" }] }), "en").text).toContain("1. Dana <dana@x.com> — (no subject) (a personal reply)");
+  });
+});
