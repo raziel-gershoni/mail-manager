@@ -43,3 +43,18 @@ describe("fakeGmailClient with real part trees", () => {
     expect(r.meta.attachments).toEqual([]);
   });
 });
+
+describe("fakeGmailClient.getAttachment", () => {
+  it("serves bytes by attachmentId, or a part's inline bytes by partId — as standard base64", async () => {
+    const raw = rawMessage("m1", multipart("", "mixed", [textPart("0", "hi"), filePart("1", "a.pdf", "application/pdf", 10 * KB), inlineImage("2", "image/png", 25 * KB, { data: "-_8" })]));
+    const g = fakeGmailClient({ historyId: "1", addedSince: {}, messages: { m1: raw }, attachments: { "att-1": "-_8" } });
+    const [pdf, png] = (await g.getMeta("m1")).attachments;
+    expect(await g.getAttachment("m1", pdf!)).toEqual({ data: "+/8=", mimeType: "application/pdf" });
+    expect(await g.getAttachment("m1", png!)).toEqual({ data: "+/8=", mimeType: "image/png" });
+  });
+  it("throws for a file it has no bytes for", async () => {
+    const g = fakeGmailClient({ historyId: "1", addedSince: {}, messages: { m1: withAttachments("m1", "hi", [filePart("1", "a.pdf", "application/pdf", 10 * KB)]) } });
+    const [pdf] = (await g.getMeta("m1")).attachments;
+    await expect(g.getAttachment("m1", pdf!)).rejects.toThrow(/no fake attachment/);
+  });
+});

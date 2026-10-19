@@ -23,6 +23,27 @@ const CLOCK: ToolSchema = {
   parameters: { type: "object", properties: { timezone: { type: "string", description: "IANA timezone name" } }, required: [] },
 };
 
+// A one-page PDF whose only content is `text` (Helvetica, ASCII), with a valid xref —
+// small enough to inline, real enough that pdftotext reads it back.
+function tinyPdf(text: string): string {
+  const esc = text.replace(/[\\()]/g, m => "\\" + m);
+  const stream = `BT /F1 18 Tf 50 750 Td (${esc}) Tj ET`;
+  const objs = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+    `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  let out = "%PDF-1.4\n";
+  const offsets: number[] = [];
+  objs.forEach((o, i) => { offsets.push(out.length); out += `${i + 1} 0 obj\n${o}\nendobj\n`; });
+  const xref = out.length;
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n` + offsets.map(o => `${String(o).padStart(10, "0")} 00000 n \n`).join("");
+  out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(out, "latin1").toString("base64"); // standard base64, as inlineData wants
+}
+
 describe.skipIf(!RUN)("gemini live contract", () => {
   it("answers a plain question (MODEL id is real and reachable)", async () => {
     const { geminiProvider } = await import("../../src/llm/gemini.js");
@@ -112,5 +133,16 @@ describe.skipIf(!RUN)("gemini live contract", () => {
     ]);
     expect(brief.trim().length).toBeGreaterThan(0);
     expect(brief).toContain("4821");
+  }, 60_000);
+
+  it("extracts the text of a PDF attachment sent as inlineData, at low thinking", async () => {
+    // Proves the exact model accepts application/pdf inline data and transcribes it. The
+    // CONTRACT, not the wording: the reference number and the amount come back.
+    const { geminiProvider } = await import("../../src/llm/gemini.js");
+    const text = await geminiProvider(KEY!).extractAttachment({
+      name: "invoice.pdf", mimeType: "application/pdf", data: tinyPdf("Invoice 4821 total due 3240 ILS"),
+    });
+    expect(text).toContain("4821");
+    expect(text).toMatch(/3,?240/);
   }, 60_000);
 });

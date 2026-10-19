@@ -15,6 +15,7 @@ function deps(): SecretaryDeps {
   const llm: LLMProvider = {
     async classifyImportance() { return { important: false, suspicious: false, reason: "" }; },
     async writeBrief() { return ""; },
+    async extractAttachment() { return ""; },
     async reviewTrash() { return []; },
     async reviewPreference() { return []; },
     async agentStep() { throw new Error("agentStep should NOT be called for /start or /help"); },

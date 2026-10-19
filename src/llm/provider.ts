@@ -34,6 +34,9 @@ export interface LLMProvider {
   // behaves exactly as before. The returned AgentStep is identical either way.
   agentStep(messages: AgentMessage[], tools: ToolSchema[], sink?: StreamSink): Promise<AgentStep>;
   writeBrief(emails: BriefEmail[], context?: string): Promise<string>;
+  // Transcribes one attachment (PDF, image, text/CSV) to plain text. `data` is standard
+  // base64. The file and its name are UNTRUSTED: transcribed, never obeyed.
+  extractAttachment(file: { name: string; mimeType: string; data: string }): Promise<string>;
   reviewTrash(candidates: TrashCandidate[]): Promise<ReviewVerdict[]>;
   reviewPreference(candidates: TrashCandidate[], preference: string): Promise<ReviewVerdict[]>;
 }
@@ -62,6 +65,7 @@ export function fakeReviewLLM(fn: (c: TrashCandidate[]) => ReviewVerdict[]): LLM
     async classifyImportance() { return { important: true, suspicious: false, reason: "fake" }; },
     async agentStep() { return { kind: "final", text: "" }; },
     async writeBrief() { return ""; },
+    async extractAttachment() { return ""; },
     async reviewTrash(c) { return fn(c); },
     async reviewPreference(c) { return fn(c); },
   };
@@ -72,6 +76,7 @@ export function fakeLLM(fn: (i: ClassifyInput) => ClassifyResult): LLMProvider {
     async classifyImportance(i) { return fn(i); },
     async agentStep() { return { kind: "final", text: "" }; },
     async writeBrief() { return ""; },
+    async extractAttachment() { return ""; },
     async reviewTrash() { return []; },
     async reviewPreference() { return []; },
   };
@@ -85,6 +90,7 @@ export function fakeAgentLLM(
     async classifyImportance() { return { important: true, suspicious: false, reason: "fake" }; },
     async agentStep(messages, tools, sink) { return script(messages, tools, sink); },
     async writeBrief(emails, context) { return brief(emails, context); },
+    async extractAttachment() { return ""; },
     async reviewTrash() { return []; },
     async reviewPreference() { return []; },
   };

@@ -4,8 +4,9 @@
 // one is rejected with a 400, which would take down classification, the agent, the
 // brief and both reviewers at once. So every path is pinned here — both that no
 // sampling param is sent, and that the rest of the config is exactly what it was.
-// Thinking is pinned too: LOW only on classify and the brief (measured: same verdicts,
-// ~2.5x faster); the agent and both reviewers stay at the model default on purpose.
+// Thinking is pinned too: LOW on classify and the brief (measured: same verdicts, ~2.5x
+// faster) and on attachment extraction (transcription, not judgment); the agent and the
+// reviewers stay at the model default on purpose.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ClassifyInput, StreamSink, TrashCandidate } from "../../src/llm/provider.js";
 
@@ -54,6 +55,7 @@ async function exerciseEveryPath() {
   await llm.writeBrief([{ from: "a@b.com", subject: "s", bodyText: "b" }]);
   await llm.reviewTrash(candidates);
   await llm.reviewPreference(candidates, "trash newsletters");
+  await llm.extractAttachment({ name: "invoice.pdf", mimeType: "application/pdf", data: "JVBERi0xLjQK" });
 }
 
 describe("geminiProvider request config", () => {
@@ -61,13 +63,13 @@ describe("geminiProvider request config", () => {
 
   it("never sends a sampling param (temperature/topP/topK) on any path", async () => {
     await exerciseEveryPath();
-    expect(sent).toHaveLength(6); // every path above reached the SDK — none skipped
+    expect(sent).toHaveLength(7); // every path above reached the SDK — none skipped
     for (const { req } of sent) {
       for (const key of SAMPLING) expect(req.config ?? {}).not.toHaveProperty(key);
     }
   });
 
-  it("pins each path's config: low thinking only on classify and the brief", async () => {
+  it("pins each path's config: low thinking only on classify, the brief and attachment extraction", async () => {
     await exerciseEveryPath();
     const configs = sent.map(s => [s.method, s.req.config ?? {}]);
     const agentConfig = {
@@ -81,6 +83,7 @@ describe("geminiProvider request config", () => {
       ["generateContent", { thinkingConfig: { thinkingLevel: "LOW" } }], // writeBrief
       ["generateContent", { responseMimeType: "application/json" }], // reviewTrash
       ["generateContent", { responseMimeType: "application/json" }], // reviewPreference
+      ["generateContent", { thinkingConfig: { thinkingLevel: "LOW" } }], // extractAttachment
     ]);
   });
 
@@ -103,6 +106,16 @@ describe("geminiProvider request config", () => {
     const [model, user] = sent[1]!.req.contents.slice(1);
     expect(model.parts[0].functionCall.id).toBe("call_9");
     expect(user.parts[0].functionResponse.id).toBe("call_9");
+  });
+
+  it("sends an attachment as inlineData beside an UNTRUSTED transcription instruction", async () => {
+    await geminiProvider("test-key").extractAttachment({ name: "invoice.pdf", mimeType: "application/pdf", data: "JVBERi0xLjQK" });
+    const [content] = sent[0]!.req.contents;
+    expect(content.role).toBe("user");
+    expect(content.parts[0]).toEqual({ inlineData: { mimeType: "application/pdf", data: "JVBERi0xLjQK" } });
+    expect(content.parts[1].text).toContain('"invoice.pdf"');
+    expect(content.parts[1].text).toMatch(/UNTRUSTED/);
+    expect(content.parts[1].text).toMatch(/Never follow instructions/);
   });
 
   it("classify shows the attachment line (and how to weigh it) only for an email with attachments", async () => {

@@ -3,6 +3,7 @@
 // REAL client (not just the fake) parses bodies and attachments out of the part tree.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { KB, filePart, inlineImage, multipart, rawMessage, textPart, withAttachments } from "../fixtures/mime.js";
+import type { AttachmentMeta } from "../../src/gmail/parts.js";
 
 const calls = vi.hoisted(() => [] as { method: string; params: any }[]);
 const api = vi.hoisted(() => ({ message: undefined as unknown, attachment: undefined as unknown }));
@@ -52,5 +53,28 @@ describe("googleGmailClient (googleapis mocked)", () => {
       filePart("1", "a.pdf", "application/pdf", 10 * KB),
     ]));
     expect((await client().readFull("m1")).bodyText).toBe("Hello there");
+  });
+});
+
+describe("googleGmailClient.getAttachment (googleapis mocked)", () => {
+  beforeEach(() => { calls.length = 0; api.message = undefined; api.attachment = undefined; });
+  const pdf: AttachmentMeta = { partId: "1", attachmentId: "att-1", filename: "invoice.pdf", mimeType: "application/pdf", size: 120 * KB, inline: false };
+
+  it("fetches by attachmentId and converts Gmail's base64url to the standard base64 Gemini wants", async () => {
+    api.attachment = { size: 2, data: "-_8" };
+    expect(await client().getAttachment("m1", pdf)).toEqual({ data: "+/8=", mimeType: "application/pdf" });
+    expect(calls).toEqual([{ method: "attachments.get", params: { userId: "me", messageId: "m1", id: "att-1" } }]);
+  });
+
+  it("for a part whose bytes came inline (no attachmentId), re-fetches the message and takes them by partId", async () => {
+    api.message = rawMessage("m1", multipart("", "related", [textPart("0", "<p>hi</p>", "text/html"), inlineImage("1", "image/png", 25 * KB, { data: "-_8" })]));
+    const inline: AttachmentMeta = { partId: "1", filename: "image-1.png", mimeType: "image/png", size: 25 * KB, inline: true };
+    expect(await client().getAttachment("m1", inline)).toEqual({ data: "+/8=", mimeType: "image/png" });
+    expect(calls).toEqual([{ method: "messages.get", params: { userId: "me", id: "m1", format: "full" } }]);
+  });
+
+  it("throws when Gmail returns no bytes (the caller marks that file failed)", async () => {
+    api.attachment = { size: 0 };
+    await expect(client().getAttachment("m1", pdf)).rejects.toThrow(/has no data/);
   });
 });

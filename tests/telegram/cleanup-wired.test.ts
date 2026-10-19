@@ -23,6 +23,7 @@ it("a scripted agent runs propose_trash then confirm_trash and the email is tras
   const llm: LLMProvider = {
     async classifyImportance() { return { important: false, suspicious: false, reason: "" }; },
     async writeBrief() { return ""; },
+    async extractAttachment() { return ""; },
     async reviewTrash() { return []; },
     async reviewPreference() { return []; },
     async agentStep(): Promise<AgentStep> {

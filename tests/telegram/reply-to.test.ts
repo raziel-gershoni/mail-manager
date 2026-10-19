@@ -13,6 +13,7 @@ function build(over: Partial<SecretaryDeps> = {}) {
   const llm: LLMProvider = {
     async classifyImportance() { return { important: false, suspicious: false, reason: "" }; },
     async writeBrief() { return ""; },
+    async extractAttachment() { return ""; },
     async reviewTrash() { return []; },
     async reviewPreference() { return []; },
     async agentStep(messages: unknown[]) { seen.push(messages); return { kind: "final", text: "ok" }; },

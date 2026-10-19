@@ -14,6 +14,7 @@ function gmail() {
 function llm(fn: (c: any[], p: string) => any[]): LLMProvider {
   return { async classifyImportance() { return { important: true, suspicious: false, reason: "" }; },
     async agentStep() { return { kind: "final", text: "" }; }, async writeBrief() { return ""; },
+    async extractAttachment() { return ""; },
     async reviewTrash() { throw new Error("preferenceVet must NOT use reviewTrash"); },
     async reviewPreference(c, p) { return fn(c as any[], p); } } as LLMProvider;
 }
