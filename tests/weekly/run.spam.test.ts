@@ -51,7 +51,7 @@ describe("weekly spam check, wired", () => {
     await runWeeklyTasks(h.deps);
     expect(h.sent[0]).toEqual({ text: [
       "🧹 Spam check (last 7 days): 2 in spam, 1 looks legitimate:",
-      "1. Dana <dana@x.com> — Re: dinner (a personal reply)",
+      "1. Dana <dana[at]x[.]com> — Re: dinner (a personal reply)",
       'Reply "rescue 1 3" or "rescue all".',
     ].join("\n"), silent: false });
     expect(h.saved[0]).toEqual({ messageId: 901, refs: [{ id: "s1", from: "Dana <dana@x.com>", subject: "Re: dinner", kind: "spam" }] });

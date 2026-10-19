@@ -8,7 +8,7 @@ import { OPS_RETENTION_MS, type OpsEvent, type OpsEventKind } from "../ops/event
 import { log } from "../util/log.js";
 import { gatherWeek, retroSince, retroUntil, type WeekFacts } from "./gather.js";
 import { secondLook, checkableActed, SECOND_LOOK_CAP, type SecondLook } from "./second-look.js";
-import { clipLine } from "./text.js";
+import { untrustedLine } from "./text.js";
 import type { WeeklyDeps } from "./run.js";
 
 // At most this many "worth a look" items are numbered (R8), and the whole message stays
@@ -32,8 +32,9 @@ const OPS_KEY: Record<OpsEventKind, MsgKey> = {
   weekly_failed: "retro_ops_weekly", // both kinds in one count; the error text is never shown
 };
 
-// Sender, subject and the model's reason are UNTRUSTED: each is shown through clipLine,
-// one line and bounded, so a newline in one can't add a fake numbered item.
+// Sender, subject and the model's reason are UNTRUSTED: each is shown through
+// untrustedLine — defanged, so nothing in it can be tapped, and on one bounded line, so a
+// newline in one can't add a fake numbered item.
 function senderKey(from: string): string {
   const m = from.match(/<([^>]+)>/);
   return (m ? m[1]! : from).trim().toLowerCase();
@@ -49,7 +50,7 @@ function topSenders(items: ReadonlyArray<{ from: string }>): string {
     if (k) counts.set(k, (counts.get(k) ?? 0) + 1);
   }
   return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, TOP_SENDERS)
-    .map(([k, n]) => `${clipLine(k, FROM_MAX)} (${n})`).join(", ");
+    .map(([k, n]) => `${untrustedLine(k, FROM_MAX)} (${n})`).join(", ");
 }
 
 function opsLines(events: readonly OpsEvent[], lang: Lang): string[] {
@@ -96,9 +97,9 @@ export function composeRetroReport(facts: WeekFacts, look: SecondLook, lang: Lan
       middle.push("", t(lang, "retro_worth_look"));
       listed.forEach((f, i) => {
         const verb = t(lang, f.action === "trashed" ? "retro_item_trashed" : "retro_item_archived");
-        const subject = clipLine(f.subject, SUBJECT_MAX) || t(lang, "poll_no_subject");
-        const reason = clipLine(f.reason, REASON_MAX);
-        middle.push(`${i + 1}. ${verb} — ${clipLine(f.from, FROM_MAX)} — ${subject}${reason ? ` (${reason})` : ""}`);
+        const subject = untrustedLine(f.subject, SUBJECT_MAX) || t(lang, "poll_no_subject");
+        const reason = untrustedLine(f.reason, REASON_MAX);
+        middle.push(`${i + 1}. ${verb} — ${untrustedLine(f.from, FROM_MAX)} — ${subject}${reason ? ` (${reason})` : ""}`);
       });
       if (look.flagged.length > k) middle.push(t(lang, "retro_more", { n: look.flagged.length - k }));
       if (k > 0) middle.push(t(lang, "retro_reply_hint"));

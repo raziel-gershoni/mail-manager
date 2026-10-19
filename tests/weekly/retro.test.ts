@@ -73,7 +73,7 @@ describe("weekly retro kind", () => {
     await runWeeklyTasks(deps);
     expect(sent).toHaveLength(1);
     expect(sent[0]!.text).toContain("🗓 Week in review: trashed 2 · archived 1 · rescued from spam 2 · undone 0 · rules +0");
-    expect(sent[0]!.text).toContain("1. trashed — Acme <billing@acme.com> — Invoice 4821 (looks like a real invoice)");
+    expect(sent[0]!.text).toContain("1. trashed — Acme <billing[at]acme[.]com> — Invoice 4821 (looks like a real invoice)");
     expect(sent[0]!.text).toContain("🛠 Ops:");
     expect(sent[0]!.silent).toBe(false);
     expect(await refs.lookup(1, 777)).toEqual([{ id: "t1", from: "Acme <billing@acme.com>", subject: "Invoice 4821", kind: "trashed" }]);

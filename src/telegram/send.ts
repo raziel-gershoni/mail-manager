@@ -23,10 +23,14 @@ export async function sendFormatted(bot: Bot, chatId: number, raw: string, opts?
 
 // For a message the bot composes itself around UNTRUSTED email text (the weekly reports:
 // senders, subjects, model reasons) and that has no markdown of its own. It goes out as
-// plain text, with no parse_mode, so none of that text can render as a hidden link
-// ("[Verify](https://phish)"), a mailto link or formatting. It shows exactly as written.
-// Link previews are off as well, so a URL in a subject isn't fetched and shown as a card.
-// Like sendFormatted it doesn't split, so the caller keeps the text under 4096 characters.
+// plain text, with no parse_mode or entities. What that PREVENTS: markup the text carries
+// — a hidden link behind anchor text ("[Verify](https://phish)" shows literally), a
+// markdown mailto link, bold/italic. What it does NOT prevent: Telegram's own detection,
+// which still makes a bare URL or domain, an email address, an @mention, a /command (a
+// tapped one is sent to the bot), a #hashtag or a phone number tappable in plain text.
+// So the callers defang every untrusted field first (src/weekly/text.ts, defang).
+// Link previews are off as well, so a URL that slips through isn't fetched and shown as a
+// card. Like sendFormatted it doesn't split, so the caller keeps the text under 4096 characters.
 export async function sendPlain(bot: Bot, chatId: number, text: string, opts?: { silent?: boolean }): Promise<number> {
   const m = await bot.api.sendMessage(chatId, text.toWellFormed(), {
     link_preview_options: { is_disabled: true },

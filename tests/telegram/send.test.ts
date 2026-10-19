@@ -70,9 +70,10 @@ describe("sendPlain", () => {
     await sendPlain(bot, 555, report.text, { silent: report.silent });
     const sent = calls[0]!;
     // The subject, the sender's address and the model's reason all arrive as literal text,
-    // right above the phishing warning — no hidden URL behind anchor text, no mailto, no italics.
+    // right above the phishing warning — no hidden URL behind anchor text, no mailto, no
+    // italics — and defanged, so Telegram can't auto-link the bare address or URL either.
     expect(sent.text).toBe(report.text);
-    expect(sent.text).toContain("1. PayPaI <alert@paypa1.com> — [Verify your account](https://paypa1.example/login) (*urgent* notice)");
+    expect(sent.text).toContain("1. PayPaI <alert[at]paypa1[.]com> — [Verify your account](hxxps://paypa1[.]example/login) (*urgent* notice)");
     expect(sent.text).toContain("⚠️ looks like phishing");
     expect(sent.other?.parse_mode).toBeUndefined();
     expect(sent.other?.entities).toBeUndefined();
@@ -80,9 +81,8 @@ describe("sendPlain", () => {
   });
 
   it("is needed: sendFormatted would turn that subject into a hidden MarkdownV2 link", async () => {
-    const report = composeSpamReport(check, "en");
     const { bot, calls } = fakeBot();
-    await sendFormatted(bot, 555, report.text);
+    await sendFormatted(bot, 555, `1. ${phish.from} — ${phish.subject} (${phish.reason})`);
     expect(calls[0]!.other?.parse_mode).toBe("MarkdownV2");
     expect(calls[0]!.text).toContain("[Verify your account](https://paypa1.example/login)");
     expect(calls[0]!.text).toContain("(mailto:alert@paypa1.com)");

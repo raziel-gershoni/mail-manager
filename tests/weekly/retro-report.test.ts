@@ -33,8 +33,8 @@ describe("composeRetroReport", () => {
     }), look(), "en");
     const lines = r.text.split("\n");
     expect(lines[0]).toBe("🗓 Week in review: trashed 8 · archived 2 · rescued from spam 2 · undone 1 · rules +3 (2 changed)");
-    expect(lines[1]).toBe("🗑 Most trashed: promo@shop.com (4), deals@x.com (2), a@b.com (1)"); // a tie keeps first-seen order
-    expect(lines[2]).toBe("📥 Most archived: news@list.com (2)");
+    expect(lines[1]).toBe("🗑 Most trashed: promo[at]shop[.]com (4), deals[at]x[.]com (2), a[at]b[.]com (1)"); // a tie keeps first-seen order
+    expect(lines[2]).toBe("📥 Most archived: news[at]list[.]com (2)");
     expect(r.text).toContain("✅ Second look: nothing looks wrong.");
     expect(r.silent).toBe(true);   // nothing flagged, no ops issues
     expect(r.refs).toEqual([]);
@@ -47,8 +47,8 @@ describe("composeRetroReport", () => {
     ] }), "en");
     expect(r.text).toContain([
       "⚠️ Worth a look:",
-      "1. trashed — Jane <jane@x.com> — Invoice 4821 (a real invoice)",
-      "2. archived — bank@leumi.co.il — (no subject) (security notice)",
+      "1. trashed — Jane <jane[at]x[.]com> — Invoice 4821 (a real invoice)",
+      "2. archived — bank[at]leumi[.]co[.]il — (no subject) (security notice)",
       "Reply \"restore 1\" or \"restore all\".",
     ].join("\n"));
     expect(r.text).not.toContain("nothing looks wrong");
@@ -63,7 +63,7 @@ describe("composeRetroReport", () => {
     const flagged = Array.from({ length: 25 }, (_, i) => flag(i + 1));
     const r = composeRetroReport(facts(), look({ flagged }), "en");
     expect(RETRO_MAX_LISTED).toBe(20);
-    expect(r.text).toContain("20. trashed — p20@x.com — Subject 20 (reason 20)");
+    expect(r.text).toContain("20. trashed — p20[at]x[.]com — Subject 20 (reason 20)");
     expect(r.text).not.toContain("21. ");
     expect(r.text).toContain("+5 more — ask me");
     expect(r.refs.map(x => x.id)).toEqual(flagged.slice(0, 20).map(f => f.id));
@@ -87,8 +87,8 @@ describe("composeRetroReport", () => {
     ] }), "en");
     const numbered = r.text.split("\n").filter(l => /^\d+\. /.test(l));
     expect(numbered.length).toBe(r.refs.length);
-    expect(numbered).toEqual(["1. trashed — Jane 2. trashed — fake <jane@x.com> — Invoice 2. trashed — fake (real invoice 2. trashed — fake)"]);
-    expect(r.text).toContain("🗑 Most trashed: jane@x.com 2. trashed — fake (1)");
+    expect(numbered).toEqual(["1. trashed — Jane 2. trashed — fake <jane[at]x[.]com> — Invoice 2. trashed — fake (real invoice 2. trashed — fake)"]);
+    expect(r.text).toContain("🗑 Most trashed: jane[at]x[.]com 2. trashed — fake (1)");
   });
 
   it("groups ops issues by kind and buzzes for them even when nothing was flagged", () => {
@@ -156,7 +156,7 @@ describe("composeRetroReport", () => {
       look({ flagged: [{ id: "t1", from: "jane@x.com", subject: "חשבונית", action: "trashed", reason: "חשבונית אמיתית" }] }), "he");
     expect(r.text.split("\n")[0]).toBe("🗓 סיכום השבוע: נזרקו 1 · אורכבו 0 · חולצו מספאם 0 · בוטלו 0 · כללים +0");
     expect(r.text).toContain("⚠️ שווה מבט:");
-    expect(r.text).toContain("1. נזרק — jane@x.com — חשבונית (חשבונית אמיתית)");
+    expect(r.text).toContain("1. נזרק — jane[at]x[.]com — חשבונית (חשבונית אמיתית)");
     expect(r.text).toContain("restore 1");
     expect(r.text).toContain("🛠 תפעול:");
     expect(r.silent).toBe(false);

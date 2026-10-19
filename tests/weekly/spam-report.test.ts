@@ -15,9 +15,9 @@ describe("composeSpamReport", () => {
     const r = composeSpamReport(check({ flagged: [acme, paypal, dana] }), "en");
     expect(r.text).toBe([
       "🧹 Spam check (last 7 days): 143 in spam, 3 look legitimate:",
-      "1. Acme Billing <billing@acme.com> — Invoice 12 (you have a rule for this sender, but Gmail put it in Spam — check it's really them)",
-      "2. Dana <dana@x.com> — Re: dinner (a personal reply)",
-      "3. PayPaI <alert@paypa1.com> — Account locked (claims to be PayPal)",
+      "1. Acme Billing <billing[at]acme[.]com> — Invoice 12 (you have a rule for this sender, but Gmail put it in Spam — check it's really them)",
+      "2. Dana <dana[at]x[.]com> — Re: dinner (a personal reply)",
+      "3. PayPaI <alert[at]paypa1[.]com> — Account locked (claims to be PayPal)",
       "   ⚠️ looks like phishing — rescue only if you're sure",
       'Reply "rescue 1 3" or "rescue all".',
     ].join("\n"));
@@ -38,8 +38,8 @@ describe("composeSpamReport", () => {
     const r = composeSpamReport(check({ flagged: [forged, dana] }), "en");
     expect(r.text).toBe([
       "🧹 Spam check (last 7 days): 143 in spam, 2 look legitimate:",
-      "1. Dana <dana@x.com> — Re: dinner (a personal reply)",
-      "2. Acme Billing <billing@acme.com> — Invoice 12 (you have a rule for this sender, but Gmail put it in Spam — check it's really them)",
+      "1. Dana <dana[at]x[.]com> — Re: dinner (a personal reply)",
+      "2. Acme Billing <billing[at]acme[.]com> — Invoice 12 (you have a rule for this sender, but Gmail put it in Spam — check it's really them)",
       "   ⚠️ looks like phishing — rescue only if you're sure",
       'Reply "rescue 1 3" or "rescue all".',
     ].join("\n"));
@@ -62,9 +62,9 @@ describe("composeSpamReport", () => {
     const r = composeSpamReport(check({ flagged: [acme, paypal, dana] }), "he");
     expect(r.text).toBe([
       "🧹 בדיקת ספאם (7 הימים האחרונים): 143 בספאם, 3 נראים לגיטימיים:",
-      "1. Acme Billing <billing@acme.com> — Invoice 12 (יש לך כלל לשולח הזה, אבל Gmail שם אותו בספאם — כדאי לוודא שזה באמת השולח)",
-      "2. Dana <dana@x.com> — Re: dinner (a personal reply)",
-      "3. PayPaI <alert@paypa1.com> — Account locked (claims to be PayPal)",
+      "1. Acme Billing <billing[at]acme[.]com> — Invoice 12 (יש לך כלל לשולח הזה, אבל Gmail שם אותו בספאם — כדאי לוודא שזה באמת השולח)",
+      "2. Dana <dana[at]x[.]com> — Re: dinner (a personal reply)",
+      "3. PayPaI <alert[at]paypa1[.]com> — Account locked (claims to be PayPal)",
       "   ⚠️ נראה כמו פישינג — לחלץ רק אם את/ה בטוח/ה",
       'השב/י "חלץ 1 3" או "חלץ הכול".',
     ].join("\n"));
@@ -75,7 +75,7 @@ describe("composeSpamReport", () => {
     const r = composeSpamReport(check({ total: 300, capped: true, incomplete: true, unjudged: 4, flagged: [dana] }), "en");
     expect(r.text).toBe([
       "🧹 Spam check (last 7 days): 300+ in spam, 1 looks legitimate:",
-      "1. Dana <dana@x.com> — Re: dinner (a personal reply)",
+      "1. Dana <dana[at]x[.]com> — Re: dinner (a personal reply)",
       "There were more than 300 — I checked the newest 300.",
       "⏱ I ran out of time before checking them all — look through Gmail's Spam folder for the rest.",
       "I couldn't judge 4 of them.",
@@ -113,7 +113,7 @@ describe("composeSpamReport", () => {
     const r = composeSpamReport(check({ flagged: flagged(25) }), "en");
     const lines = r.text.split("\n");
     expect(lines.filter(l => /^\d+\. /.test(l))).toHaveLength(20);
-    expect(lines).toContain("20. sender20@x.com — Subject 20 (looks real)");
+    expect(lines).toContain("20. sender20[at]x[.]com — Subject 20 (looks real)");
     expect(lines).toContain("+5 more — ask me");
     expect(r.refs.map(x => x.id)).toEqual(flagged(25).map(f => f.id)); // [21]..[25] continue the numbering
   });
@@ -127,6 +127,6 @@ describe("composeSpamReport", () => {
   });
 
   it("shows (no subject) for an empty subject", () => {
-    expect(composeSpamReport(check({ flagged: [{ ...dana, subject: "" }] }), "en").text).toContain("1. Dana <dana@x.com> — (no subject) (a personal reply)");
+    expect(composeSpamReport(check({ flagged: [{ ...dana, subject: "" }] }), "en").text).toContain("1. Dana <dana[at]x[.]com> — (no subject) (a personal reply)");
   });
 });
