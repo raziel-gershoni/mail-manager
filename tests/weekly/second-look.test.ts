@@ -108,10 +108,43 @@ describe("secondLook", () => {
   });
 
   it("a batch whose review call throws is counted as couldn't re-check, and the look still completes", async () => {
+    const ids = Array.from({ length: 45 }, (_, i) => `m${i}`);
+    const gmail = fakeGmailClient({ historyId: "1", addedSince: {}, messages: Object.fromEntries(ids.map(id => [id, raw(id, "a@x.com", id)])) });
+    let call = 0;
+    const llm: LLMProvider = { ...fakeLLM(() => ({ important: false, suspicious: false, reason: "" })),
+      async reviewActed(items) {
+        if (++call === 1) throw new Error("gemini 504");
+        return { verdicts: items.map(i => ({ id: i.id, looksWrong: i.id === "m0", reason: "a person" })), unjudged: 0 };
+      } };
+    const look = await secondLook(facts(ids.map((id, i) => acted(id, "trashed", "plain", i))), { gmail, llm, ...noDeadline });
+    expect(look).toEqual({ flagged: [{ id: "m0", from: "a@x.com", subject: "m0", action: "trashed", reason: "a person" }],
+      unjudged: 40, skippedGone: 0, capped: false, incomplete: false });
+  });
+
+  // Spec B §1 / C: a failed run retries next hour; an outage must never become a clean
+  // "nothing looks wrong" with the week's key set.
+  it("throws when every review call fails", async () => {
     const gmail = fakeGmailClient({ historyId: "1", addedSince: {}, messages: { a: raw("a", "a@x.com", "a") } });
     const llm: LLMProvider = { ...fakeLLM(() => ({ important: false, suspicious: false, reason: "" })), async reviewActed() { throw new Error("gemini 504"); } };
-    const look = await secondLook(facts([acted("a", "trashed", "plain", 1)]), { gmail, llm, ...noDeadline });
-    expect(look).toEqual({ flagged: [], unjudged: 1, skippedGone: 0, capped: false, incomplete: false });
+    await expect(secondLook(facts([acted("a", "trashed", "plain", 1)]), { gmail, llm, ...noDeadline }))
+      .rejects.toThrow("second look: no batch could be judged");
+  });
+
+  it("throws when no message could be read at all", async () => {
+    const gmail = fakeGmailClient({ historyId: "1", addedSince: {}, messages: {} });
+    gmail.getMeta = async () => { throw gaxiosError(500, "Backend Error"); };
+    const calls: ActedCandidate[][] = [];
+    await expect(secondLook(facts([acted("a", "trashed", "plain", 1), acted("b", "archived", "pref", 2)]), { gmail, llm: judging(() => ({ verdicts: [], unjudged: 0 }), calls), ...noDeadline }))
+      .rejects.toThrow("second look: no message could be read");
+    expect(calls).toEqual([]);
+  });
+
+  it("is not a failure when everything acted on is gone for good or already back", async () => {
+    const gmail = fakeGmailClient({ historyId: "1", addedSince: {}, messages: { back: raw("back", "a@x.com", "Hi", ["INBOX"]) } });
+    const orig = gmail.getMeta.bind(gmail);
+    gmail.getMeta = async (id: string) => { if (id === "gone") throw gaxiosError(404, "Requested entity was not found."); return orig(id); };
+    const look = await secondLook(facts([acted("gone", "trashed", "plain", 1), acted("back", "trashed", "chat", 2)]), { gmail, llm: allFine, ...noDeadline });
+    expect(look).toEqual({ flagged: [], unjudged: 0, skippedGone: 1, capped: false, incomplete: false });
   });
 
   it("re-checks at most 300 — the newest — and reports the rest as capped", async () => {
@@ -144,10 +177,14 @@ describe("secondLook", () => {
     const orig = gmail.getMeta.bind(gmail);
     gmail.getMeta = async (id: string) => { t += 10; return orig(id); }; // each fetch costs 10ms of the budget
     const calls: ActedCandidate[][] = [];
-    const look = await secondLook(facts(ids.map((id, i) => acted(id, "trashed", "plain", i))),
-      { gmail, llm: judging(items => ({ verdicts: [], unjudged: items.length }), calls), deadline: 25, now: () => t });
+    const fetched: string[] = [];
+    const counted = gmail.getMeta;
+    gmail.getMeta = async (id: string) => { fetched.push(id); return counted(id); };
+    await expect(secondLook(facts(ids.map((id, i) => acted(id, "trashed", "plain", i))),
+      { gmail, llm: judging(items => ({ verdicts: [], unjudged: items.length }), calls), deadline: 25, now: () => t }))
+      .rejects.toThrow("second look: no batch could be judged"); // read some, judged none: not a report
+    expect(fetched).toHaveLength(3); // the fetches stopped at the deadline
     expect(calls).toHaveLength(0); // past the deadline before any batch could start
-    expect(look).toEqual({ flagged: [], unjudged: 5, skippedGone: 0, capped: false, incomplete: true });
   });
 
   it("stops between batches at the deadline: the unsent batch is counted, the judged one kept", async () => {
@@ -163,9 +200,21 @@ describe("secondLook", () => {
   });
 
   it("stops waiting for a review call that outlives the deadline: incomplete, that batch counted as couldn't re-check", async () => {
+    const ids = Array.from({ length: 45 }, (_, i) => `m${i}`);
+    const gmail = fakeGmailClient({ historyId: "1", addedSince: {}, messages: Object.fromEntries(ids.map(id => [id, raw(id, "a@x.com", id)])) });
+    let call = 0;
+    const hungSecond: LLMProvider = { ...fakeLLM(() => ({ important: false, suspicious: false, reason: "" })),
+      reviewActed: (items) => ++call === 1
+        ? Promise.resolve({ verdicts: items.map(i => ({ id: i.id, looksWrong: false, reason: "" })), unjudged: 0 })
+        : new Promise<never>(() => {}) };
+    const look = await secondLook(facts(ids.map((id, i) => acted(id, "trashed", "plain", i))), { gmail, llm: hungSecond, deadline: 20, now: () => 0 });
+    expect(look).toEqual({ flagged: [], unjudged: 5, skippedGone: 0, capped: false, incomplete: true });
+  });
+
+  it("a lone review call that outlives the deadline fails the look (nothing was judged)", async () => {
     const gmail = fakeGmailClient({ historyId: "1", addedSince: {}, messages: { a: raw("a", "a@x.com", "a") } });
     const hung: LLMProvider = { ...fakeLLM(() => ({ important: false, suspicious: false, reason: "" })), reviewActed: () => new Promise<never>(() => {}) };
-    const look = await secondLook(facts([acted("a", "trashed", "plain", 1)]), { gmail, llm: hung, deadline: 20, now: () => 0 });
-    expect(look).toEqual({ flagged: [], unjudged: 1, skippedGone: 0, capped: false, incomplete: true });
+    await expect(secondLook(facts([acted("a", "trashed", "plain", 1)]), { gmail, llm: hung, deadline: 20, now: () => 0 }))
+      .rejects.toThrow("second look: no batch could be judged");
   });
 });

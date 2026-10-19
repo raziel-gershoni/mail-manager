@@ -88,6 +88,15 @@ describe("weekly retro kind", () => {
     expect(sent).toHaveLength(1);
   });
 
+  it("an outage in the second look (every review call fails) sends nothing and leaves the week unmarked", async () => {
+    const llm: LLMProvider = { ...fakeLLM(noLLM), async reviewActed() { throw new Error("503 UNAVAILABLE"); } };
+    const { deps, sent, runs, ops } = await setup({ llm });
+    await runWeeklyTasks(deps);
+    expect(sent).toEqual([]);
+    expect(await runs.get(1, "retro")).toBeNull();
+    expect(ops.all(1).filter(e => e.kind === "weekly_failed").map(e => e.detail?.kind)).toEqual(["retro"]); // one attempt used
+  });
+
   it("without its repos it sends nothing and leaves the week unmarked, so the next hour retries", async () => {
     const { deps, sent, runs } = await setup({ activity: undefined });
     await runWeeklyTasks(deps);

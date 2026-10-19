@@ -16,7 +16,7 @@ const WEEK = "2026-10-18";
 const raw = (id: string, from: string, subject: string): GmailRawMessage =>
   ({ id, threadId: id, snippet: "", labelIds: ["SPAM"], payload: { headers: [{ name: "From", value: from }, { name: "Subject", value: subject }] } });
 
-function harness(opts: { legit?: string[]; send?: WeeklyDeps["send"]; runs?: WeeklyDeps["runs"]; runStart?: number } = {}) {
+function harness(opts: { legit?: string[]; send?: WeeklyDeps["send"]; runs?: WeeklyDeps["runs"]; runStart?: number; reviewSpam?: LLMProvider["reviewSpam"] } = {}) {
   const events: string[] = [];
   const sent: { text: string; silent: boolean }[] = [];
   const saved: { messageId: number; refs: DigestRef[] }[] = [];
@@ -28,6 +28,7 @@ function harness(opts: { legit?: string[]; send?: WeeklyDeps["send"]; runs?: Wee
       const verdicts: SpamVerdict[] = c.map(x => ({ id: x.id, legitimate: legit.has(x.id), suspicious: false, reason: legit.has(x.id) ? "a personal reply" : "marketing" }));
       return { verdicts, unjudged: 0 };
     },
+    ...(opts.reviewSpam ? { reviewSpam: opts.reviewSpam } : {}),
   };
   const runs = opts.runs ?? fakeWeeklyRunRepo();
   const runStart = opts.runStart ?? RUN_START;
@@ -79,6 +80,20 @@ describe("weekly spam check, wired", () => {
     const h = harness({ legit: ["s1"], send: async () => { throw new Error("telegram 502"); } });
     await runWeeklyTasks(h.deps);
     expect(await h.runs.get(1, "spam")).toBeNull();
+    const next = harness({ legit: ["s1"], runs: h.runs, runStart: RUN_START + HOUR });
+    await runWeeklyTasks(next.deps);
+    expect(spamReports(next.sent)).toHaveLength(1);
+    expect(await h.runs.get(1, "spam")).toBe(WEEK);
+  });
+});
+
+describe("weekly spam check, wired — an outage", () => {
+  it("a model that always fails sends nothing and leaves the key unset, so the next hour retries", async () => {
+    const h = harness({ reviewSpam: async () => { throw new Error("503 UNAVAILABLE"); } });
+    await runWeeklyTasks(h.deps);
+    expect(spamReports(h.sent)).toEqual([]);
+    expect(await h.runs.get(1, "spam")).toBeNull();
+
     const next = harness({ legit: ["s1"], runs: h.runs, runStart: RUN_START + HOUR });
     await runWeeklyTasks(next.deps);
     expect(spamReports(next.sent)).toHaveLength(1);

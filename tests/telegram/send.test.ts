@@ -21,7 +21,7 @@ const phish: FlaggedSpam = {
   id: "s9", from: "PayPaI <alert@paypa1.com>", subject: "[Verify your account](https://paypa1.example/login)",
   reason: "*urgent* notice", suspicious: true, byRule: false,
 };
-const check: SpamCheck = { total: 12, flagged: [phish], unjudged: 0, capped: false, incomplete: false };
+const check: SpamCheck = { total: 12, flagged: [phish], judged: 12, unjudged: 0, capped: false, incomplete: false };
 
 describe("sendFormatted", () => {
   it("never sends a lone surrogate, formatted or on the plain fallback", async () => {

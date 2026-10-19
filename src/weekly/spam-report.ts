@@ -20,7 +20,9 @@ function item(f: FlaggedSpam, n: number, lang: Lang): string {
   return f.suspicious ? `${line}\n   ${t(lang, "spam_phishing")}` : line;
 }
 
-// Buzzes only when something was flagged; otherwise a silent one-liner. The refs couple
+// Buzzes when something was flagged, or when nothing was but some couldn't be judged (then
+// it never says "nothing looks legitimate": it says how many it could judge and how many
+// it couldn't, because the owner should look). Otherwise a silent one-liner. The refs couple
 // the message to the exact Gmail ids in the report's numbered order (so "rescue 1 3"
 // resolves exactly), one per flagged email — the ones past the listed 20 continue the
 // numbering. A possible-phishing ref is kind "spam-phishing", so the agent knows to ask
@@ -30,12 +32,16 @@ export function composeSpamReport(c: SpamCheck, lang: Lang): { text: string; sil
   const notes: string[] = [];
   if (c.capped) notes.push(t(lang, "spam_capped", { n: c.total }));
   if (c.incomplete) notes.push(t(lang, "spam_incomplete"));
-  if (c.unjudged > 0) notes.push(t(lang, "spam_unjudged", { n: c.unjudged }));
 
   if (c.flagged.length === 0) {
-    const head = c.total === 0 ? t(lang, "spam_empty") : t(lang, "spam_none", { total });
-    return { text: [head, ...notes].join("\n"), silent: true, refs: [] };
+    if (c.total === 0) return { text: [t(lang, "spam_empty"), ...notes].join("\n"), silent: true, refs: [] };
+    if (c.unjudged > 0) {
+      const head = t(lang, "spam_none_unjudged", { total, judged: c.judged, unjudged: c.unjudged });
+      return { text: [head, ...notes].join("\n"), silent: false, refs: [] };
+    }
+    return { text: [t(lang, "spam_none", { total }), ...notes].join("\n"), silent: true, refs: [] };
   }
+  if (c.unjudged > 0) notes.push(t(lang, "spam_unjudged", { n: c.unjudged }));
 
   // Clean-looking ones first, possible phishing last; otherwise in the check's order.
   const ordered = [...c.flagged.filter(f => !f.suspicious), ...c.flagged.filter(f => f.suspicious)];

@@ -163,23 +163,60 @@ describe("checkSpam", () => {
     expect(r.flagged.map(f => f.id)).toEqual(["u1"]);
   });
 
-  it("stops reading messages at the deadline too", async () => {
+  it("stops reading messages at the deadline too — and, having judged nothing, fails rather than report", async () => {
     let clock = NOW;
     const gmail = spamFolder(many(20));
     const getMeta = gmail.getMeta.bind(gmail);
-    gmail.getMeta = async (id: string) => { clock = DEADLINE; return getMeta(id); }; // the first read ran out the clock
+    const read: string[] = [];
+    gmail.getMeta = async (id: string) => { read.push(id); clock = DEADLINE; return getMeta(id); }; // the first read ran out the clock
     const { llm, batches } = reviewer(nothingLegit);
-    const r = await checkSpam({ gmail, llm, store: inMemoryStore(), deadline: DEADLINE, now: () => clock });
-    expect(r.incomplete).toBe(true);
+    await expect(checkSpam({ gmail, llm, store: inMemoryStore(), deadline: DEADLINE, now: () => clock })).rejects.toThrow(/no batch could be judged/);
+    expect(read).toEqual(["u1"]);
     expect(batches).toEqual([]); // no time left to judge even what was read
   });
 
-  it("a hung model call can't run past the deadline", async () => {
+  it("a hung model call can't run past the deadline — and, being the only batch, fails the check", async () => {
     const { llm } = reviewer(() => new Promise(() => {})); // never settles
     const start = Date.now();
-    const r = await checkSpam({ gmail: spamFolder(many(2)), llm, store: inMemoryStore(), deadline: start + 150, now: Date.now });
+    await expect(checkSpam({ gmail: spamFolder(many(2)), llm, store: inMemoryStore(), deadline: start + 150, now: Date.now }))
+      .rejects.toThrow(/no batch could be judged/);
     expect(Date.now() - start).toBeLessThan(2_000);
-    expect(r).toMatchObject({ flagged: [], unjudged: 0, incomplete: true });
+  });
+
+  // Spec B §1: "A failed run retries next hour; it never skips the week silently." A Gemini
+  // outage must not become "nothing looks legitimate" with the week's key set.
+  it("throws when every model call fails, so the week isn't closed on a report that judged nothing", async () => {
+    const { llm, batches } = reviewer(() => { throw new Error("503 UNAVAILABLE"); });
+    await expect(checkSpam({ gmail: spamFolder(many(45)), llm, store: inMemoryStore(), deadline: DEADLINE, now: () => NOW }))
+      .rejects.toThrow("spam check: no batch could be judged");
+    expect(batches).toHaveLength(2); // every batch was tried
+  });
+
+  it("throws when no message could be read at all", async () => {
+    const gmail = spamFolder(many(3));
+    gmail.getMeta = async () => { throw new Error("500 backend error"); };
+    const { llm, batches } = reviewer(nothingLegit);
+    await expect(checkSpam({ gmail, llm, store: inMemoryStore(), deadline: DEADLINE, now: () => NOW }))
+      .rejects.toThrow("spam check: no message could be read");
+    expect(batches).toEqual([]);
+  });
+
+  it("is not a failure when every listed message is simply gone (404)", async () => {
+    const gmail = spamFolder(many(2));
+    gmail.getMeta = async () => { throw Object.assign(new Error("Requested entity was not found."), { status: 404, response: { status: 404 } }); };
+    const { llm } = reviewer(nothingLegit);
+    const r = await checkSpam({ gmail, llm, store: inMemoryStore(), deadline: DEADLINE, now: () => NOW });
+    expect(r).toMatchObject({ total: 2, flagged: [], unjudged: 0, judged: 0, incomplete: false });
+  });
+
+  it("counts what it could judge, beside what it couldn't", async () => {
+    let call = 0;
+    const { llm } = reviewer(c => {
+      if (++call === 1) throw new Error("504 DEADLINE_EXCEEDED");
+      return parseSpamJson(JSON.stringify(c.slice(1).map(x => ({ id: x.id, legitimate: false, suspicious: false, reason: "junk" }))), c.map(x => x.id));
+    });
+    const r = await checkSpam({ gmail: spamFolder(many(45)), llm, store: inMemoryStore(), deadline: DEADLINE, now: () => NOW });
+    expect(r).toMatchObject({ total: 45, judged: 4, unjudged: 41, flagged: [], incomplete: false });
   });
 
   it("a message that won't load is couldn't-judge; one that's gone (404) is skipped; the rest still run", async () => {
@@ -200,6 +237,6 @@ describe("checkSpam", () => {
     const { llm, batches } = reviewer(nothingLegit);
     const r = await checkSpam({ gmail: spamFolder([]), llm, store: inMemoryStore(), deadline: DEADLINE, now: () => NOW });
     expect(batches).toEqual([]);
-    expect(r).toEqual({ total: 0, flagged: [], unjudged: 0, capped: false, incomplete: false });
+    expect(r).toEqual({ total: 0, flagged: [], judged: 0, unjudged: 0, capped: false, incomplete: false });
   });
 });

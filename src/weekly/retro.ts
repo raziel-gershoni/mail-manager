@@ -71,11 +71,16 @@ export function composeRetroReport(facts: WeekFacts, look: SecondLook, lang: Lan
   if (topArchived) head.push(t(lang, "retro_top_archived", { list: topArchived }));
 
   const checkable = checkableActed(facts).length;
+  // Re-checked and given a verdict, or found already back in the inbox.
+  const judged = Math.min(checkable, SECOND_LOOK_CAP) - look.unjudged - look.skippedGone;
+  // Nothing flagged, but not everything could be re-checked: the second-look line says how
+  // much it could and couldn't, instead of a clean "nothing looks wrong".
+  const partly = look.flagged.length === 0 && judged > 0 && look.unjudged > 0;
   const tail: string[] = [];
   const ops = opsLines(facts.ops, lang);
   if (ops.length > 0) tail.push("", t(lang, "retro_ops_head"), ...ops);
   const notes: string[] = [];
-  if (look.unjudged > 0) notes.push(t(lang, "retro_unjudged", { n: look.unjudged }));
+  if (look.unjudged > 0 && !partly) notes.push(t(lang, "retro_unjudged", { n: look.unjudged }));
   if (look.capped && checkable > SECOND_LOOK_CAP) notes.push(t(lang, "retro_not_checked", { n: checkable - SECOND_LOOK_CAP }));
   if (look.skippedGone > 0) notes.push(t(lang, "retro_gone", { n: look.skippedGone }));
   const legacy = facts.acted.filter(a => !a.messageId).length;
@@ -97,7 +102,9 @@ export function composeRetroReport(facts: WeekFacts, look: SecondLook, lang: Lan
       });
       if (look.flagged.length > k) middle.push(t(lang, "retro_more", { n: look.flagged.length - k }));
       if (k > 0) middle.push(t(lang, "retro_reply_hint"));
-    } else if (Math.min(checkable, SECOND_LOOK_CAP) > look.unjudged + look.skippedGone) {
+    } else if (partly) {
+      middle.push("", t(lang, "retro_partly_checked", { judged, unjudged: look.unjudged }));
+    } else if (judged > 0) {
       middle.push("", t(lang, "retro_nothing_wrong"));
     }
     return {
@@ -108,8 +115,9 @@ export function composeRetroReport(facts: WeekFacts, look: SecondLook, lang: Lan
   let k = Math.min(look.flagged.length, RETRO_MAX_LISTED);
   let out = render(k);
   while (k > 0 && out.text.length > RETRO_MAX_CHARS) out = render(--k);
-  // Buzz only when there is something to act on or worry about.
-  return { text: out.text, silent: look.flagged.length === 0 && facts.ops.length === 0, refs: out.refs };
+  // Buzz only when there is something to act on or worry about — including mail the second
+  // look couldn't re-check.
+  return { text: out.text, silent: look.flagged.length === 0 && facts.ops.length === 0 && look.unjudged === 0, refs: out.refs };
 }
 
 // The "retro" weekly kind. Prunes ops events past 30 days on the way (they matter only

@@ -6,7 +6,7 @@ import type { FlaggedSpam, SpamCheck } from "../../src/weekly/spam.js";
 const acme: FlaggedSpam = { id: "s1", from: "Acme Billing <billing@acme.com>", subject: "Invoice 12", reason: "rule:sender:billing@acme.com", suspicious: false, byRule: true };
 const paypal: FlaggedSpam = { id: "s2", from: "PayPaI <alert@paypa1.com>", subject: "Account locked", reason: "claims to be PayPal", suspicious: true, byRule: false };
 const dana: FlaggedSpam = { id: "s3", from: "Dana <dana@x.com>", subject: "Re: dinner", reason: "a personal reply", suspicious: false, byRule: false };
-const check = (over: Partial<SpamCheck> = {}): SpamCheck => ({ total: 143, flagged: [], unjudged: 0, capped: false, incomplete: false, ...over });
+const check = (over: Partial<SpamCheck> = {}): SpamCheck => ({ total: 143, flagged: [], judged: 143, unjudged: 0, capped: false, incomplete: false, ...over });
 const flagged = (n: number, over: Partial<FlaggedSpam> = {}): FlaggedSpam[] =>
   Array.from({ length: n }, (_, i) => ({ id: `f${i + 1}`, from: `sender${i + 1}@x.com`, subject: `Subject ${i + 1}`, reason: "looks real", suspicious: false, byRule: false, ...over }));
 
@@ -71,13 +71,29 @@ describe("composeSpamReport", () => {
   });
 
   it("keeps the notes on the silent one-liner too", () => {
-    const r = composeSpamReport(check({ incomplete: true, unjudged: 2 }), "en");
+    const r = composeSpamReport(check({ total: 300, capped: true, incomplete: true, judged: 120 }), "en");
     expect(r.text).toBe([
-      "🧹 Spam check: 143 in spam, nothing looks legitimate.",
+      "🧹 Spam check: 300+ in spam, nothing looks legitimate.",
+      "There were more than 300 — I checked the newest 300.",
       "⏱ I ran out of time before checking them all — look through Gmail's Spam folder for the rest.",
-      "I couldn't judge 2 of them.",
     ].join("\n"));
     expect(r.silent).toBe(true);
+  });
+
+  it("never says 'nothing looks legitimate' when some couldn't be judged: says how many it could, and buzzes", () => {
+    const r = composeSpamReport(check({ judged: 100, unjudged: 43 }), "en");
+    expect(r).toEqual({
+      text: "🧹 Spam check: 143 in spam — none of the 100 I could judge looks legitimate; I couldn't judge 43.",
+      silent: false, refs: [],
+    });
+    const withNotes = composeSpamReport(check({ incomplete: true, judged: 40, unjudged: 2 }), "en");
+    expect(withNotes.text).toBe([
+      "🧹 Spam check: 143 in spam — none of the 40 I could judge looks legitimate; I couldn't judge 2.",
+      "⏱ I ran out of time before checking them all — look through Gmail's Spam folder for the rest.",
+    ].join("\n"));
+    expect(withNotes.silent).toBe(false);
+    expect(composeSpamReport(check({ judged: 100, unjudged: 43 }), "he").text)
+      .toBe("🧹 בדיקת ספאם: 143 בספאם — אף אחד מ־100 שהצלחתי לשפוט לא נראה לגיטימי; לא הצלחתי לשפוט 43.");
   });
 
   it("lists at most 20, says how many more, and keeps refs for all of them in order", () => {

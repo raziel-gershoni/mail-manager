@@ -18,10 +18,18 @@ export const SPAM_SCAN_CAP = 300; // a week of spam; past this the report says i
 export const SPAM_BATCH = 40;     // emails per reviewSpam call
 
 export interface FlaggedSpam { id: string; from: string; subject: string; reason: string; suspicious: boolean; byRule: boolean }
-export interface SpamCheck { total: number; flagged: FlaggedSpam[]; unjudged: number; capped: boolean; incomplete: boolean }
+// judged: messages the model gave a usable verdict for; unjudged: read but not judged (a
+// failed read, a failed batch, a missing or malformed verdict). What the deadline cut off
+// is neither — `incomplete` says so.
+export interface SpamCheck { total: number; flagged: FlaggedSpam[]; judged: number; unjudged: number; capped: boolean; incomplete: boolean }
 
 const errText = (err: unknown) => err instanceof Error ? err.message : String(err);
 
+// THROWS when there was something to judge but nothing could be: no message could be read,
+// or no model batch call came back (each rejected, or was cut by the deadline). A Gemini
+// or Gmail outage must fail the job — its key stays unset and the next hour retries
+// (bounded by WEEKLY_MAX_ATTEMPTS) — never pass as "nothing looks legitimate" (spec B §1).
+// A partial result is still reported, with what it couldn't judge.
 export async function checkSpam(deps: { gmail: GmailClient; llm: LLMProvider; store: MemoryStore; deadline: number; now: () => number }): Promise<SpamCheck> {
   // Ask for one more than the cap: getting it back is how we know there were more.
   const listed = await deps.gmail.listSpam(SPAM_SCAN_CAP + 1);
@@ -44,6 +52,8 @@ export async function checkSpam(deps: { gmail: GmailClient; llm: LLMProvider; st
     }
   });
 
+  if (ids.length > 0 && metas.every(m => !m) && (unjudged > 0 || incomplete)) throw new Error("spam check: no message could be read");
+
   const flagged: FlaggedSpam[] = [];
   const candidates: SpamCandidate[] = [];
   const metaById = new Map<string, EmailMeta>();
@@ -62,6 +72,8 @@ export async function checkSpam(deps: { gmail: GmailClient; llm: LLMProvider; st
     metaById.set(m.id, m);
   }
 
+  let judged = 0;
+  let batchesBack = 0; // model calls that came back at all (their verdicts may still be unusable)
   for (let i = 0; i < candidates.length; i += SPAM_BATCH) {
     if (deps.now() >= deps.deadline) { incomplete = true; break; }
     const batch = candidates.slice(i, i + SPAM_BATCH);
@@ -75,16 +87,20 @@ export async function checkSpam(deps: { gmail: GmailClient; llm: LLMProvider; st
       continue;
     }
     if (res === TIMED_OUT) { incomplete = true; break; }
+    batchesBack++;
     unjudged += res.unjudged;
-    // Only ids from THIS batch can be flagged, each at most once: a flagged id becomes a
-    // rescue ref, so an id the model invented must never reach the report.
+    // Only ids from THIS batch count, each at most once (the first verdict wins): a flagged
+    // id becomes a rescue ref, so an id the model invented must never reach the report.
     const open = new Set(batch.map(c => c.id));
     for (const v of res.verdicts) {
-      if (!open.has(v.id) || v.legitimate !== true) continue;
+      if (!open.has(v.id)) continue;
       open.delete(v.id);
+      judged++;
+      if (v.legitimate !== true) continue;
       const m = metaById.get(v.id)!;
       flagged.push({ id: v.id, from: m.from, subject: m.subject, reason: v.reason, suspicious: v.suspicious === true, byRule: false });
     }
   }
-  return { total: ids.length, flagged, unjudged, capped, incomplete };
+  if (candidates.length > 0 && batchesBack === 0) throw new Error("spam check: no batch could be judged");
+  return { total: ids.length, flagged, judged, unjudged, capped, incomplete };
 }

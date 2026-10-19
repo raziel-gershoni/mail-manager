@@ -123,7 +123,21 @@ describe("composeRetroReport", () => {
     const many = Array.from({ length: 305 }, (_, i) => acted(`m${i}`, "a@x.com", "trashed"));
     const r = composeRetroReport(facts({ acted: [...many, acted(undefined, "b@x.com", "archived")] }),
       look({ unjudged: 3, skippedGone: 2, capped: true, incomplete: true }), "en");
-    expect(r.text).toContain("_couldn't re-check 3 · +5 not re-checked · 2 already deleted for good · 1 older entries can't be re-checked · ran out of time — re-checked only part of the week_");
+    expect(r.text).toContain("🔎 Second look: none of the 295 I could re-check looks wrong — I couldn't re-check 3.");
+    expect(r.text).toContain("_+5 not re-checked · 2 already deleted for good · 1 older entries can't be re-checked · ran out of time — re-checked only part of the week_");
+    expect(r.text).not.toContain("nothing looks wrong");
+  });
+
+  it("nothing flagged but some couldn't be re-checked: never 'nothing looks wrong' — says how many it could, and buzzes", () => {
+    const acts = Array.from({ length: 10 }, (_, i) => acted(`m${i}`, "a@x.com", "trashed"));
+    const r = composeRetroReport(facts({ acted: acts }), look({ unjudged: 4 }), "en");
+    expect(r.text).toContain("🔎 Second look: none of the 6 I could re-check looks wrong — I couldn't re-check 4.");
+    expect(r.text).not.toContain("nothing looks wrong");
+    expect(r.text).not.toContain("couldn't re-check 4 ·"); // said once, not repeated in the notes
+    expect(r.silent).toBe(false);
+    const he = composeRetroReport(facts({ acted: acts }), look({ unjudged: 4 }), "he");
+    expect(he.text).toContain("🔎 מבט שני: אף אחד מ־6 שהצלחתי לבדוק שוב לא נראה שגוי — לא הצלחתי לבדוק שוב 4.");
+    expect(he.silent).toBe(false);
   });
 
   it("a quiet week is a silent headline only", () => {

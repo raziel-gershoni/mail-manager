@@ -48,6 +48,11 @@ export function checkableActed(facts: WeekFacts): { id: string; action: "trashed
   return out;
 }
 
+// THROWS when there was something to re-check but nothing could be: no message could be
+// read, or no review batch call came back (each rejected, or was cut by the deadline). An
+// outage must fail the retro job — its key stays unset and the next hour retries (bounded
+// by WEEKLY_MAX_ATTEMPTS) — never pass as "nothing looks wrong". A partial look is still
+// reported, with what it couldn't re-check.
 export async function secondLook(
   facts: WeekFacts,
   deps: { gmail: GmailClient; llm: LLMProvider; deadline: number; now: () => number },
@@ -71,6 +76,8 @@ export async function secondLook(
     }
   });
 
+  if (items.length > 0 && metas.every(m => !m) && state.unjudged > 0) throw new Error("second look: no message could be read");
+
   const candidates: ActedCandidate[] = [];
   items.forEach((it, i) => {
     const m = metas[i];
@@ -91,12 +98,14 @@ export async function secondLook(
   // call is raced against the deadline: a batch started just before it must not carry the
   // run past Vercel's 300s cap, where the report would never be sent.
   const reasons = new Map<string, string>();
+  let batchesBack = 0; // review calls that came back at all (their verdicts may still be unusable)
   for (let i = 0; i < candidates.length; i += SECOND_LOOK_BATCH) {
     const batch = candidates.slice(i, i + SECOND_LOOK_BATCH);
     if (deps.now() >= deps.deadline) { state.incomplete = true; state.unjudged += candidates.length - i; break; }
     try {
       const r = await beforeDeadline(deps.llm.reviewActed(batch), deps.deadline - deps.now());
       if (r === TIMED_OUT) { state.incomplete = true; state.unjudged += candidates.length - i; break; }
+      batchesBack++;
       const ids = new Set(batch.map(c => c.id));
       const judged = new Set<string>();
       for (const v of r.verdicts) {
@@ -110,6 +119,8 @@ export async function secondLook(
       log("weekly.retro_review_failed", { n: batch.length, error: err instanceof Error ? err.message : String(err) });
     }
   }
+
+  if (candidates.length > 0 && batchesBack === 0) throw new Error("second look: no batch could be judged");
 
   const flagged = candidates.filter(c => reasons.has(c.id))
     .map(c => ({ id: c.id, from: c.from, subject: c.subject, action: c.action, reason: reasons.get(c.id)! }));
