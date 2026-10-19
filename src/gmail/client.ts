@@ -1,24 +1,19 @@
 import { google } from "googleapis";
 import type { OAuth2Client } from "google-auth-library";
 import { parseMessage, type EmailMeta, type GmailRawMessage } from "./headers.js";
+import { findBodyPart } from "./parts.js";
 import { htmlToText } from "./html.js";
 import { mapLimit } from "../util/concurrency.js";
 
 const MAX_BODY_CHARS = 40_000;
 export const GMAIL_FETCH_CONCURRENCY = 8;
 
+// The text body: the first text/plain part anywhere in the part tree, else the first
+// text/html (stripped by bodyText). Recursive — a mail with attachments nests its body
+// (multipart/mixed → multipart/alternative → text/plain), which a one-level scan missed.
 function decodeBody(raw: GmailRawMessage): string {
-  // walk payload parts; prefer text/plain, else text/html (stripped)
-  const parts = (raw as any).payload?.parts as any[] | undefined;
-  const pick = (mime: string) => {
-    if ((raw as any).payload?.mimeType === mime && (raw as any).payload?.body?.data) return (raw as any).payload.body.data;
-    for (const p of parts ?? []) if (p.mimeType === mime && p.body?.data) return p.body.data;
-    return undefined;
-  };
-  const b64 = pick("text/plain") ?? pick("text/html");
-  if (!b64) return "";
-  const decoded = Buffer.from(String(b64), "base64url").toString("utf8");
-  return decoded;
+  const part = findBodyPart(raw.payload);
+  return part ? Buffer.from(part.data, "base64url").toString("utf8") : "";
 }
 
 function bodyText(raw: GmailRawMessage): string {
@@ -66,10 +61,10 @@ export function googleGmailClient(auth: OAuth2Client): GmailClient {
       return [...new Set(ids)];
     },
     async getMeta(id) {
-      const res = await gmail.users.messages.get({
-        userId: "me", id, format: "metadata",
-        metadataHeaders: ["From","Subject","Date","List-Unsubscribe","Precedence"],
-      });
+      // format "full" (not "metadata") so the part tree is there to list attachments: the
+      // same one call and quota units, just a larger response. parseMessage keeps only the
+      // headers callers read, as metadataHeaders used to.
+      const res = await gmail.users.messages.get({ userId: "me", id, format: "full" });
       return parseMessage(res.data as GmailRawMessage);
     },
     async search(q, max = 25) {
@@ -144,7 +139,10 @@ export function fakeGmailClient(opts: {
     async readFull(id) {
       const raw = opts.messages[id];
       if (!raw) throw new Error(`no fake message ${id}`);
-      const body = htmlToText(opts.bodies?.[id] ?? "").slice(0, MAX_BODY_CHARS);
+      // A scripted body wins; otherwise decode the payload's own part tree exactly as the
+      // real client does, so a nested-MIME fixture runs the real body walk.
+      const scripted = opts.bodies?.[id];
+      const body = scripted !== undefined ? htmlToText(scripted).slice(0, MAX_BODY_CHARS) : bodyText(raw);
       return { meta: parseMessage(raw), bodyText: body };
     },
     async trash(ids) { for (const id of ids) trashed.add(id); },

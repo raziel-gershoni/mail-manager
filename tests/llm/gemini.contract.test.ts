@@ -91,7 +91,7 @@ describe.skipIf(!RUN)("gemini live contract", () => {
         id: "1", threadId: "1", from: "Acme Billing <billing@acme.com>", fromEmail: "billing@acme.com",
         fromDomain: "acme.com", subject: "Your invoice #1234 is ready",
         snippet: "Your monthly invoice is attached.", date: new Date("2026-08-22T09:00:00Z"),
-        headers: {}, labelIds: ["INBOX"],
+        headers: {}, labelIds: ["INBOX"], attachments: [],
       },
       risk: { bulk: false, hasListUnsubscribe: false, transactional: true },
       memoryIndex: [],
