@@ -38,6 +38,7 @@ export interface GmailClient {
   archive(ids: string[]): Promise<void>;
   unarchive(ids: string[]): Promise<void>;
   archivedIds?(): string[]; // test-only introspection (fake)
+  listSpam(max: number): Promise<string[]>; // ids in Spam from the last 7 days, newest first, at most `max`
 }
 
 export function googleGmailClient(auth: OAuth2Client): GmailClient {
@@ -111,6 +112,22 @@ export function googleGmailClient(auth: OAuth2Client): GmailClient {
       if (!data) throw new Error(`attachment ${a.filename} (part ${a.partId}) of message ${messageId} has no data`);
       return { data: base64UrlToBase64(data), mimeType: a.mimeType };
     },
+    async listSpam(max) {
+      // in:spam in the query AND includeSpamTrash, since messages.list leaves Spam and
+      // Trash out unless asked. Paged (≤500 per call) and stopped at `max`.
+      const ids: string[] = [];
+      let pageToken: string | undefined;
+      while (ids.length < max) {
+        const res = await gmail.users.messages.list({
+          userId: "me", q: "in:spam newer_than:7d", includeSpamTrash: true,
+          maxResults: Math.min(500, max - ids.length), pageToken,
+        });
+        for (const m of res.data.messages ?? []) if (m.id) ids.push(m.id);
+        pageToken = res.data.nextPageToken ?? undefined;
+        if (!pageToken) break;
+      }
+      return ids.slice(0, max);
+    },
     async trash(ids) {
       if (ids.length === 0) return;
       await gmail.users.messages.batchModify({ userId: "me", requestBody: { ids, addLabelIds: ["TRASH"] } });
@@ -143,11 +160,13 @@ export function fakeGmailClient(opts: {
   messages: Record<string, GmailRawMessage>;
   searchResults?: Record<string, string[]>;
   bodies?: Record<string, string>;
+  spam?: string[]; // ids currently in Spam, newest first (each also needs a `messages` entry for getMeta)
   attachments?: Record<string, string>; // attachmentId → bytes (base64url, as Gmail sends them)
 }): GmailClient {
   const trashed = new Set<string>();
   const archivedFromInbox = new Set<string>();
   const restored = new Set<string>();
+  const spamBox = new Set<string>(opts.spam ?? []);
   const c: GmailClient = {
     async currentHistoryId() { return opts.historyId; },
     async listAddedMessageIds(start) { return opts.addedSince[start] ?? []; },
@@ -188,6 +207,7 @@ export function fakeGmailClient(opts: {
     async archive(ids) { for (const id of ids) archivedFromInbox.add(id); },
     async unarchive(ids) { for (const id of ids) archivedFromInbox.delete(id); },
     archivedIds() { return [...archivedFromInbox]; },
+    async listSpam(max) { return [...spamBox].slice(0, max); },
   };
   return c;
 }

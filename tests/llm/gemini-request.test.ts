@@ -8,7 +8,7 @@
 // faster) and on attachment extraction (transcription, not judgment); the agent and the
 // reviewers stay at the model default on purpose.
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { ClassifyInput, StreamSink, TrashCandidate } from "../../src/llm/provider.js";
+import type { ClassifyInput, SpamCandidate, StreamSink, TrashCandidate } from "../../src/llm/provider.js";
 
 const sent = vi.hoisted(() => [] as { method: string; req: any }[]);
 const reply = vi.hoisted(() => ({ next: undefined as unknown }));
@@ -43,6 +43,7 @@ const classifyInput: ClassifyInput = {
   memoryIndex: [],
 };
 const candidates: TrashCandidate[] = [{ id: "a", from: "x@y.com", subject: "s", bulk: true, transactional: false }];
+const spamCandidates: SpamCandidate[] = [{ id: "s1", from: "dana@x.com", subject: "Re: dinner", snippet: "see you at 8", bulk: false, transactional: false }];
 const tool = { name: "get_time", description: "time", parameters: { type: "object", properties: {} } };
 const sink: StreamSink = { onText: () => {}, onToolCall: () => {} };
 
@@ -56,6 +57,7 @@ async function exerciseEveryPath() {
   await llm.reviewTrash(candidates);
   await llm.reviewPreference(candidates, "trash newsletters");
   await llm.extractAttachment({ name: "invoice.pdf", mimeType: "application/pdf", data: "JVBERi0xLjQK" });
+  await llm.reviewSpam(spamCandidates);
 }
 
 describe("geminiProvider request config", () => {
@@ -63,7 +65,7 @@ describe("geminiProvider request config", () => {
 
   it("never sends a sampling param (temperature/topP/topK) on any path", async () => {
     await exerciseEveryPath();
-    expect(sent).toHaveLength(7); // every path above reached the SDK — none skipped
+    expect(sent).toHaveLength(8); // every path above reached the SDK — none skipped
     for (const { req } of sent) {
       for (const key of SAMPLING) expect(req.config ?? {}).not.toHaveProperty(key);
     }
@@ -84,7 +86,19 @@ describe("geminiProvider request config", () => {
       ["generateContent", { responseMimeType: "application/json" }], // reviewTrash
       ["generateContent", { responseMimeType: "application/json" }], // reviewPreference
       ["generateContent", { thinkingConfig: { thinkingLevel: "LOW" } }], // extractAttachment
+      ["generateContent", { responseMimeType: "application/json" }], // reviewSpam (default thinking)
     ]);
+  });
+
+  it("reviewSpam sends the spam prompt, and skips the SDK entirely for an empty batch", async () => {
+    const llm = geminiProvider("test-key");
+    expect(await llm.reviewSpam([])).toEqual({ verdicts: [], unjudged: 0 });
+    expect(sent).toHaveLength(0);
+    reply.next = { text: '[{"id":"s1","legitimate":true,"suspicious":false,"reason":"a personal reply"}]', candidates: [] };
+    const out = await llm.reviewSpam(spamCandidates);
+    expect(out).toEqual({ verdicts: [{ id: "s1", legitimate: true, suspicious: false, reason: "a personal reply" }], unjudged: 0 });
+    expect(sent[0]!.req.contents).toContain('id=s1 from="dana@x.com" subject="Re: dinner"');
+    expect(sent[0]!.req.contents).toContain("UNTRUSTED");
   });
 
   it("round-trips a function call's id: read off the response, sent back on both sides", async () => {

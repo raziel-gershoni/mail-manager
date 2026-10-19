@@ -1,0 +1,205 @@
+// tests/weekly/spam.test.ts
+import { describe, it, expect } from "vitest";
+import { checkSpam, SPAM_SCAN_CAP } from "../../src/weekly/spam.js";
+import { fakeGmailClient } from "../../src/gmail/client.js";
+import type { GmailRawMessage } from "../../src/gmail/headers.js";
+import { inMemoryStore, type MemoryRow } from "../../src/memory/store.js";
+import { fakeLLM, parseSpamJson, type LLMProvider, type SpamCandidate, type SpamVerdict } from "../../src/llm/provider.js";
+
+const NOW = 1_000_000;
+const DEADLINE = NOW + 60_000;
+
+function raw(id: string, from: string, subject: string, extra: Partial<GmailRawMessage> = {}): GmailRawMessage {
+  return { id, threadId: id, snippet: `snippet ${id}`, labelIds: ["SPAM"], payload: { headers: [{ name: "From", value: from }, { name: "Subject", value: subject }] }, ...extra };
+}
+function spamFolder(msgs: GmailRawMessage[]) {
+  return fakeGmailClient({ historyId: "1", addedSince: {}, messages: Object.fromEntries(msgs.map(m => [m.id, m])), spam: msgs.map(m => m.id) });
+}
+function many(n: number, prefix = "u") {
+  return Array.from({ length: n }, (_, i) => raw(`${prefix}${i + 1}`, `promo${i + 1}@deals.biz`, `Deal ${i + 1}`));
+}
+// A spam reviewer scripted per batch; records every batch it was given.
+function reviewer(judge: (c: SpamCandidate[]) => { verdicts: SpamVerdict[]; unjudged: number } | Promise<{ verdicts: SpamVerdict[]; unjudged: number }>) {
+  const batches: SpamCandidate[][] = [];
+  const llm: LLMProvider = {
+    ...fakeLLM(() => ({ important: false, suspicious: false, reason: "" })),
+    async reviewSpam(c) { batches.push(c); return judge(c); },
+  };
+  return { llm, batches };
+}
+const nothingLegit = (c: SpamCandidate[]) => ({ verdicts: c.map(x => ({ id: x.id, legitimate: false, suspicious: false, reason: "junk" })), unjudged: 0 });
+const rule = (over: Partial<MemoryRow>): MemoryRow =>
+  ({ userId: 1, slug: "", description: "", body: "", scope: "sender", matchType: "sender", matchValue: "", verdict: "important", action: null, ...over });
+
+describe("checkSpam", () => {
+  it("flags a sender the owner ruled important or keep straight away, without asking the model about it", async () => {
+    const gmail = spamFolder([
+      raw("d1", "Dana <dana@x.com>", "Re: dinner"),
+      raw("k1", "Shop <orders@shop.com>", "Your order"),
+      raw("j1", "Junk <a@junk.com>", "Buy now"),
+      raw("u1", "Unknown <who@else.com>", "Hello"),
+    ]);
+    const store = inMemoryStore([
+      rule({ slug: "sender:dana@x.com", matchValue: "dana@x.com", verdict: "important" }),
+      rule({ slug: "domain:shop.com", scope: "domain", matchType: "domain", matchValue: "shop.com", verdict: "unimportant", action: "keep" }),
+      rule({ slug: "domain:junk.com", scope: "domain", matchType: "domain", matchValue: "junk.com", verdict: "unimportant", action: "trash" }),
+    ]);
+    const { llm, batches } = reviewer(nothingLegit);
+    const r = await checkSpam({ gmail, llm, store, deadline: DEADLINE, now: () => NOW });
+    expect(r.flagged).toEqual([
+      { id: "d1", from: "Dana <dana@x.com>", subject: "Re: dinner", reason: "rule:sender:dana@x.com", suspicious: false, byRule: true },
+      { id: "k1", from: "Shop <orders@shop.com>", subject: "Your order", reason: "rule:domain:shop.com", suspicious: false, byRule: true },
+    ]);
+    expect(batches.map(b => b.map(c => c.id))).toEqual([["j1", "u1"]]); // a trash rule is no reason to flag
+    expect(r).toMatchObject({ total: 4, unjudged: 0, capped: false, incomplete: false });
+  });
+
+  it("makes no model call when every message is covered by a rule", async () => {
+    const gmail = spamFolder([raw("d1", "dana@x.com", "Hi")]);
+    const { llm, batches } = reviewer(nothingLegit);
+    const r = await checkSpam({ gmail, llm, store: inMemoryStore([rule({ slug: "sender:dana@x.com", matchValue: "dana@x.com" })]), deadline: DEADLINE, now: () => NOW });
+    expect(batches).toEqual([]);
+    expect(r.flagged.map(f => f.id)).toEqual(["d1"]);
+  });
+
+  it("flags only an explicit legitimate verdict, carrying the model's reason and phishing mark", async () => {
+    const gmail = spamFolder([raw("u1", "Bank <alerts@leumi-secure.co>", "Card blocked"), raw("u2", "promo@x.biz", "Sale")]);
+    const { llm } = reviewer(() => ({ verdicts: [
+      { id: "u1", legitimate: true, suspicious: true, reason: "claims to be your bank" },
+      { id: "u2", legitimate: false, suspicious: false, reason: "marketing" },
+    ], unjudged: 0 }));
+    const r = await checkSpam({ gmail, llm, store: inMemoryStore(), deadline: DEADLINE, now: () => NOW });
+    expect(r.flagged).toEqual([{ id: "u1", from: "Bank <alerts@leumi-secure.co>", subject: "Card blocked", reason: "claims to be your bank", suspicious: true, byRule: false }]);
+  });
+
+  it("judges in batches of 40", async () => {
+    const { llm, batches } = reviewer(nothingLegit);
+    const r = await checkSpam({ gmail: spamFolder(many(85)), llm, store: inMemoryStore(), deadline: DEADLINE, now: () => NOW });
+    expect(batches.map(b => b.length)).toEqual([40, 40, 5]);
+    expect(r).toMatchObject({ total: 85, flagged: [], unjudged: 0 });
+  });
+
+  it("gives the model the bulk/transactional signals, the snippet and the attachment line", async () => {
+    const gmail = spamFolder([
+      raw("a1", "billing@acme.com", "Your invoice", {
+        payload: {
+          mimeType: "multipart/mixed",
+          headers: [{ name: "From", value: "billing@acme.com" }, { name: "Subject", value: "Your invoice" }, { name: "List-Unsubscribe", value: "<mailto:u@acme.com>" }],
+          parts: [
+            { partId: "0", mimeType: "text/plain", filename: "", body: { size: 10, data: "aGk" } },
+            { partId: "1", mimeType: "application/pdf", filename: "invoice.pdf", body: { attachmentId: "att1", size: 120 * 1024 } },
+          ],
+        },
+      }),
+      raw("p1", "dana@x.com", "Re: dinner"),
+    ]);
+    const { llm, batches } = reviewer(nothingLegit);
+    await checkSpam({ gmail, llm, store: inMemoryStore(), deadline: DEADLINE, now: () => NOW });
+    const [a1, p1] = batches[0]!;
+    expect(a1).toMatchObject({ id: "a1", from: "billing@acme.com", subject: "Your invoice", snippet: "snippet a1", bulk: true, transactional: true });
+    expect(a1!.attachmentLine).toContain("invoice.pdf");
+    expect(p1).toEqual({ id: "p1", from: "dana@x.com", subject: "Re: dinner", snippet: "snippet p1", bulk: false, transactional: false }); // no attachment line at all
+  });
+
+  // Review Focus 5: malformed model output.
+  it("malformed model output flags nothing, counts the batch as couldn't-judge, and doesn't crash", async () => {
+    const { llm } = reviewer(c => parseSpamJson("[{\"id\":\"u1\",\"legitimate\":tr", c.map(x => x.id)));
+    const r = await checkSpam({ gmail: spamFolder(many(3)), llm, store: inMemoryStore(), deadline: DEADLINE, now: () => NOW });
+    expect(r).toMatchObject({ total: 3, flagged: [], unjudged: 3, incomplete: false });
+  });
+
+  it("ids the model left out are counted as couldn't-judge, and only what it judged legitimate is flagged", async () => {
+    const { llm } = reviewer(c => parseSpamJson(JSON.stringify([{ id: "u2", legitimate: true, suspicious: false, reason: "a real receipt" }]), c.map(x => x.id)));
+    const r = await checkSpam({ gmail: spamFolder(many(4)), llm, store: inMemoryStore(), deadline: DEADLINE, now: () => NOW });
+    expect(r.flagged.map(f => f.id)).toEqual(["u2"]);
+    expect(r.unjudged).toBe(3);
+  });
+
+  it("never flags an id from outside the batch, even if the provider returns one", async () => {
+    const { llm } = reviewer(() => ({ verdicts: [{ id: "inbox-msg", legitimate: true, suspicious: false, reason: "?" }], unjudged: 1 }));
+    const r = await checkSpam({ gmail: spamFolder(many(1)), llm, store: inMemoryStore(), deadline: DEADLINE, now: () => NOW });
+    expect(r.flagged).toEqual([]);
+  });
+
+  it("a model call that throws counts its whole batch as couldn't-judge; the other batches still count", async () => {
+    let call = 0;
+    const { llm } = reviewer(c => {
+      if (++call === 1) throw new Error("504 DEADLINE_EXCEEDED");
+      return { verdicts: [{ id: c[0]!.id, legitimate: true, suspicious: false, reason: "real" }], unjudged: 0 };
+    });
+    const r = await checkSpam({ gmail: spamFolder(many(45)), llm, store: inMemoryStore(), deadline: DEADLINE, now: () => NOW });
+    expect(r.unjudged).toBe(40);
+    expect(r.flagged.map(f => f.id)).toEqual(["u41"]);
+    expect(r.incomplete).toBe(false);
+  });
+
+  it("checks at most 300 and says it was capped", async () => {
+    const gmail = spamFolder(many(SPAM_SCAN_CAP + 5));
+    const asked: number[] = [];
+    const listSpam = gmail.listSpam.bind(gmail);
+    gmail.listSpam = async (max: number) => { asked.push(max); return listSpam(max); };
+    const { llm, batches } = reviewer(nothingLegit);
+    const r = await checkSpam({ gmail, llm, store: inMemoryStore(), deadline: DEADLINE, now: () => NOW });
+    expect(asked).toEqual([SPAM_SCAN_CAP + 1]); // one more than the cap is how it knows
+    expect(r).toMatchObject({ total: SPAM_SCAN_CAP, capped: true });
+    expect(batches.flat()).toHaveLength(SPAM_SCAN_CAP);
+  });
+
+  it("is not capped at exactly 300", async () => {
+    const { llm } = reviewer(nothingLegit);
+    const r = await checkSpam({ gmail: spamFolder(many(SPAM_SCAN_CAP)), llm, store: inMemoryStore(), deadline: DEADLINE, now: () => NOW });
+    expect(r).toMatchObject({ total: SPAM_SCAN_CAP, capped: false });
+  });
+
+  it("stops at the deadline: keeps what it judged, marks the check incomplete, doesn't count the rest as unjudged", async () => {
+    let clock = NOW;
+    const { llm, batches } = reviewer(c => {
+      clock = DEADLINE; // the first batch used up the time
+      return { verdicts: [{ id: c[0]!.id, legitimate: true, suspicious: false, reason: "real" }], unjudged: 0 };
+    });
+    const r = await checkSpam({ gmail: spamFolder(many(45)), llm, store: inMemoryStore(), deadline: DEADLINE, now: () => clock });
+    expect(batches).toHaveLength(1);
+    expect(r).toMatchObject({ total: 45, unjudged: 0, incomplete: true });
+    expect(r.flagged.map(f => f.id)).toEqual(["u1"]);
+  });
+
+  it("stops reading messages at the deadline too", async () => {
+    let clock = NOW;
+    const gmail = spamFolder(many(20));
+    const getMeta = gmail.getMeta.bind(gmail);
+    gmail.getMeta = async (id: string) => { clock = DEADLINE; return getMeta(id); }; // the first read ran out the clock
+    const { llm, batches } = reviewer(nothingLegit);
+    const r = await checkSpam({ gmail, llm, store: inMemoryStore(), deadline: DEADLINE, now: () => clock });
+    expect(r.incomplete).toBe(true);
+    expect(batches).toEqual([]); // no time left to judge even what was read
+  });
+
+  it("a hung model call can't run past the deadline", async () => {
+    const { llm } = reviewer(() => new Promise(() => {})); // never settles
+    const start = Date.now();
+    const r = await checkSpam({ gmail: spamFolder(many(2)), llm, store: inMemoryStore(), deadline: start + 150, now: Date.now });
+    expect(Date.now() - start).toBeLessThan(2_000);
+    expect(r).toMatchObject({ flagged: [], unjudged: 0, incomplete: true });
+  });
+
+  it("a message that won't load is couldn't-judge; one that's gone (404) is skipped; the rest still run", async () => {
+    const gmail = spamFolder(many(3));
+    const getMeta = gmail.getMeta.bind(gmail);
+    gmail.getMeta = async (id: string) => {
+      if (id === "u1") throw new Error("500 backend error");
+      if (id === "u2") throw Object.assign(new Error("Requested entity was not found."), { status: 404, response: { status: 404 } });
+      return getMeta(id);
+    };
+    const { llm, batches } = reviewer(nothingLegit);
+    const r = await checkSpam({ gmail, llm, store: inMemoryStore(), deadline: DEADLINE, now: () => NOW });
+    expect(batches.map(b => b.map(c => c.id))).toEqual([["u3"]]);
+    expect(r).toMatchObject({ total: 3, unjudged: 1, incomplete: false });
+  });
+
+  it("an empty Spam folder makes no model call", async () => {
+    const { llm, batches } = reviewer(nothingLegit);
+    const r = await checkSpam({ gmail: spamFolder([]), llm, store: inMemoryStore(), deadline: DEADLINE, now: () => NOW });
+    expect(batches).toEqual([]);
+    expect(r).toEqual({ total: 0, flagged: [], unjudged: 0, capped: false, incomplete: false });
+  });
+});

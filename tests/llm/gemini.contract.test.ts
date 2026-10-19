@@ -124,6 +124,24 @@ describe.skipIf(!RUN)("gemini live contract", () => {
     expect(typeof res.reason).toBe("string");
   }, 60_000);
 
+  it("reviewSpam returns a well-typed verdict for every spam candidate", async () => {
+    // The weekly spam check's judge. The CONTRACT, not the judgment: parseable JSON, one
+    // well-typed verdict per id, nothing left unjudged.
+    const { geminiProvider } = await import("../../src/llm/gemini.js");
+    const res = await geminiProvider(KEY!).reviewSpam([
+      { id: "s1", from: "Dana Levi <dana.levi@gmail.com>", subject: "Re: dinner on Thursday?", snippet: "Sounds good, see you at 8 — I booked the place on Dizengoff.", bulk: false, transactional: false },
+      { id: "s2", from: "PayPaI Security <alert@paypa1-secure.com>", subject: "URGENT: your account is locked", snippet: "Verify your password within 24 hours or your account will be closed.", bulk: false, transactional: true },
+      { id: "s3", from: "Mega Deals <promo@deals-blast.biz>", subject: "90% OFF everything!!!", snippet: "Unbeatable prices on watches and more.", bulk: true, transactional: false, attachmentLine: "catalog.pdf (PDF, 2 MB)" },
+    ]);
+    expect(res.unjudged).toBe(0);
+    expect(res.verdicts.map(v => v.id).sort()).toEqual(["s1", "s2", "s3"]);
+    for (const v of res.verdicts) {
+      expect(typeof v.legitimate).toBe("boolean");
+      expect(typeof v.suspicious).toBe("boolean");
+      expect(typeof v.reason).toBe("string");
+    }
+  }, 60_000);
+
   it("writes a brief at low thinking", async () => {
     // The brief runs with thinkingLevel LOW; this proves the live model accepts that config
     // and still returns prose. The CONTRACT, not the wording: non-empty and on-topic.

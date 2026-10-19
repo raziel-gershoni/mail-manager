@@ -1,0 +1,105 @@
+// src/weekly/spam.ts
+// The weekly spam check: list last week's Spam, flag what looks like real mail, and hand
+// that to the report. Read-only: nothing here moves mail — only the owner's "rescue"
+// (the rescue_from_spam tool) ever takes anything out of Spam.
+import type { GmailClient } from "../gmail/client.js";
+import { GMAIL_FETCH_CONCURRENCY } from "../gmail/client.js";
+import type { EmailMeta } from "../gmail/headers.js";
+import { isNotFound } from "../gmail/errors.js";
+import { riskSignals } from "../gmail/risk.js";
+import { attachmentLine } from "../gmail/parts.js";
+import type { LLMProvider, SpamCandidate, SpamVerdict } from "../llm/provider.js";
+import type { MemoryStore } from "../memory/store.js";
+import { mapLimit } from "../util/concurrency.js";
+import { log } from "../util/log.js";
+
+export const SPAM_SCAN_CAP = 300; // a week of spam; past this the report says it checked the newest 300
+export const SPAM_BATCH = 40;     // emails per reviewSpam call
+
+export interface FlaggedSpam { id: string; from: string; subject: string; reason: string; suspicious: boolean; byRule: boolean }
+export interface SpamCheck { total: number; flagged: FlaggedSpam[]; unjudged: number; capped: boolean; incomplete: boolean }
+
+const TIMED_OUT = Symbol("timed-out");
+const MAX_TIMER_MS = 2_147_483_647; // setTimeout fires at once past this
+
+// Stop WAITING for a call once the deadline passes. A Gemini call can take up to its 40s
+// HTTP timeout, and the weekly work must end by its deadline to leave room for the send
+// before Vercel's 300s cap. The abandoned call keeps running; its late settlement is swallowed.
+async function beforeDeadline<T>(p: Promise<T>, ms: number): Promise<T | typeof TIMED_OUT> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  p.catch(() => {});
+  try {
+    return await Promise.race([p, new Promise<typeof TIMED_OUT>(r => { timer = setTimeout(() => r(TIMED_OUT), Math.min(Math.max(0, ms), MAX_TIMER_MS)); })]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+const errText = (err: unknown) => err instanceof Error ? err.message : String(err);
+
+export async function checkSpam(deps: { gmail: GmailClient; llm: LLMProvider; store: MemoryStore; deadline: number; now: () => number }): Promise<SpamCheck> {
+  // Ask for one more than the cap: getting it back is how we know there were more.
+  const listed = await deps.gmail.listSpam(SPAM_SCAN_CAP + 1);
+  const capped = listed.length > SPAM_SCAN_CAP;
+  const ids = listed.slice(0, SPAM_SCAN_CAP);
+  let incomplete = false;
+  let unjudged = 0;
+
+  // Read each one's metadata (with its attachment names). Every read has its own
+  // try/catch, because mapLimit stops at the first rejection: a message that won't load
+  // is "couldn't judge"; one that is gone (404 — rescued or deleted since the listing) is
+  // simply skipped. Past the deadline, the rest are left unread and the check is incomplete.
+  const metas = await mapLimit(ids, GMAIL_FETCH_CONCURRENCY, async (id): Promise<EmailMeta | null> => {
+    if (deps.now() >= deps.deadline) { incomplete = true; return null; }
+    try {
+      return await deps.gmail.getMeta(id);
+    } catch (err) {
+      if (!isNotFound(err)) { unjudged++; log("weekly.spam_read_failed", { id, error: errText(err) }); }
+      return null;
+    }
+  });
+
+  const flagged: FlaggedSpam[] = [];
+  const candidates: SpamCandidate[] = [];
+  const metaById = new Map<string, EmailMeta>();
+  for (const m of metas) {
+    if (!m) continue;
+    // Sender rules first: a sender or domain the owner ruled important, or told to keep,
+    // is flagged as it is ("you have a rule for this sender") — no model call.
+    const rule = deps.store.findRuleFor(m.fromEmail, m.fromDomain);
+    if (rule && (rule.verdict === "important" || rule.action === "keep")) {
+      flagged.push({ id: m.id, from: m.from, subject: m.subject, reason: `rule:${rule.slug}`, suspicious: false, byRule: true });
+      continue;
+    }
+    const r = riskSignals(m);
+    const line = attachmentLine(m.attachments);
+    candidates.push({ id: m.id, from: m.from, subject: m.subject, snippet: m.snippet, bulk: r.bulk, transactional: r.transactional, ...(line ? { attachmentLine: line } : {}) });
+    metaById.set(m.id, m);
+  }
+
+  for (let i = 0; i < candidates.length; i += SPAM_BATCH) {
+    if (deps.now() >= deps.deadline) { incomplete = true; break; }
+    const batch = candidates.slice(i, i + SPAM_BATCH);
+    let res: { verdicts: SpamVerdict[]; unjudged: number } | typeof TIMED_OUT;
+    try {
+      res = await beforeDeadline(deps.llm.reviewSpam(batch), deps.deadline - deps.now());
+    } catch (err) {
+      // A failed call judged nothing: the whole batch is "couldn't judge", never flagged.
+      unjudged += batch.length;
+      log("weekly.spam_review_failed", { n: batch.length, error: errText(err) });
+      continue;
+    }
+    if (res === TIMED_OUT) { incomplete = true; break; }
+    unjudged += res.unjudged;
+    // Only ids from THIS batch can be flagged, each at most once: a flagged id becomes a
+    // rescue ref, so an id the model invented must never reach the report.
+    const open = new Set(batch.map(c => c.id));
+    for (const v of res.verdicts) {
+      if (!open.has(v.id) || v.legitimate !== true) continue;
+      open.delete(v.id);
+      const m = metaById.get(v.id)!;
+      flagged.push({ id: v.id, from: m.from, subject: m.subject, reason: v.reason, suspicious: v.suspicious === true, byRule: false });
+    }
+  }
+  return { total: ids.length, flagged, unjudged, capped, incomplete };
+}

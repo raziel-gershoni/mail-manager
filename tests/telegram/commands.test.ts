@@ -18,6 +18,7 @@ function deps(): SecretaryDeps {
     async extractAttachment() { return ""; },
     async reviewTrash() { return []; },
     async reviewPreference() { return []; },
+    async reviewSpam() { return { verdicts: [], unjudged: 0 }; },
     async agentStep() { throw new Error("agentStep should NOT be called for /start or /help"); },
   };
   return {

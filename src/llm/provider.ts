@@ -31,6 +31,13 @@ export interface BriefEmail { from: string; subject: string; bodyText: string; r
 export interface TrashCandidate { id: string; from: string; subject: string; bulk: boolean; transactional: boolean; bodyText?: string; attachmentLine?: string; }
 export interface ReviewVerdict { id: string; keep: boolean; reason: string; }
 
+// The weekly spam check's view of one email in Spam. Everything but the two signals is
+// UNTRUSTED (it came from the email); attachmentLine is set only when it has attachments.
+export interface SpamCandidate { id: string; from: string; subject: string; snippet: string; bulk: boolean; transactional: boolean; attachmentLine?: string }
+// legitimate: plausibly real mail the owner would want (it gets flagged for the owner to
+// rescue). suspicious: phishing-like (flagged ones are marked "rescue only if you're sure").
+export interface SpamVerdict { id: string; legitimate: boolean; suspicious: boolean; reason: string }
+
 export interface LLMProvider {
   classifyImportance(input: ClassifyInput): Promise<ClassifyResult>;
   // With a sink, the step streams and reports deltas as they arrive; without one it
@@ -42,6 +49,9 @@ export interface LLMProvider {
   extractAttachment(file: { name: string; mimeType: string; data: string }): Promise<string>;
   reviewTrash(candidates: TrashCandidate[]): Promise<ReviewVerdict[]>;
   reviewPreference(candidates: TrashCandidate[], preference: string): Promise<ReviewVerdict[]>;
+  // One model call over one batch (the caller batches). Verdicts come back only for ids it
+  // actually judged; `unjudged` counts the rest — see parseSpamJson.
+  reviewSpam(candidates: SpamCandidate[]): Promise<{ verdicts: SpamVerdict[]; unjudged: number }>;
 }
 
 export function parseReviewJson(text: string, candidateIds: string[]): ReviewVerdict[] {
@@ -63,6 +73,30 @@ export function parseReviewJson(text: string, candidateIds: string[]): ReviewVer
   });
 }
 
+// Parse reviewSpam's reply. The OPPOSITE default from parseReviewJson: a spam verdict
+// can only ever FLAG mail for the owner to look at, so the safe error is "not flagged".
+// A reply that isn't JSON, an id the model left out, or a verdict whose `legitimate` isn't
+// a real boolean is "couldn't judge": no verdict, counted in `unjudged`, never guessed.
+// `suspicious` counts only when it is exactly true. Ids the model invented are ignored.
+export function parseSpamJson(text: string, ids: string[]): { verdicts: SpamVerdict[]; unjudged: number } {
+  let parsed: unknown;
+  try { parsed = JSON.parse(text); } catch { return { verdicts: [], unjudged: ids.length }; }
+  const byId = new Map<string, Record<string, unknown>>();
+  for (const v of Array.isArray(parsed) ? parsed : []) {
+    if (v && typeof v === "object" && typeof (v as Record<string, unknown>).id === "string") {
+      const id = (v as Record<string, unknown>).id as string;
+      if (!byId.has(id)) byId.set(id, v as Record<string, unknown>); // first verdict for an id wins
+    }
+  }
+  const verdicts: SpamVerdict[] = [];
+  for (const id of ids) {
+    const v = byId.get(id);
+    if (!v || typeof v.legitimate !== "boolean") continue;
+    verdicts.push({ id, legitimate: v.legitimate, suspicious: v.suspicious === true, reason: typeof v.reason === "string" ? v.reason : "" });
+  }
+  return { verdicts, unjudged: ids.length - verdicts.length };
+}
+
 export function fakeReviewLLM(fn: (c: TrashCandidate[]) => ReviewVerdict[]): LLMProvider {
   return {
     async classifyImportance() { return { important: true, suspicious: false, reason: "fake" }; },
@@ -71,6 +105,7 @@ export function fakeReviewLLM(fn: (c: TrashCandidate[]) => ReviewVerdict[]): LLM
     async extractAttachment() { return ""; },
     async reviewTrash(c) { return fn(c); },
     async reviewPreference(c) { return fn(c); },
+    async reviewSpam(c) { return { verdicts: [], unjudged: c.length }; },
   };
 }
 
@@ -82,6 +117,7 @@ export function fakeLLM(fn: (i: ClassifyInput) => ClassifyResult): LLMProvider {
     async extractAttachment() { return ""; },
     async reviewTrash() { return []; },
     async reviewPreference() { return []; },
+    async reviewSpam(c) { return { verdicts: [], unjudged: c.length }; },
   };
 }
 
@@ -96,5 +132,6 @@ export function fakeAgentLLM(
     async extractAttachment() { return ""; },
     async reviewTrash() { return []; },
     async reviewPreference() { return []; },
+    async reviewSpam(c) { return { verdicts: [], unjudged: c.length }; },
   };
 }

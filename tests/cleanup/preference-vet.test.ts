@@ -16,7 +16,8 @@ function llm(fn: (c: any[], p: string) => any[]): LLMProvider {
     async agentStep() { return { kind: "final", text: "" }; }, async writeBrief() { return ""; },
     async extractAttachment() { return ""; },
     async reviewTrash() { throw new Error("preferenceVet must NOT use reviewTrash"); },
-    async reviewPreference(c, p) { return fn(c as any[], p); } } as LLMProvider;
+    async reviewPreference(c, p) { return fn(c as any[], p); },
+    async reviewSpam() { throw new Error("preferenceVet must NOT use reviewSpam"); } } as LLMProvider;
 }
 
 describe("preferenceVet", () => {
