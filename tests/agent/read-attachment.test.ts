@@ -118,6 +118,51 @@ describe("read_attachment", () => {
     expect([extractBudget(1), extractBudget(2), extractBudget(7)]).toEqual([20_000, 17_500, 5_000]);
   });
 
+  // JSON escapes `"`, `\` and newlines, so a quoted-CSV extract takes more JSON chars than
+  // the R9 budget counts. Over 40,000, gemini.ts cuts the result mid-JSON and the unread
+  // files, listed last, are lost first.
+  const CSV_ROW = `"2026-09-01","CARD PAYMENT TO TESCO STORES 3021","-23.40","1,203.11"\n`;
+  const quotedCsv = CSV_ROW.repeat(Math.ceil(50_000 / CSV_ROW.length));
+  const allQuotes = `"\\`.repeat(25_000);
+  // n readable CSVs, then a 25 MB PDF and a Word file: past 7, the extra CSVs are skipped.
+  const statements = (n: number) => withAttachments(`s${n}`, "Statements attached.", [
+    ...Array.from({ length: n }, (_, i) => filePart(String(i + 1), `statement-${i + 1}.csv`, "text/csv", 10 * KB)),
+    filePart(String(n + 1), "archive.pdf", "application/pdf", 25 * MB),
+    filePart(String(n + 2), "notes.docx", WORD, 45 * KB),
+  ]);
+
+  it.each([
+    ["a quoted CSV", 2, quotedCsv], ["a quoted CSV", 9, quotedCsv],
+    ["quotes and backslashes only", 2, allQuotes], ["quotes and backslashes only", 9, allQuotes],
+  ])("extracts full of JSON escapes (%s, %i files) are cut to keep the result under 40k, and every unread file is still listed", async (_, n, extract) => {
+    const s = setup(statements(n), () => extract);
+    const r = await s.run({ id: `s${n}` });
+    expect(JSON.stringify(r).length).toBeLessThan(40_000);
+    const read = r.files!.filter(f => f.status === "read");
+    expect(read.map(f => f.name)).toEqual(Array.from({ length: Math.min(n, 7) }, (_, i) => `statement-${i + 1}.csv`));
+    for (const f of read) {
+      expect(f.untrustedText!.endsWith(TRUNCATION_MARK)).toBe(true);
+      const body = f.untrustedText!.slice(0, -TRUNCATION_MARK.length);
+      expect(extract.startsWith(body)).toBe(true);
+      expect(body.length).toBeGreaterThan(2_000);
+    }
+    expect(r.files!.filter(f => f.status !== "read").map(f => [f.name, f.status, f.reason])).toEqual([
+      ...Array.from({ length: n - Math.min(n, 7) }, (_, i) => [`statement-${i + 8}.csv`, "skipped", expect.stringMatching(/skipped/)]),
+      ["archive.pdf", "too-large", expect.stringMatching(/too large/)],
+      ["notes.docx", "unreadable", expect.stringMatching(/can't open/)],
+    ]);
+  });
+
+  it("one named file full of JSON escapes is cut to keep the result under 40k", async () => {
+    const s = setup(statements(2), () => allQuotes);
+    const r = await s.run({ id: "s2", name: "statement-1.csv" });
+    expect(JSON.stringify(r).length).toBeLessThan(40_000);
+    const text = r.files![0]!.untrustedText!;
+    expect(text.endsWith(TRUNCATION_MARK)).toBe(true);
+    expect(allQuotes.startsWith(text.slice(0, -TRUNCATION_MARK.length))).toBe(true);
+    expect(text.length).toBeGreaterThan(15_000);
+  });
+
   it("one file failing — download or extraction — is marked failed; the others still come back", async () => {
     const s = setup(threePdfs, f => { if (f.name === "c.pdf") throw new Error("The operation was aborted due to timeout"); return `TEXT of ${f.name}`; });
     const orig = s.gmail.getAttachment.bind(s.gmail);
