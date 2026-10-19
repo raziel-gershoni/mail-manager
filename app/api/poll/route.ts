@@ -110,6 +110,7 @@ export async function POST(req: Request): Promise<Response> {
             gmail, llm, store, runs: dbWeeklyRunRepo(),
             send: (text, opts) => sendPlain(bot, chatId, text, opts),
             saveRefs: (messageId, refs) => dbDigestRefRepo().save(userId, messageId, refs),
+            activity: dbActivityRepo(), actionLog: dbActionLogRepo(), ops,
           });
         } catch (err) {
           log("weekly.failed", { userId, error: err instanceof Error ? err.message : String(err) });

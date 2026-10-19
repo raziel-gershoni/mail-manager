@@ -80,4 +80,13 @@ describe("SYSTEM_PROMPT classification guidance", () => {
     for (const sign of ["🗑", "📥", "🛡🗑", "🛡📥", "✅", "⭐", "🔕"]) expect(SYSTEM_PROMPT).toContain(sign);
     expect(SYSTEM_PROMPT).toMatch(/rule: null means no rule/i);
   });
+
+  // The week-in-review's numbered list resolves through the reply refs; restoring uses
+  // restore_messages (not undoable, the safe direction — R1) for trashed and archived mail.
+  it("maps 'restore …' on the week-in-review to restore_messages via the [n] refs", () => {
+    expect(SYSTEM_PROMPT).toMatch(/week-in-review/);
+    expect(SYSTEM_PROMPT).toMatch(/call restore_messages with exactly the ids of those \[n\] refs/);
+    expect(SYSTEM_PROMPT).toMatch(/trashed AND archived mail/);
+    expect(SYSTEM_PROMPT).toMatch(/Restore only what the owner names; if a number has no matching \[n\] ref, ask instead of guessing/);
+  });
 });

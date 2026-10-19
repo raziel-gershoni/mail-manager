@@ -13,6 +13,10 @@ import type { WeeklyKind, WeeklyRunRepo } from "./runs.js";
 import { weekKey } from "./week.js";
 import { checkSpam } from "./spam.js";
 import { composeSpamReport } from "./spam-report.js";
+import { retroReport } from "./retro.js";
+import type { ActivityRepo } from "../notifier/activity.js";
+import type { ActionLogRepo } from "../cleanup/proposals.js";
+import type { OpsEventRepo } from "../ops/events.js";
 import { log } from "../util/log.js";
 
 // Both measured from the start of the poll run (runStart = deadline − POLL_LOOP_BUDGET_MS),
@@ -30,6 +34,12 @@ export interface WeeklyDeps {
   gmail: GmailClient; llm: LLMProvider; store: MemoryStore; runs: WeeklyRunRepo;
   send: (text: string, opts: { silent: boolean }) => Promise<number | undefined>; // → the sent Telegram message id
   saveRefs: (messageId: number, refs: DigestRef[]) => Promise<void>;
+  // The retrospect's sources. Optional so the spam kind and its tests (tests/weekly/run.test.ts,
+  // tests/weekly/run.spam.test.ts) don't need them; the retro kind throws without them
+  // (logged as weekly.failed, week left unmarked). The poll route always passes all three.
+  activity?: ActivityRepo;
+  actionLog?: ActionLogRepo;
+  ops?: OpsEventRepo;
 }
 
 // What a job hands back to be sent: the message, whether it goes out without a sound,
@@ -49,6 +59,7 @@ async function spamJob(deps: WeeklyDeps, deadline: number): Promise<WeeklyReport
 // The weekly jobs, in the order they run.
 export const WEEKLY_JOBS: readonly WeeklyJob[] = [
   { kind: "spam", run: spamJob },
+  { kind: "retro", run: retroReport }, // after the spam check (spec C §1)
 ];
 
 export async function runWeeklyJobs(deps: WeeklyDeps, jobs: readonly WeeklyJob[]): Promise<void> {

@@ -31,6 +31,10 @@ describe("direct action tools", () => {
     expect(gmail.trashedIds!()).toEqual([]);             // no longer trashed
     expect(gmail.restoredIds!().sort()).toEqual(["m4", "m5"]);
   });
+  it("restore_messages tells the agent it brings back archived mail too (the week-in-review restores both)", () => {
+    expect(restoreMessagesTool().schema.description).toMatch(/archived mail/);
+    expect(restoreMessagesTool().schema.description).toMatch(/week-in-review/);
+  });
   it("empty ids is a no-op error (trash + restore)", async () => {
     const gmail = fakeGmailClient(gmailOpts);
     expect((await trashMessagesTool().run({ ids: [] }, ctxWith(gmail, fakeActionLogRepo())) as any).ok).toBe(false);

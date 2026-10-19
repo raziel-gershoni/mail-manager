@@ -156,7 +156,7 @@ export function trashMessagesTool(): ToolDef {
 export function restoreMessagesTool(): ToolDef {
   return {
     mutating: true,
-    schema: { name: "restore_messages", description: "Restore (un-trash) specific messages by id — removes them from Trash and puts them back in the inbox. Use when the owner wants trashed mail back (e.g. after reviewing Trash for something worth keeping). Find the ids first with search_gmail using an in:trash query (e.g. in:trash newer_than:7d), then confirm which ones with the owner before restoring.",
+    schema: { name: "restore_messages", description: "Restore specific messages by id — takes them out of Trash and puts them back in the inbox; for archived mail it just puts them back in the inbox. Use when the owner wants trashed or archived mail back (e.g. after reviewing Trash for something worth keeping, or 'restore 1' on the week-in-review). For trash, find the ids first with search_gmail using an in:trash query (e.g. in:trash newer_than:7d), then confirm which ones with the owner before restoring.",
       parameters: { type: "object", properties: { ids: { type: "array", items: { type: "string" } }, reason: { type: "string" } }, required: ["ids"] } },
     async run(args, ctx) {
       const ids = (args.ids as string[]) ?? [];
