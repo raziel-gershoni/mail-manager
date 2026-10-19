@@ -3,6 +3,7 @@ import { GMAIL_FETCH_CONCURRENCY } from "../gmail/client.js";
 import type { EmailMeta } from "../gmail/headers.js";
 import type { TrashCandidate } from "../llm/provider.js";
 import { riskSignals } from "../gmail/risk.js";
+import { attachmentLine } from "../gmail/parts.js";
 import { mapLimit } from "../util/concurrency.js";
 
 // Shared read/build preamble for guardVet and preferenceVet: caps the id list,
@@ -20,7 +21,8 @@ export async function readCandidates(
   const fulls = await mapLimit(use, GMAIL_FETCH_CONCURRENCY, (id) => deps.gmail.readFull(id));
   const candidates: TrashCandidate[] = fulls.map(f => {
     const r = riskSignals(f.meta);
-    return { id: f.meta.id, from: f.meta.from, subject: f.meta.subject, bulk: r.bulk, transactional: r.transactional, bodyText: f.bodyText };
+    const line = attachmentLine(f.meta.attachments);
+    return { id: f.meta.id, from: f.meta.from, subject: f.meta.subject, bulk: r.bulk, transactional: r.transactional, bodyText: f.bodyText, ...(line ? { attachmentLine: line } : {}) };
   });
   const metas = new Map(fulls.map(f => [f.meta.id, f.meta]));
   return { candidates, metas, capped };

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { ToolDef, ToolContext } from "../agent/tools.js";
 import type { TrashCandidate } from "../llm/provider.js";
 import { riskSignals } from "../gmail/risk.js";
+import { attachmentLine } from "../gmail/parts.js";
 import { vetTrashSet, TRASH_CAP } from "./vet.js";
 import { bucketByAction } from "./apply-rules.js";
 import { guardVet } from "./guard.js";
@@ -32,7 +33,8 @@ export function proposeTrashTool(): ToolDef {
       const metas = await mapLimit(ids, GMAIL_FETCH_CONCURRENCY, (id) => ctx.gmail.getMeta(id));
       const candidates: TrashCandidate[] = metas.map((m, i) => {
         const r = riskSignals(m);
-        return { id: ids[i]!, from: m.from, subject: m.subject, bulk: r.bulk, transactional: r.transactional };
+        const line = attachmentLine(m.attachments);
+        return { id: ids[i]!, from: m.from, subject: m.subject, bulk: r.bulk, transactional: r.transactional, ...(line ? { attachmentLine: line } : {}) };
       });
       const vet = await vetTrashSet(candidates, { llm: dep.llm });
       const capped = vet.capped || rawIds.length > TRASH_CAP;

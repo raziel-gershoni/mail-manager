@@ -28,7 +28,7 @@ vi.mock("@google/genai", async (importOriginal) => ({
   },
 }));
 
-const { geminiProvider } = await import("../../src/llm/gemini.js");
+const { geminiProvider, ATTACHMENT_GUIDANCE } = await import("../../src/llm/gemini.js");
 
 const SAMPLING = ["temperature", "topP", "topK"];
 
@@ -103,5 +103,29 @@ describe("geminiProvider request config", () => {
     const [model, user] = sent[1]!.req.contents.slice(1);
     expect(model.parts[0].functionCall.id).toBe("call_9");
     expect(user.parts[0].functionResponse.id).toBe("call_9");
+  });
+
+  it("classify shows the attachment line (and how to weigh it) only for an email with attachments", async () => {
+    const llm = geminiProvider("test-key");
+    await llm.classifyImportance(classifyInput); // attachments: []
+    await llm.classifyImportance({ ...classifyInput, email: { ...classifyInput.email, attachments: [
+      { partId: "1", attachmentId: "att-1", filename: "invoice.pdf", mimeType: "application/pdf", size: 120 * 1024, inline: false },
+    ] } });
+    expect(sent[0]!.req.contents).toContain("Snippet: attached\n\nSignals:"); // no files: the prompt is exactly as before
+    expect(sent[0]!.req.contents).not.toContain(ATTACHMENT_GUIDANCE);
+    expect(sent[1]!.req.contents).toContain("Snippet: attached\nattachments: invoice.pdf (PDF, 120 KB)");
+    expect(sent[1]!.req.contents).toContain(ATTACHMENT_GUIDANCE);
+  });
+
+  it("both reviewers show a candidate's attachment line and carry the untrusted-names guidance", async () => {
+    const llm = geminiProvider("test-key");
+    const withFile: TrashCandidate[] = [{ id: "a", from: "x@y.com", subject: "s", bulk: true, transactional: false, attachmentLine: "invoice.pdf (PDF, 120 KB)" }];
+    await llm.reviewTrash(withFile);
+    await llm.reviewPreference(withFile, "trash newsletters");
+    expect(sent).toHaveLength(2);
+    for (const { req } of sent) {
+      expect(req.contents).toContain('id=a from="x@y.com" subject="s" bulk=true transactional=false\nattachments: invoice.pdf (PDF, 120 KB)');
+      expect(req.contents).toContain(ATTACHMENT_GUIDANCE);
+    }
   });
 });

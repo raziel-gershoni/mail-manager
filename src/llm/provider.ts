@@ -23,7 +23,9 @@ export interface StreamSink {
 }
 export interface BriefEmail { from: string; subject: string; bodyText: string; rule?: RuleTag | null; }
 
-export interface TrashCandidate { id: string; from: string; subject: string; bulk: boolean; transactional: boolean; bodyText?: string; }
+// attachmentLine: the message's files as one compact line (attachmentLine() in
+// src/gmail/parts.ts); absent when it has none.
+export interface TrashCandidate { id: string; from: string; subject: string; bulk: boolean; transactional: boolean; bodyText?: string; attachmentLine?: string; }
 export interface ReviewVerdict { id: string; keep: boolean; reason: string; }
 
 export interface LLMProvider {
