@@ -6,13 +6,14 @@ import type { ActivityRepo, ActedSource } from "../notifier/activity.js";
 import type { ActionLogRepo } from "../cleanup/proposals.js";
 import type { MemoryStore } from "../memory/store.js";
 import type { OpsEvent, OpsEventRepo } from "../ops/events.js";
+import { weekKey } from "./week.js";
 
 export interface WeekFacts {
   acted: { messageId?: string; from: string; subject: string; action: "trashed" | "archived"; source?: ActedSource; at: Date }[]; // oldest first
   rescued: number;      // messages rescued from spam in the window
   undone: number;       // runs undone in the window (whenever they ran)
   rulesNew: number;     // rules/preferences created in the window
-  rulesChanged: number; // created before the window, updated in it (R4). Hard deletes leave no trace, so they aren't counted.
+  rulesChanged: number; // created before the window, last updated in it (R4). Hard deletes leave no trace, so they aren't counted.
   ops: OpsEvent[];      // oldest first
 }
 
@@ -35,34 +36,69 @@ function zoneOffsetMs(at: Date, tz: string): number {
   return Date.UTC(w.y, w.m - 1, w.d, w.h, w.mi, w.s) - Math.floor(at.getTime() / 1000) * 1000;
 }
 
-// Where the retrospect's window starts: local midnight RETRO_WINDOW_DAYS days before
-// today's local date in `timezone` — the last 7 full local days plus today so far. The
-// day arithmetic is on the LOCAL calendar and the result is converted back with that
-// night's own UTC offset, so a DST change inside the window can't move it by an hour.
-// A bad or empty timezone falls back to UTC.
-export function retroSince(now: Date, timezone: string): Date {
-  const tz = zoneOrUtc(timezone);
-  const { y, m, d } = wallClock(now, tz);
-  const midnightAsUtc = Date.UTC(y, m - 1, d - RETRO_WINDOW_DAYS);
-  // Two passes: the offset read at the first guess can belong to the other side of a
-  // DST change; reading it again at the corrected instant settles it.
-  let at = midnightAsUtc - zoneOffsetMs(new Date(midnightAsUtc), tz);
-  at = midnightAsUtc - zoneOffsetMs(new Date(at), tz);
-  return new Date(at);
+// The first instant of the local calendar date y-m-d in `tz` (d may run past the month's
+// edges; Date.UTC normalizes it). The day arithmetic is on the LOCAL calendar and the
+// result is converted back with that night's own UTC offset, so a DST change inside the
+// window can't move an edge by an hour. The offset is read a day either side, so both
+// sides of a DST change that night are candidates; the earliest one whose local date is
+// y-m-d wins. That is local midnight, or 01:00 where the clocks spring forward AT
+// midnight (America/Santiago, America/Havana), when 00:00 never happens.
+function localMidnight(y: number, m: number, d: number, tz: string): Date {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const midnightAsUtc = Date.UTC(y, m - 1, d);
+  const target = new Date(midnightAsUtc).toISOString().slice(0, 10);
+  const candidates = [midnightAsUtc - DAY_MS, midnightAsUtc + DAY_MS]
+    .map(probe => midnightAsUtc - zoneOffsetMs(new Date(probe), tz))
+    .sort((a, b) => a - b);
+  const onTheDay = candidates.find(at => {
+    const w = wallClock(new Date(at), tz);
+    return new Date(Date.UTC(w.y, w.m - 1, w.d)).toISOString().slice(0, 10) === target;
+  });
+  return new Date(onTheDay ?? candidates[candidates.length - 1]!);
 }
 
+// The retrospect's window is the Sunday–Saturday local week BEFORE the one weekKey(now)
+// names: [retroSince, retroUntil). It is anchored to the week, not to `now`, so the
+// windows of consecutive retros tile — each starts exactly where the last one ended:
+// - Sunday's first run (the week's biggest catch-up) records its activity BEFORE the
+//   retro runs; that slice is past retroUntil, so it is reported once, next week;
+// - a retro that slips past Sunday (every Sunday run out of time) still covers the same
+//   week, so no day is skipped or repeated.
+// A bad or empty timezone falls back to UTC (like weekKey).
+function weekStart(now: Date, timezone: string): { y: number; m: number; d: number; tz: string } {
+  const tz = zoneOrUtc(timezone);
+  const [y, m, d] = weekKey(now, tz).split("-").map(Number) as [number, number, number];
+  return { y, m, d, tz };
+}
+
+// Where the window starts: local midnight of the previous week's Sunday.
+export function retroSince(now: Date, timezone: string): Date {
+  const { y, m, d, tz } = weekStart(now, timezone);
+  return localMidnight(y, m, d - RETRO_WINDOW_DAYS, tz);
+}
+
+// Where the window ends (exclusive): local midnight of this week's Sunday, the first
+// instant of weekKey(now)'s week.
+export function retroUntil(now: Date, timezone: string): Date {
+  const { y, m, d, tz } = weekStart(now, timezone);
+  return localMidnight(y, m, d, tz);
+}
+
+// Everything in [since, until): pass retroSince(now, tz) and retroUntil(now, tz).
 export async function gatherWeek(deps: {
-  userId: number; since: Date; activity: ActivityRepo; actionLog: ActionLogRepo; store: MemoryStore; ops: OpsEventRepo;
+  userId: number; since: Date; until: Date; activity: ActivityRepo; actionLog: ActionLogRepo; store: MemoryStore; ops: OpsEventRepo;
 }): Promise<WeekFacts> {
   const from = deps.since.getTime();
-  const inWindow = (d: Date): boolean => d.getTime() >= from;
+  const to = deps.until.getTime();
+  const inWindow = (d: Date): boolean => d.getTime() >= from && d.getTime() < to;
   const [activity, runs, ops] = await Promise.all([
     deps.activity.since(deps.userId, deps.since),
     deps.actionLog.runsSince(deps.userId, deps.since),
     deps.ops.since(deps.userId, deps.since),
   ]);
-  // The repos already filter by `since`; the window is applied again here so the counts
-  // never depend on a repo's exact edge semantics.
+  // The repos filter by `since` only; both edges are applied here, so the counts never
+  // depend on a repo's exact edge semantics and what happened after `until` (this week
+  // so far) waits for next week's report.
   const acted = activity
     .filter(r => (r.action === "trashed" || r.action === "archived") && inWindow(r.at))
     .sort((a, b) => a.at.getTime() - b.at.getTime())
@@ -77,7 +113,7 @@ export async function gatherWeek(deps: {
   const undone = runs.filter(r => r.undoneAt !== null && inWindow(r.undoneAt)).length;
   const rows = deps.store.list();
   const rulesNew = rows.filter(r => r.createdAt !== undefined && inWindow(r.createdAt)).length;
-  const rulesChanged = rows.filter(r => r.createdAt !== undefined && !inWindow(r.createdAt) && r.updatedAt !== undefined && inWindow(r.updatedAt)).length;
+  const rulesChanged = rows.filter(r => r.createdAt !== undefined && r.createdAt.getTime() < from && r.updatedAt !== undefined && inWindow(r.updatedAt)).length;
   return {
     acted, rescued, undone, rulesNew, rulesChanged,
     ops: ops.filter(e => inWindow(e.at)).sort((a, b) => a.at.getTime() - b.at.getTime()),
