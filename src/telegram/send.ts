@@ -28,7 +28,9 @@ export async function sendFormatted(bot: Bot, chatId: number, raw: string, opts?
 // markdown mailto link, bold/italic. What it does NOT prevent: Telegram's own detection,
 // which still makes a bare URL or domain, an email address, an @mention, a /command (a
 // tapped one is sent to the bot), a #hashtag or a phone number tappable in plain text.
-// So the callers defang every untrusted field first (src/weekly/text.ts, defang).
+// So the weekly reports defang every untrusted field first (src/weekly/text.ts, defang):
+// URLs, domains, emails, @mentions and /commands become readable non-links. A #hashtag
+// (an in-app search) and a phone number are left as they are.
 // Link previews are off as well, so a URL that slips through isn't fetched and shown as a
 // card. Like sendFormatted it doesn't split, so the caller keeps the text under 4096 characters.
 export async function sendPlain(bot: Bot, chatId: number, text: string, opts?: { silent?: boolean }): Promise<number> {

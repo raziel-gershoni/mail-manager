@@ -18,9 +18,9 @@ export const SPAM_SCAN_CAP = 300; // a week of spam; past this the report says i
 export const SPAM_BATCH = 40;     // emails per reviewSpam call
 
 export interface FlaggedSpam { id: string; from: string; subject: string; reason: string; suspicious: boolean; byRule: boolean }
-// judged: messages the model gave a usable verdict for; unjudged: read but not judged (a
-// failed read, a failed batch, a missing or malformed verdict). What the deadline cut off
-// is neither — `incomplete` says so.
+// judged: messages the model gave a usable verdict for; unjudged: messages that couldn't be
+// judged (a failed read, a failed batch, a missing or malformed verdict). What the deadline
+// cut off is neither — `incomplete` says so.
 export interface SpamCheck { total: number; flagged: FlaggedSpam[]; judged: number; unjudged: number; capped: boolean; incomplete: boolean }
 
 const errText = (err: unknown) => err instanceof Error ? err.message : String(err);
