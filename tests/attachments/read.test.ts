@@ -1,5 +1,5 @@
 // tests/attachments/read.test.ts
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { readAttachments, ATTACHMENT_READ_CONCURRENCY, TRUNCATION_MARK, NOT_READ_REASON, notReadReason } from "../../src/attachments/read.js";
 import { fakeGmailClient } from "../../src/gmail/client.js";
 import { fakeLLM, type LLMProvider } from "../../src/llm/provider.js";
@@ -70,6 +70,24 @@ describe("readAttachments", () => {
     s.gmail.getAttachment = async (id: string, a: AttachmentMeta) => { if (a.filename === "b.pdf") throw new Error("socket hang up"); return orig(id, a); };
     const reads = await readAttachments("m4", await s.atts(), s, CAPS);
     expect(reads.map(r => [r.name, r.status])).toEqual([["a.pdf", "read"], ["b.pdf", "failed"], ["c.pdf", "failed"]]);
+  });
+
+  it("an extract that comes back empty (e.g. a SAFETY or RECITATION finish) marks that file failed, logged — never 'read' with no text", async () => {
+    const raw = withAttachments("m7", "three", [filePart("1", "a.pdf", "application/pdf", 10 * KB), filePart("2", "blank.pdf", "application/pdf", 10 * KB), filePart("3", "spaces.pdf", "application/pdf", 10 * KB)]);
+    const s = setup(raw, f => (f.name === "blank.pdf" ? "" : f.name === "spaces.pdf" ? " \n\t " : `TEXT of ${f.name}`));
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const reads = await readAttachments("m7", await s.atts(), s, CAPS);
+      expect(reads).toEqual([
+        { name: "a.pdf", mimeType: "application/pdf", size: 10 * KB, status: "read", text: "TEXT of a.pdf" },
+        { name: "blank.pdf", mimeType: "application/pdf", size: 10 * KB, status: "failed" },
+        { name: "spaces.pdf", mimeType: "application/pdf", size: 10 * KB, status: "failed" },
+      ]);
+      const failures = spy.mock.calls
+        .map(c => { try { return JSON.parse(c[0] as string) as { event: string; name: string; error: string }; } catch { return null; } })
+        .filter(e => e?.event === "attachments.read_failed");
+      expect(failures.map(e => [e!.name, e!.error])).toEqual([["blank.pdf", "empty extract"], ["spaces.pdf", "empty extract"]]);
+    } finally { spy.mockRestore(); }
   });
 
   it("trims each extract and cuts one over the cap, marked", async () => {
