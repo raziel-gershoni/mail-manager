@@ -6,7 +6,10 @@ import telegramifyMarkdown from "telegramify-markdown";
 // plain text so a message always lands.
 // Returns the sent Telegram message id (used to couple a digest to the emails it
 // covered). Throws if both the formatted and plain sends fail.
-export async function sendFormatted(bot: Bot, chatId: number, text: string, opts?: { silent?: boolean }): Promise<number | undefined> {
+// Both senders send text.toWellFormed(): a lone UTF-16 surrogate (half an emoji, from a
+// cut somewhere upstream) makes Telegram reject the whole message, so it becomes U+FFFD.
+export async function sendFormatted(bot: Bot, chatId: number, raw: string, opts?: { silent?: boolean }): Promise<number | undefined> {
+  const text = raw.toWellFormed();
   const extra = opts?.silent ? { disable_notification: true } : {};
   try {
     const md = telegramifyMarkdown(text, "escape");
@@ -25,7 +28,7 @@ export async function sendFormatted(bot: Bot, chatId: number, text: string, opts
 // Link previews are off as well, so a URL in a subject isn't fetched and shown as a card.
 // Like sendFormatted it doesn't split, so the caller keeps the text under 4096 characters.
 export async function sendPlain(bot: Bot, chatId: number, text: string, opts?: { silent?: boolean }): Promise<number> {
-  const m = await bot.api.sendMessage(chatId, text, {
+  const m = await bot.api.sendMessage(chatId, text.toWellFormed(), {
     link_preview_options: { is_disabled: true },
     ...(opts?.silent ? { disable_notification: true } : {}),
   });

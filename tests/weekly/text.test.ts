@@ -13,6 +13,16 @@ describe("clipLine", () => {
     expect(clipLine("abcdefgh", 5).length).toBe(5);
   });
 
+  it("clips by code points: an emoji straddling the cut is kept whole, never split into a lone surrogate", () => {
+    // "😀" is two UTF-16 units; cutting "abc😀def" at 4 units would leave a lone high
+    // surrogate, which Telegram rejects (and the weekly send would then fail every hour).
+    const out = clipLine("abc😀def", 5);
+    expect(out).toBe("abc😀…");
+    expect(out.isWellFormed()).toBe(true);
+    expect(clipLine("😀😀😀😀😀😀", 3)).toBe("😀😀…");
+    expect(clipLine("😀😀😀", 3)).toBe("😀😀😀"); // exactly max code points: not clipped
+  });
+
   it("turns whitespace-only text into the empty string", () => {
     expect(clipLine(" \n\t ", 10)).toBe("");
   });

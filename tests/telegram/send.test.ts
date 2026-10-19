@@ -23,12 +23,39 @@ const phish: FlaggedSpam = {
 };
 const check: SpamCheck = { total: 12, flagged: [phish], unjudged: 0, capped: false, incomplete: false };
 
+describe("sendFormatted", () => {
+  it("never sends a lone surrogate, formatted or on the plain fallback", async () => {
+    const { bot, calls } = fakeBot();
+    await sendFormatted(bot, 555, "cut emoji \uD83D here");
+    expect(calls[0]!.other?.parse_mode).toBe("MarkdownV2");
+    expect(calls[0]!.text.isWellFormed()).toBe(true);
+    expect(calls[0]!.text).toContain("\uFFFD");
+
+    const failing = { api: { sendMessage: async (chatId: number, text: string, other?: Record<string, unknown>) => {
+      calls.push({ chatId, text, other });
+      if (other?.parse_mode) throw new Error("400: can't parse entities");
+      return { message_id: 1 };
+    } } } as unknown as Bot;
+    calls.length = 0;
+    await sendFormatted(failing, 555, "cut emoji \uD83D here");
+    expect(calls[1]!.other?.parse_mode).toBeUndefined();
+    expect(calls[1]!.text).toBe("cut emoji \uFFFD here");
+  });
+});
+
 describe("sendPlain", () => {
   it("sends the text exactly as given, with no parse mode or entities, no link preview, and returns the message id", async () => {
     const { bot, calls } = fakeBot();
     const id = await sendPlain(bot, 555, "a *b* [c](https://x.example)", { silent: false });
     expect(id).toBe(701);
     expect(calls).toEqual([{ chatId: 555, text: "a *b* [c](https://x.example)", other: { link_preview_options: { is_disabled: true } } }]);
+  });
+
+  it("never sends a lone surrogate: it is replaced with U+FFFD so Telegram accepts the text", async () => {
+    const { bot, calls } = fakeBot();
+    await sendPlain(bot, 555, "cut emoji \uD83D here", { silent: false });
+    expect(calls[0]!.text).toBe("cut emoji \uFFFD here");
+    expect(calls[0]!.text.isWellFormed()).toBe(true);
   });
 
   it("goes out without a sound when silent", async () => {
