@@ -8,6 +8,8 @@ import { parseFailureBody } from "../../../src/queue/failure.js";
 import { resolveUserIdForApp } from "../../../src/users/identity.js";
 import { dbTelegramLinkRepo, dbUserDirectory } from "../../../src/db/user-adapters.js";
 import { dbSettingsRepo } from "../../../src/db/settings-adapter.js";
+import { dbOpsEventRepo } from "../../../src/db/ops-events-adapter.js";
+import { recordOpsEvent } from "../../../src/ops/events.js";
 import { effectiveSettings } from "../../../src/settings/settings.js";
 import { sendFormatted } from "../../../src/telegram/send.js";
 import { log } from "../../../src/util/log.js";
@@ -39,13 +41,18 @@ export async function POST(req: Request): Promise<Response> {
       return Response.json({ ok: true, skipped: true });
     }
     let language: Lang = "en";
+    let userId: number | null = null;
     if (typeof failed.fromId === "number") {
       // Read-only resolution on purpose: a failure handler must not create links or
       // otherwise mutate state. The link already exists — the turn got far enough to
       // be queued.
-      const userId = await resolveUserIdForApp(e.TELEGRAM_OWNER_ID, failed.fromId, dbTelegramLinkRepo(), dbUserDirectory());
+      userId = await resolveUserIdForApp(e.TELEGRAM_OWNER_ID, failed.fromId, dbTelegramLinkRepo(), dbUserDirectory());
       if (userId !== null) language = effectiveSettings(await dbSettingsRepo().get(userId), e.OWNER_TZ).language;
     }
+    // The one write this handler makes: a worker_failed ops event for the weekly
+    // retrospect. recordOpsEvent never throws, so it can't block the apology below. A
+    // turn with no resolvable user can't be attributed, so it is only logged.
+    if (userId !== null) await recordOpsEvent(dbOpsEventRepo(), userId, "worker_failed", { updateId: failed.updateId ?? null });
     log("worker_failed.notify", { updateId: failed.updateId, chatId: failed.chatId });
     await sendFormatted(new Bot(e.TELEGRAM_BOT_TOKEN), failed.chatId, t(language, "turn_failed"));
   } catch (err) {

@@ -114,4 +114,47 @@ describe("pollAllUsers", () => {
     expect(ok).toEqual([2]);
     expect(res).toEqual({ polled: 1, skipped: 0, gated: 0, errored: 1 });
   });
+
+  // The poll_errored ops event (weekly retrospect) is recorded through this hook.
+  it("reports a failed user poll to onUserError with the user and the error, still counting it errored", async () => {
+    const links = fakeTelegramLinkRepo([
+      { userId: 1, telegramUserId: OWNER, chatId: OWNER },
+      { userId: 2, telegramUserId: 222, chatId: 222 },
+    ]);
+    const reported: Array<{ userId: number; message: string }> = [];
+    const res = await pollAllUsers({ ownerTelegramId: OWNER, links, directory: fakeUserDirectory([1, 2]), now: IN_WINDOW,
+      settingsFor: async () => on(),
+      pollUser: async (u) => { if (u === 1) throw new Error("boom"); },
+      onUserError: async (userId, err) => { reported.push({ userId, message: err instanceof Error ? err.message : String(err) }); } });
+    expect(reported).toEqual([{ userId: 1, message: "boom" }]);
+    expect(res).toEqual({ polled: 1, skipped: 0, gated: 0, errored: 1 });
+  });
+
+  it("a failing onUserError hook changes nothing: the user is still errored and the others still polled", async () => {
+    const links = fakeTelegramLinkRepo([
+      { userId: 1, telegramUserId: OWNER, chatId: OWNER },
+      { userId: 2, telegramUserId: 222, chatId: 222 },
+    ]);
+    const ok: number[] = [];
+    const res = await pollAllUsers({ ownerTelegramId: OWNER, links, directory: fakeUserDirectory([1, 2]), now: IN_WINDOW,
+      settingsFor: async () => on(),
+      pollUser: async (u) => { if (u === 1) throw new Error("boom"); ok.push(u); },
+      onUserError: async () => { throw new Error("ops db down"); } });
+    expect(ok).toEqual([2]);
+    expect(res).toEqual({ polled: 1, skipped: 0, gated: 0, errored: 1 });
+  });
+
+  it("does not call onUserError for users that were polled, gated or skipped", async () => {
+    const links = fakeTelegramLinkRepo([
+      { userId: 1, telegramUserId: OWNER, chatId: OWNER },
+      { userId: 2, telegramUserId: 222, chatId: 222 },
+    ]);
+    const reported: number[] = [];
+    const res = await pollAllUsers({ ownerTelegramId: OWNER, links, directory: fakeUserDirectory([1, 2, 3]), now: IN_WINDOW,
+      settingsFor: async (u) => on({ paused: u === 2 }),
+      pollUser: async () => {},
+      onUserError: async (userId) => { reported.push(userId); } });
+    expect(res).toEqual({ polled: 1, skipped: 1, gated: 1, errored: 0 });
+    expect(reported).toEqual([]);
+  });
 });

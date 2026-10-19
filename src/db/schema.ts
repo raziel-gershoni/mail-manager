@@ -1,6 +1,6 @@
 // src/db/schema.ts
 import { sql } from "drizzle-orm";
-import { pgTable, serial, integer, text, timestamp, boolean, bigint, uniqueIndex, jsonb, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, boolean, bigint, uniqueIndex, index, jsonb, primaryKey } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -147,3 +147,13 @@ export const weeklyRuns = pgTable("weekly_runs", {
   week: text("week").notNull(),
   at: timestamp("at", { withTimezone: true }).defaultNow().notNull(), // when that report was sent
 }, (t) => ({ pk: primaryKey({ columns: [t.userId, t.kind] }) }));
+
+// Operational issues for the weekly retrospect (see src/ops/events.ts). Written only
+// through recordOpsEvent, which never throws; pruned to 30 days by the retrospect run.
+export const opsEvents = pgTable("ops_events", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  kind: text("kind").notNull(),                                // 'poll_incomplete' | 'cursor_expired' | 'reconnect_needed' | 'poll_errored' | 'worker_failed'
+  detail: jsonb("detail").$type<Record<string, unknown>>(),   // small context (counts, an error message); null when there is none
+  at: timestamp("at").defaultNow().notNull(),
+}, (t) => ({ userAtIx: index("ops_events_user_at_ix").on(t.userId, t.at) }));

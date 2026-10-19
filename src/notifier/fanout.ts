@@ -18,6 +18,10 @@ export interface FanoutDeps {
   now: Date;
   settingsFor: (userId: number) => Promise<EffectiveSettings>;
   pollUser: (userId: number, chatId: number, timezone: string, language: EffectiveSettings["language"], deadline: number) => Promise<void>;
+  // Told about each user whose poll failed (the run still counts as `errored`). The poll
+  // route records it as a poll_errored ops event. Its own failure is caught here, so an
+  // observer can never change the outcome it observes or stop the other users' polls.
+  onUserError?: (userId: number, err: unknown) => Promise<void>;
 }
 
 type Outcome = "polled" | "skipped" | "gated" | "errored";
@@ -39,6 +43,10 @@ export async function pollAllUsers(deps: FanoutDeps): Promise<{ polled: number; 
       return "polled";
     } catch (e) {
       console.error(`poll failed for user ${userId}`, e);
+      if (deps.onUserError) {
+        try { await deps.onUserError(userId, e); }
+        catch (hookErr) { console.error(`poll error hook failed for user ${userId}`, hookErr); }
+      }
       return "errored";
     }
   }));

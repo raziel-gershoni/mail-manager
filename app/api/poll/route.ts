@@ -17,6 +17,8 @@ import { activityItemsFrom } from "../../../src/notifier/activity.js";
 import { dbActivityRepo } from "../../../src/db/activity-adapter.js";
 import { buildDigestRefs } from "../../../src/notifier/refs.js";
 import { dbDigestRefRepo } from "../../../src/db/refs-adapter.js";
+import { dbOpsEventRepo } from "../../../src/db/ops-events-adapter.js";
+import { recordOpsEvent, recordPollOutcome } from "../../../src/ops/events.js";
 import { generateBrief, composePollMessage, pollSilent, BRIEF_ATTACHMENT_GRACE_MS } from "../../../src/notifier/brief.js";
 import { pollAllUsers, POLL_LOOP_BUDGET_MS } from "../../../src/notifier/fanout.js";
 import { runWeeklyTasks } from "../../../src/weekly/run.js";
@@ -38,12 +40,16 @@ export async function POST(req: Request): Promise<Response> {
   const llm = geminiProvider(e.GEMINI_API_KEY);
   const bot = new Bot(e.TELEGRAM_BOT_TOKEN);
   const settingsRepo = dbSettingsRepo();
+  const ops = dbOpsEventRepo();
   const summary = await pollAllUsers({
     ownerTelegramId: e.TELEGRAM_OWNER_ID,
     links: dbTelegramLinkRepo(),
     directory: dbUserDirectory(),
     now: new Date(),
     settingsFor: async (userId) => effectiveSettings(await settingsRepo.get(userId), e.OWNER_TZ),
+    // A failed user poll becomes a poll_errored ops event for the weekly retrospect.
+    // recordOpsEvent never throws, and the fan-out guards the hook as well.
+    onUserError: (userId, err) => recordOpsEvent(ops, userId, "poll_errored", { error: err instanceof Error ? err.message : String(err) }),
     pollUser: async (userId, chatId, timezone, language, deadline) => {
       try {
         const auth = await authedGmailFor(userId, e);
@@ -51,6 +57,9 @@ export async function POST(req: Request): Promise<Response> {
         const store = await dbMemoryStore(userId);
         const res = await runPoll({ userId, gmail, store, llm, sync: dbSyncRepo(), seen: dbSeenRepo(), actionLog: dbActionLogRepo(), deadline });
         if (res.firstRun) return;
+        // A catch-up that ran out of time, or an expired cursor, is an ops event for the
+        // weekly retrospect. Recorded as soon as runPoll reports it; never throws.
+        await recordPollOutcome(ops, userId, res);
         const ids = res.important.map(i => i.messageId);
         let brief: string | null = null;
         if (ids.length > 0) {
@@ -108,6 +117,7 @@ export async function POST(req: Request): Promise<Response> {
       } catch (err) {
         if (isInvalidGrant(err)) {
           log("poll.reconnect", { userId });
+          await recordOpsEvent(ops, userId, "reconnect_needed"); // never throws
           const newlyFlagged = await dbGoogleAccountRepo().markNeedsReconnect(userId);
           if (newlyFlagged) await sendFormatted(bot, chatId, reconnectNudgeText(undefined, language));
           return; // handled; do not advance the cursor (res.commit only runs on success above)

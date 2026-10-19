@@ -120,6 +120,13 @@
       "when": 1792384627830,
       "tag": "0016_overjoyed_dragon_lord",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792385125320,
+      "tag": "0017_lethal_anthem",
+      "breakpoints": true
     }
   ]
 }
