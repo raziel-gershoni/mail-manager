@@ -1,5 +1,5 @@
 // app/api/oauth/callback/route.ts
-import { Bot } from "grammy";
+import { telegramBot } from "../../../../src/telegram/client.js";
 import { env } from "../../../../src/config/env.js";
 import { exchangeAndStore } from "../../../../src/oauth/google.js";
 import { searchParam } from "../../../../src/http/url.js";
@@ -19,7 +19,7 @@ let cachedBotLink: string | null | undefined;
 async function botDeepLink(token: string): Promise<string | null> {
   if (cachedBotLink !== undefined) return cachedBotLink;
   try {
-    const me = await new Bot(token).api.getMe();
+    const me = await telegramBot(token).api.getMe();
     cachedBotLink = me.username ? `https://t.me/${me.username}` : null;
   } catch (err) {
     console.error("oauth callback getMe failed", err);

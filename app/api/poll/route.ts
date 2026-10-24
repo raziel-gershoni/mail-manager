@@ -26,7 +26,7 @@ import { dbWeeklyRunRepo } from "../../../src/db/weekly-runs-adapter.js";
 import { sendFormatted, sendPlain } from "../../../src/telegram/send.js";
 import { log } from "../../../src/util/log.js";
 import { t } from "../../../src/i18n/index.js";
-import { Bot } from "grammy";
+import { telegramBot } from "../../../src/telegram/client.js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,7 +38,7 @@ export async function POST(req: Request): Promise<Response> {
   await verifyQStash(e, req);
   log("poll.start", {});
   const llm = geminiProvider(e.GEMINI_API_KEY);
-  const bot = new Bot(e.TELEGRAM_BOT_TOKEN);
+  const bot = telegramBot(e.TELEGRAM_BOT_TOKEN);
   const settingsRepo = dbSettingsRepo();
   const ops = dbOpsEventRepo();
   const summary = await pollAllUsers({
@@ -79,7 +79,8 @@ export async function POST(req: Request): Promise<Response> {
         const trashed = res.guardedTrashed + res.plainTrashed + res.prefTrashed;
         const archived = res.guardedArchived + res.plainArchived + res.prefArchived;
         const message = composePollMessage(brief, { processed: res.processed, surfaced: res.important.length, trashed, archived, unruled: res.unruled, remaining: res.remaining, cursorExpired: res.cursorExpired }, language);
-        const sentId = await sendFormatted(bot, chatId, message, { silent: pollSilent(hasImportant, res.remaining, res.cursorExpired) });
+        // A long brief arrives as several messages; a reply to any of them resolves its refs.
+        const sentIds = await sendFormatted(bot, chatId, message, { silent: pollSilent(hasImportant, res.remaining, res.cursorExpired) });
         // Only genuinely-important briefs are stored in the conversation context.
         // Routine activity is NOT auto-stored — it goes to the activity log instead
         // (queryable on demand via the recent_activity tool), keeping context lean.
@@ -93,7 +94,7 @@ export async function POST(req: Request): Promise<Response> {
           const activityItems = activityItemsFrom(res.acted, res.unruled);
           if (activityItems.length > 0) await dbActivityRepo().record(userId, activityItems);
           const refs = buildDigestRefs(res.important, res.acted);
-          if (typeof sentId === "number" && refs.length > 0) await dbDigestRefRepo().save(userId, sentId, refs);
+          if (refs.length > 0) await Promise.all(sentIds.map(sentId => dbDigestRefRepo().save(userId, sentId, refs)));
         } catch (err) {
           log("poll.side_record_failed", { userId, error: err instanceof Error ? err.message : String(err) });
         }

@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import type { Bot } from "grammy";
 import { liveReply, startTyping, STREAM_EDIT_MS, STREAM_MIN_CHARS, TYPING_REFRESH_MS } from "../../src/telegram/live.js";
+import { TELEGRAM_PART_CHARS } from "../../src/telegram/send.js";
 
 // The live sink serializes every Telegram call on an internal promise chain, so a
 // test that only pushes has to let the microtask queue drain before asserting.
@@ -115,6 +116,135 @@ describe("liveReply streaming", () => {
     await settle();
     await live.commit("**done**");
     expect(calls).toEqual(["MarkdownV2", "plain"]);
+  });
+});
+
+// Telegram rejects a message over 4096 characters. A long answer streams into one
+// message up to the part limit, then the rest arrives as further messages at commit.
+describe("liveReply long answers", () => {
+  function telegramLikeBot() {
+    const calls: { kind: string; text: string; id?: number; mode?: string; silent?: boolean }[] = [];
+    let next = 42;
+    const tooLong = (text: string) => { if (text.length > 4096) throw new Error("400: Bad Request: message is too long"); };
+    const api = {
+      sendMessage: async (_c: number, text: string, other?: any) => {
+        tooLong(text); calls.push({ kind: "send", text, mode: other?.parse_mode, silent: other?.disable_notification }); return { message_id: next++ };
+      },
+      editMessageText: async (_c: number, id: number, text: string, other?: any) => {
+        tooLong(text); calls.push({ kind: "edit", id, text, mode: other?.parse_mode }); return true;
+      },
+      deleteMessage: async () => true,
+    };
+    return { bot: { api } as unknown as Bot, calls };
+  }
+  const para = (i: number) => `Point ${i} ` + Array.from({ length: 120 }, () => "word").join(" ");
+  const longAnswer = Array.from({ length: 16 }, (_, i) => para(i)).join("\n\n");
+
+  it("streams no more than one part, so no edit is ever rejected for length", async () => {
+    let t = 0;
+    const { bot, calls } = telegramLikeBot();
+    const live = liveReply(bot, 1, { now: () => t });
+    for (let i = 0; i < longAnswer.length; i += 500) {
+      live.push(longAnswer.slice(i, i + 500));
+      t += STREAM_EDIT_MS + 1;
+      await settle();
+    }
+    expect(calls.length).toBeGreaterThan(2);
+    for (const c of calls) expect(c.text.length).toBeLessThanOrEqual(TELEGRAM_PART_CHARS);
+  });
+
+  it("commit turns the streamed message into the first part and sends the rest silently", async () => {
+    const { bot, calls } = telegramLikeBot();
+    const live = liveReply(bot, 1);
+    live.push(longAnswer.slice(0, 100));
+    await settle();
+    const id = await live.commit(longAnswer);
+    expect(id).toBe(42);
+    const after = calls.slice(1); // the first call is the streamed send
+    expect(after[0]).toMatchObject({ kind: "edit", id: 42, mode: "MarkdownV2" });
+    const rest = after.slice(1);
+    expect(rest.length).toBeGreaterThan(1);
+    expect(rest.every(c => c.kind === "send" && c.silent === true)).toBe(true);
+    expect(after.map(c => c.text.trimEnd()).join("\n\n")).toBe(longAnswer);
+  });
+
+  it("the streamed text never shrinks while the answer is still being written", async () => {
+    let t = 0;
+    const { bot, calls } = telegramLikeBot();
+    const live = liveReply(bot, 1, { now: () => t });
+    for (let i = 0; i < longAnswer.length; i += 300) {
+      live.push(longAnswer.slice(i, i + 300));
+      t += STREAM_EDIT_MS + 1;
+      await settle();
+    }
+    const lengths = calls.map(c => c.text.length);
+    expect(lengths).toEqual([...lengths].sort((a, b) => a - b));
+  });
+
+  it("commit throws when a later part can't be delivered, after editing the first", async () => {
+    let sends = 0;
+    const edits: string[] = [];
+    const bot = { api: {
+      sendMessage: async () => { sends++; if (sends > 1) throw new Error("telegram down"); return { message_id: 42 }; },
+      editMessageText: async (_c: number, _id: number, text: string) => { edits.push(text); return true; },
+      deleteMessage: async () => true,
+    } } as unknown as Bot;
+    const live = liveReply(bot, 1);
+    live.push(longAnswer.slice(0, 100));
+    await settle();
+    await expect(live.commit(longAnswer)).rejects.toThrow("telegram down");
+    expect(edits.length).toBe(1);
+  });
+
+  it("commit of an answer shorter than what streamed edits it down and sends nothing more", async () => {
+    let t = 0;
+    const { bot, calls } = telegramLikeBot();
+    const live = liveReply(bot, 1, { now: () => t });
+    live.push(longAnswer.slice(0, 2000));
+    await settle();
+    await live.commit("Short final answer.");
+    const after = calls.slice(1);
+    expect(after).toHaveLength(1);
+    expect(after[0]).toMatchObject({ kind: "edit", id: 42 });
+  });
+
+  it("when the final edits both fail, sends what follows the text on screen, so nothing shows twice", async () => {
+    let t = 0;
+    const shown: string[] = [];
+    const sent: string[] = [];
+    let streaming = true;
+    const bot = { api: {
+      sendMessage: async (_c: number, text: string) => { (streaming ? shown : sent).push(text); return { message_id: 42 }; },
+      editMessageText: async (_c: number, _id: number, text: string) => {
+        if (!streaming) throw new Error("400: Bad Request: message can't be edited");
+        shown.push(text); return true;
+      },
+      deleteMessage: async () => true,
+    } } as unknown as Bot;
+    const live = liveReply(bot, 1, { now: () => t });
+    for (let i = 0; i < longAnswer.length; i += 500) {
+      live.push(longAnswer.slice(i, i + 500));
+      t += STREAM_EDIT_MS + 1;
+      await settle();
+    }
+    streaming = false;
+    await live.commit(longAnswer);
+    const onScreen = shown.at(-1)!;
+    expect(sent.length).toBeGreaterThan(0);
+    // What's on screen plus what was sent is the whole answer, nothing twice. (The stream
+    // stops at a fixed length, which can fall mid-word, so compare without whitespace.)
+    const bare = (x: string) => x.replace(/\s+/g, "");
+    expect(bare(onScreen) + sent.map(bare).join("")).toBe(bare(longAnswer));
+  });
+
+  it("commit sends every part when nothing streamed, and returns the first id", async () => {
+    const { bot, calls } = telegramLikeBot();
+    const live = liveReply(bot, 1);
+    const id = await live.commit(longAnswer);
+    expect(id).toBe(42);
+    expect(calls.length).toBeGreaterThan(2);
+    expect(calls.every(c => c.kind === "send")).toBe(true);
+    expect(calls.map(c => c.text.trimEnd()).join("\n\n")).toBe(longAnswer);
   });
 });
 

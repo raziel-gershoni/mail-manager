@@ -22,7 +22,7 @@ import { withIdempotency } from "../../../src/queue/idempotency.js";
 import { dbIdempotencyRepo } from "../../../src/db/idempotency-adapter.js";
 import { log, logPreview } from "../../../src/util/log.js";
 import { t } from "../../../src/i18n/index.js";
-import { Bot } from "grammy";
+import { telegramBot } from "../../../src/telegram/client.js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,7 +55,7 @@ export async function POST(req: Request): Promise<Response> {
   const outcome = await withIdempotency(key, dbIdempotencyRepo(), async () => {
     // Settings first so `language` is available even if Gmail isn't connected yet.
     const settings = effectiveSettings(await dbSettingsRepo().get(userId), e.OWNER_TZ);
-    const bot = new Bot(e.TELEGRAM_BOT_TOKEN);
+    const bot = telegramBot(e.TELEGRAM_BOT_TOKEN);
     let auth;
     try {
       auth = await authedGmailFor(userId, e);

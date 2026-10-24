@@ -7,7 +7,7 @@
 // every Telegram error is swallowed and logged.
 import type { Bot } from "grammy";
 import telegramifyMarkdown from "telegramify-markdown";
-import { sendFormatted } from "./send.js";
+import { isRateLimited, messageParts, sendFormatted, sendParts, TELEGRAM_PART_CHARS } from "./send.js";
 import { log } from "../util/log.js";
 
 // Telegram clears the "typing…" status after about 5s, so refresh just inside that.
@@ -23,11 +23,6 @@ function errText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-// grammy surfaces Telegram's error_code on GrammyError; 429 is "slow down".
-function isRateLimited(err: unknown): boolean {
-  return typeof err === "object" && err !== null && (err as { error_code?: number }).error_code === 429;
-}
-
 // Keep the "typing…" status alive for the whole turn. Returns stop() — call it
 // from a `finally` so a thrown turn can't leave the interval running.
 export function startTyping(bot: Bot, chatId: number): () => void {
@@ -37,6 +32,14 @@ export function startTyping(bot: Bot, chatId: number): () => void {
   tick(); // immediately, so the status appears before the first model call
   const timer = setInterval(tick, TYPING_REFRESH_MS);
   return () => clearInterval(timer);
+}
+
+// What a stream shows: the text so far, up to one part's worth. Plain text, so its
+// length is what Telegram counts. The cut never separates an emoji's two halves.
+function streamView(buffer: string): string {
+  if (buffer.length <= TELEGRAM_PART_CHARS) return buffer;
+  const code = buffer.charCodeAt(TELEGRAM_PART_CHARS - 1);
+  return buffer.slice(0, code >= 0xd800 && code <= 0xdbff ? TELEGRAM_PART_CHARS - 1 : TELEGRAM_PART_CHARS);
 }
 
 export interface LiveReply {
@@ -59,7 +62,10 @@ export interface LiveReply {
 // are plain text, because a half-written "**bold" is not valid MarkdownV2 and
 // rendering partial input produces garbage; commit() does one final edit with the
 // proper MarkdownV2 render, so the finished message looks exactly like every other
-// reply the bot sends.
+// reply the bot sends. Telegram rejects a message over 4096 characters, so a long
+// answer streams only its first TELEGRAM_PART_CHARS (and stops growing there, rather
+// than jumping back to a paragraph break mid-stream); commit() cuts the final text into
+// parts, edits the streamed message into the first and sends the rest.
 export function liveReply(bot: Bot, chatId: number, opts: { now?: () => number } = {}): LiveReply {
   const now = opts.now ?? (() => Date.now());
   let buffer = "";               // everything the model has written this step
@@ -77,7 +83,7 @@ export function liveReply(bot: Bot, chatId: number, opts: { now?: () => number }
   // a message exists yet.
   const schedule = (): void => {
     chain = chain.then(async () => {
-      const text = buffer;
+      const text = streamView(buffer);
       if (!text || text === shownText) return;
       try {
         if (messageId === undefined) {
@@ -132,22 +138,37 @@ export function liveReply(bot: Bot, chatId: number, opts: { now?: () => number }
     // the failure callback apologises. Swallowing it would silently lose the reply,
     // which is the very failure this module exists to prevent. Once text IS on
     // screen the asymmetry flips: a failed re-render costs only formatting, so it
-    // is swallowed.
+    // is swallowed. The rest of a long answer is not formatting, though: if a later part
+    // can't be delivered, commit throws so the turn retries instead of losing the tail.
     async commit(finalText) {
       buffer = finalText;
       await chain; // let any in-flight send/edit settle so messageId is settled too
-      if (messageId === undefined) return sendFormatted(bot, chatId, finalText);
+      if (messageId === undefined) return (await sendFormatted(bot, chatId, finalText))[0];
       const id = messageId;
+      const final = finalText.toWellFormed();
+      const [first = "", ...rest] = messageParts(final);
+      let tail = rest;
       try {
-        await bot.api.editMessageText(chatId, id, telegramifyMarkdown(finalText, "escape"), { parse_mode: "MarkdownV2" });
+        await bot.api.editMessageText(chatId, id, telegramifyMarkdown(first, "escape"), { parse_mode: "MarkdownV2" });
       } catch (err) {
         // Formatting failed (bad entities, or the text is already identical).
         // The streamed plain text is still correct — try once more without markup,
         // and if even that fails, leave what's on screen rather than lose the answer.
         log("live.commit_format_error", { error: errText(err) });
-        try { await bot.api.editMessageText(chatId, id, finalText); }
-        catch (err2) { log("live.commit_error", { error: errText(err2) }); }
+        try { await bot.api.editMessageText(chatId, id, first); }
+        catch (err2) {
+          log("live.commit_error", { error: errText(err2) });
+          // The last streamed text stays on screen, so what follows IS what follows it,
+          // not what follows `first`: nothing is shown twice, and a tail the stream
+          // never reached still arrives.
+          if (final.startsWith(shownText)) {
+            const after = final.slice(shownText.length);
+            tail = after.trim() ? messageParts(after.replace(/^\s+/, "")) : [];
+          }
+        }
       }
+      // The first part already notified when it began streaming, so the rest is silent.
+      if (tail.length > 0) await sendParts(bot, chatId, tail, true);
       return id;
     },
 

@@ -14,7 +14,7 @@ import { effectiveSettings } from "../../../src/settings/settings.js";
 import { sendFormatted } from "../../../src/telegram/send.js";
 import { log } from "../../../src/util/log.js";
 import { t, type Lang } from "../../../src/i18n/index.js";
-import { Bot } from "grammy";
+import { telegramBot } from "../../../src/telegram/client.js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -54,7 +54,7 @@ export async function POST(req: Request): Promise<Response> {
     // turn with no resolvable user can't be attributed, so it is only logged.
     if (userId !== null) await recordOpsEvent(dbOpsEventRepo(), userId, "worker_failed", { updateId: failed.updateId ?? null });
     log("worker_failed.notify", { updateId: failed.updateId, chatId: failed.chatId });
-    await sendFormatted(new Bot(e.TELEGRAM_BOT_TOKEN), failed.chatId, t(language, "turn_failed"));
+    await sendFormatted(telegramBot(e.TELEGRAM_BOT_TOKEN), failed.chatId, t(language, "turn_failed"));
   } catch (err) {
     log("worker_failed.error", { error: err instanceof Error ? err.message : String(err) });
   }

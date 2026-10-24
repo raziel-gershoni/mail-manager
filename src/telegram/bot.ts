@@ -1,5 +1,6 @@
 // src/telegram/bot.ts
-import { Bot } from "grammy";
+import type { Bot } from "grammy";
+import { telegramBot } from "./client.js";
 import type { Env } from "../config/env.js";
 import type { GmailClient } from "../gmail/client.js";
 import type { MemoryStore } from "../memory/store.js";
@@ -129,7 +130,7 @@ export async function handleMessage(text: string, deps: SecretaryDeps): Promise<
 
 export async function ensureTelegramWebhook(env: Env): Promise<{ url: string }> {
   const url = buildDestination(env.APP_BASE_URL, "/api/telegram");
-  const bot = new Bot(env.TELEGRAM_BOT_TOKEN);
+  const bot = telegramBot(env.TELEGRAM_BOT_TOKEN);
   await bot.api.setWebhook(url, { secret_token: env.TELEGRAM_WEBHOOK_SECRET, allowed_updates: ["message"] });
   await bot.api.setChatMenuButton({
     menu_button: { type: "web_app", text: "Settings", web_app: { url: `${env.APP_BASE_URL}/miniapp` } },
@@ -144,7 +145,7 @@ export async function ensureTelegramWebhook(env: Env): Promise<{ url: string }> 
 }
 
 export function buildBot(env: Env, deps: SecretaryDeps): Bot {
-  const bot = new Bot(env.TELEGRAM_BOT_TOKEN);
+  const bot = telegramBot(env.TELEGRAM_BOT_TOKEN);
   bot.use(async (ctx, next) => { if (isAllowed(env.TELEGRAM_OWNER_ID, ctx.from?.id)) await next(); });
   bot.on("message:text", async (ctx) => {
     const reply = await handleMessage(ctx.message.text, deps);
