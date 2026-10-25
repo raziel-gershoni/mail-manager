@@ -40,8 +40,6 @@ export const userSettings = pgTable("user_settings", {
   // {from, to} whole hours (see src/settings/schedule.ts).
   schedule: jsonb("schedule").$type<WeekSchedule>().notNull()
     .default(sql`'[{"from":0,"to":24},{"from":0,"to":24},{"from":0,"to":24},{"from":0,"to":24},{"from":0,"to":24},{"from":0,"to":24},{"from":0,"to":24}]'::jsonb`),
-  // digest_start_hour, digest_end_hour and active_days are still in the database until
-  // migration 0020 drops them; nothing reads or writes them.
   language: text("language"),                                  // null → "en"
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
