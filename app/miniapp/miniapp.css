@@ -1,0 +1,160 @@
+/* app/miniapp/miniapp.css
+   The settings screen, styled like Telegram's own settings: inset grouped sections on
+   the secondary background. Every colour comes from Telegram's theme variables, each
+   with a fallback for older clients and for opening the page outside Telegram. Every
+   rule is scoped to the screen (.mm, or the page holding it) except body's margin. */
+
+body { margin: 0; }
+
+html:has(.mm) {
+  color-scheme: light dark;
+  background: var(--tg-theme-secondary-bg-color, #efeff4);
+}
+
+.mm {
+  --mm-page: var(--tg-theme-secondary-bg-color, #efeff4);
+  --mm-section: var(--tg-theme-section-bg-color, var(--tg-theme-bg-color, #ffffff));
+  --mm-text: var(--tg-theme-text-color, #000000);
+  --mm-hint: var(--tg-theme-hint-color, #8e8e93);
+  --mm-subtitle: var(--tg-theme-subtitle-text-color, var(--mm-hint));
+  --mm-header: var(--tg-theme-section-header-text-color, var(--mm-hint));
+  --mm-accent: var(--tg-theme-accent-text-color, var(--tg-theme-link-color, #2481cc));
+  --mm-destructive: var(--tg-theme-destructive-text-color, #e53935);
+  --mm-on: var(--tg-theme-button-color, #2481cc);
+  --mm-separator: var(--tg-theme-section-separator-color, color-mix(in srgb, var(--mm-hint) 30%, transparent));
+  --mm-fill: color-mix(in srgb, var(--mm-hint) 14%, transparent);
+  --mm-track: color-mix(in srgb, var(--mm-hint) 38%, transparent);
+  --mm-gutter: 16px;
+
+  box-sizing: border-box;
+  max-width: 600px;
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 16px 0 calc(96px + env(safe-area-inset-bottom));
+  background: var(--mm-page);
+  color: var(--mm-text);
+  font: 16px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (prefers-color-scheme: dark) {
+  html:has(.mm) { background: var(--tg-theme-secondary-bg-color, #000000); }
+  .mm {
+    --mm-page: var(--tg-theme-secondary-bg-color, #000000);
+    --mm-section: var(--tg-theme-section-bg-color, var(--tg-theme-bg-color, #1c1c1e));
+    --mm-text: var(--tg-theme-text-color, #ffffff);
+    --mm-hint: var(--tg-theme-hint-color, #8d8e93);
+    --mm-accent: var(--tg-theme-accent-text-color, var(--tg-theme-link-color, #3e88f7));
+    --mm-destructive: var(--tg-theme-destructive-text-color, #eb5545);
+    --mm-on: var(--tg-theme-button-color, #3e88f7);
+  }
+}
+
+.mm *, .mm *::before, .mm *::after { box-sizing: border-box; }
+.mm :focus-visible { outline: 2px solid var(--mm-accent); outline-offset: 2px; }
+
+.mm-title { margin: 0 0 20px; padding-inline: calc(var(--mm-gutter) * 2); font-size: 28px; font-weight: 700; line-height: 1.15; }
+.mm-status { margin: 0; padding: 64px calc(var(--mm-gutter) * 2); text-align: center; color: var(--mm-hint); }
+
+/* Sections: a header, one or more cards, a footer. */
+.mm-section { margin: 0 var(--mm-gutter) 28px; }
+.mm-section-header { margin: 0; padding: 0 var(--mm-gutter) 8px; font-size: 14px; font-weight: 500; line-height: 1.3; color: var(--mm-header); }
+.mm-card { overflow: hidden; border-radius: 12px; background: var(--mm-section); }
+.mm-card + .mm-card { margin-top: 12px; }
+.mm-section-footer { padding: 8px var(--mm-gutter) 0; font-size: 13px; line-height: 1.4; color: var(--mm-hint); }
+.mm-section-footer p { margin: 0; }
+.mm-section-footer p + p { margin-top: 6px; }
+
+/* Rows: label at the start, value at the end, a hairline between rows. */
+.mm-row { position: relative; display: flex; align-items: center; gap: 12px; min-height: 46px; margin: 0; padding: 11px var(--mm-gutter); }
+.mm-row + .mm-row::before { content: ""; position: absolute; inset-block-start: 0; inset-inline: var(--mm-gutter) 0; border-block-start: 1px solid var(--mm-separator); }
+@media (min-resolution: 2dppx) { .mm-row + .mm-row::before { border-block-start-width: 0.5px; } }
+.mm-row-label { flex: 1 1 auto; min-width: 0; }
+.mm-row-value { flex: 0 1 auto; min-width: 0; color: var(--mm-hint); text-align: end; }
+.mm-row-sub { display: block; margin-top: 2px; font-size: 14px; color: var(--mm-subtitle); }
+.mm-stack { flex-direction: column; align-items: stretch; gap: 8px; }
+
+.mm-strong { font-weight: 600; }
+.mm-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mm-wrap { overflow-wrap: anywhere; }
+.mm-num { font-variant-numeric: tabular-nums; }
+.mm-text { color: var(--mm-text); }
+.mm-off { color: var(--mm-hint); }
+.mm-danger { color: var(--mm-destructive); }
+.mm-note { font-size: 14px; color: var(--mm-hint); }
+
+/* A whole row that is one action: Reconnect, Clear conversation, Create link. */
+.mm-action { width: 100%; border: 0; background: transparent; color: var(--mm-accent); font: inherit; text-align: start; cursor: pointer; }
+.mm-action.mm-danger { color: var(--mm-destructive); }
+.mm-action:active:not(:disabled) { background: var(--mm-fill); }
+.mm-action:disabled { opacity: 0.45; cursor: default; }
+.mm-action:focus-visible { outline-offset: -2px; }
+
+/* A text button inside a row: Edit, Cancel, Save. */
+.mm-link { flex: none; margin: -8px -4px; padding: 8px 4px; border: 0; background: none; color: var(--mm-accent); font: inherit; cursor: pointer; }
+.mm-link:disabled { opacity: 0.45; cursor: default; }
+
+/* Pickers: the value is drawn by us, the native select sits invisibly on top so a tap
+   opens the platform's own picker. 16px keeps iOS from zooming in. */
+.mm-picker { position: relative; display: inline-flex; flex: 0 1 auto; align-items: center; gap: 6px; min-width: 0; color: var(--mm-hint); }
+.mm-picker::after { content: ""; flex: none; width: 7px; height: 7px; margin-top: -4px; border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
+.mm-picker-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mm-picker-select { position: absolute; inset: -8px 0; width: 100%; margin: 0; opacity: 0; font-size: 16px; cursor: pointer; appearance: none; -webkit-appearance: none; }
+.mm-picker-select:disabled { cursor: default; }
+.mm-picker:has(.mm-picker-select:focus-visible), .mm-pill:has(.mm-picker-select:focus-visible) { outline: 2px solid var(--mm-accent); outline-offset: 2px; border-radius: 6px; }
+.mm-pill { position: relative; display: inline-block; padding: 6px 10px; border-radius: 8px; background: var(--mm-fill); color: var(--mm-text); font-variant-numeric: tabular-nums; line-height: 1.25; }
+.mm-pill .mm-picker-select { inset: 0; }
+.mm-pill:has(.mm-picker-select:disabled) { opacity: 0.45; }
+
+.mm-input { min-width: 0; width: 100%; margin: 0; padding: 8px 10px; border: 0; border-radius: 8px; background: var(--mm-fill); color: var(--mm-text); font: inherit; font-size: 16px; }
+.mm-input::placeholder { color: var(--mm-hint); }
+.mm-input-end { flex: 0 1 11em; width: auto; }
+
+/* Switch: a real checkbox (role=switch) over a drawn track, so it works on every engine. */
+.mm-switch { position: relative; display: inline-block; flex: none; width: 46px; height: 28px; }
+.mm-switch-input { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.mm-switch-track { position: absolute; inset: 0; border-radius: 14px; background: var(--mm-track); transition: background-color 0.2s ease; }
+.mm-switch-track::after { content: ""; position: absolute; top: 2px; inset-inline-start: 2px; width: 24px; height: 24px; border-radius: 50%; background: #ffffff; transition: transform 0.2s ease; }
+.mm-switch-input:checked + .mm-switch-track { background: var(--mm-on); }
+.mm-switch-input:checked + .mm-switch-track::after { transform: translateX(18px); }
+.mm[dir="rtl"] .mm-switch-input:checked + .mm-switch-track::after { transform: translateX(-18px); }
+.mm-switch-input:disabled { cursor: default; }
+.mm-switch-input:disabled + .mm-switch-track { opacity: 0.45; }
+.mm-switch-input:focus-visible { outline: none; }
+.mm-switch-input:focus-visible + .mm-switch-track { outline: 2px solid var(--mm-accent); outline-offset: 2px; }
+
+/* Disclosure (Learned rules): a CSS chevron pointing to the end, down when open. */
+.mm-details > summary { list-style: none; cursor: pointer; }
+.mm-details > summary::-webkit-details-marker { display: none; }
+.mm-details > summary:focus-visible { outline-offset: -2px; }
+.mm-chevron { flex: none; width: 8px; height: 8px; margin-inline: 2px 4px; border: solid var(--mm-hint); border-width: 0 2px 2px 0; transform: rotate(-45deg); transition: transform 0.2s ease; }
+.mm[dir="rtl"] .mm-chevron { transform: rotate(135deg); }
+.mm .mm-details[open] .mm-chevron { transform: rotate(45deg); }
+
+/* Schedule card. Time ranges stay left-to-right in Hebrew; "next day" sits outside them. */
+.mm-hours { color: var(--mm-text); }
+.mm-next { margin-inline-start: 6px; font-size: 14px; color: var(--mm-hint); }
+.mm-day-toggle { display: flex; flex: 1 1 auto; align-items: center; gap: 12px; min-width: 0; cursor: pointer; }
+.mm-day-name { min-width: 2.25em; }
+.mm-day-times { display: grid; flex: none; grid-template-columns: auto auto auto; align-items: center; column-gap: 6px; row-gap: 2px; }
+.mm-dash { color: var(--mm-hint); }
+.mm-day-times .mm-next { grid-column: 3; justify-self: center; margin: 0; font-size: 12px; }
+.mm-day > .mm-off { flex: none; }
+.mm-sched-actions { justify-content: flex-end; gap: 28px; }
+@media (max-width: 359px) {
+  .mm-day { flex-wrap: wrap; row-gap: 8px; }
+  .mm-day:has(.mm-day-times) .mm-day-toggle { flex-basis: 100%; }
+  .mm[dir="ltr"] .mm-day-times { margin-left: 58px; }
+  .mm[dir="rtl"] .mm-day-times { margin-right: 58px; }
+}
+
+/* Toast: "Saving…", "Saved", "Save failed". */
+.mm-toast { position: fixed; inset-inline: 0; bottom: calc(20px + env(safe-area-inset-bottom)); z-index: 10; display: flex; justify-content: center; padding-inline: var(--mm-gutter); pointer-events: none; }
+.mm-toast-msg { max-width: 420px; padding: 10px 16px; border-radius: 12px; background: color-mix(in srgb, var(--mm-text) 88%, transparent); color: var(--mm-page); font-size: 15px; line-height: 1.3; text-align: center; animation: mm-toast-in 0.18s ease-out; }
+.mm-toast-error { background: var(--mm-destructive); color: #ffffff; }
+@keyframes mm-toast-in { from { opacity: 0; transform: translateY(6px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .mm *, .mm *::before, .mm *::after { animation: none !important; transition: none !important; }
+}

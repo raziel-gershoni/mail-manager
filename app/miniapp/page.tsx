@@ -1,243 +1,275 @@
 "use client";
+// app/miniapp/page.tsx — the settings screen inside Telegram.
 import { useEffect, useState } from "react";
-import { t, dir, type Lang, type MsgKey } from "../../src/i18n/index.js";
+import { t, dir, type Lang } from "../../src/i18n/index.js";
+import type { WeekSchedule } from "../../src/settings/schedule.js";
+import { ScheduleCard } from "./ScheduleCard.js";
+import { browserTimezones, timezoneOptions } from "./timezones.js";
+import { initData, openLink, setupTelegramChrome } from "./telegram.js";
+import { Card, Picker, Row, Section, Switch, Toast, type ToastState } from "./ui.js";
 
 type View = {
-  timezone: string; digestStartHour: number; digestEndHour: number; paused: boolean; language: Lang; activeDays: number[];
+  timezone: string; paused: boolean; language: Lang; schedule: WeekSchedule;
   gmail: { email: string | null; connected: boolean; needsReconnect: boolean };
   rules: Array<{ matchValue: string; scope: string; verdict: string; action: string }>;
   context: { totalTokens: number; systemTokens: number; summaryTokens: number; windowTokens: number; windowTurns: number; compactAtTokens: number };
   isOwner: boolean;
 };
 
+const SAVED_TOAST_MS = 2_500;
+const LANGUAGES = [["en", "English"], ["he", "עברית"]] as const;
 const fmt = (n: number) => n.toLocaleString();
-
-function initData(): string {
-  if (typeof window === "undefined") return "";
-  return (window as unknown as { Telegram?: { WebApp?: { initData?: string } } }).Telegram?.WebApp?.initData ?? "";
-}
-
-const HOURS = Array.from({ length: 25 }, (_, i) => i); // 0..24
-const DAYS = [0, 1, 2, 3, 4, 5, 6]; // 0 = Sunday … 6 = Saturday
+const headers = () => ({ "x-telegram-init-data": initData(), "content-type": "application/json" });
 
 export default function MiniApp() {
   const [view, setView] = useState<View | null>(null);
-  const [status, setStatus] = useState<string>(t("en", "mini_loading"));
-  const [days, setDays] = useState<number[]>([]);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [toast, setToast] = useState<ToastState | null>(null);
   const [provId, setProvId] = useState("");
   const [provLang, setProvLang] = useState<Lang>("he");
   const [provBusy, setProvBusy] = useState(false);
   const [provUrl, setProvUrl] = useState("");
   const [provCopied, setProvCopied] = useState(false);
-  const headers = { "x-telegram-init-data": initData(), "content-type": "application/json" };
   const lang: Lang = view?.language ?? "en";
 
-  async function loadView() {
-    try {
-      const r = await fetch("/api/settings", { headers });
-      if (!r.ok) throw new Error(String(r.status));
-      const v: View = await r.json();
-      setView(v);
-      setDays(v.activeDays);
-      setStatus("");
-    } catch { setStatus(t(lang, "mini_load_error")); }
-  }
+  useEffect(() => setupTelegramChrome(), []);
   useEffect(() => {
-    loadView();
+    void loadView();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // "Saved" fades on its own; an error stays until the next action replaces it.
+  useEffect(() => {
+    if (toast?.kind !== "done") return;
+    const id = setTimeout(() => setToast(null), SAVED_TOAST_MS);
+    return () => clearTimeout(id);
+  }, [toast]);
 
-  async function save(patch: Partial<View>) {
-    setStatus(t(lang, "mini_saving"));
+  function failed(text: string, what: string, err: unknown) {
+    console.error(what, err);
+    setToast({ text, kind: "error" });
+  }
+
+  async function loadView(): Promise<boolean> {
     try {
-      const r = await fetch("/api/settings", { method: "POST", headers, body: JSON.stringify(patch) });
-      setStatus(r.ok ? t(lang, "mini_saved") : t(lang, "mini_save_failed"));
-    } catch { setStatus(t(lang, "mini_save_failed")); }
+      const r = await fetch("/api/settings", { headers: headers() });
+      if (!r.ok) throw new Error(`GET /api/settings ${r.status}`);
+      setView(await r.json());
+      return true;
+    } catch (err) {
+      console.error("settings load failed", err);
+      setLoadFailed(true);
+      return false;
+    }
   }
-  // At least one day stays active ("Pause briefs" covers none); the server enforces it too.
-  function toggleDay(d: number) {
-    const next = days.includes(d) ? days.filter(x => x !== d) : [...days, d].sort((a, b) => a - b);
-    if (next.length === 0) return;
-    setDays(next);
-    save({ activeDays: next });
+
+  // Every setting saves through here. `l` is the language to speak in (a language change
+  // answers in the new one).
+  async function save(patch: Record<string, unknown>, l: Lang = lang): Promise<boolean> {
+    setToast({ text: t(l, "mini_saving"), kind: "progress" });
+    try {
+      const r = await fetch("/api/settings", { method: "POST", headers: headers(), body: JSON.stringify(patch) });
+      if (!r.ok) throw new Error(`POST /api/settings ${r.status} ${await r.text().catch(() => "")}`);
+      setToast({ text: t(l, "mini_saved"), kind: "done" });
+      return true;
+    } catch (err) {
+      failed(t(l, "mini_save_failed"), "settings save failed", err);
+      return false;
+    }
   }
-  // Changing the language re-fetches so every label + the layout direction update.
+
+  // Re-fetches, so every label and the layout direction switch over.
   async function saveLanguage(next: Lang) {
-    setStatus(t(next, "mini_saving"));
-    try {
-      const r = await fetch("/api/settings", { method: "POST", headers, body: JSON.stringify({ language: next }) });
-      if (r.ok) { await loadView(); setStatus(t(next, "mini_saved")); }
-      else setStatus(t(lang, "mini_save_failed"));
-    } catch { setStatus(t(lang, "mini_save_failed")); }
+    if (await save({ language: next }, next)) await loadView();
   }
+  async function saveTimezone(next: string) {
+    if (await save({ timezone: next })) setView(v => v && { ...v, timezone: next });
+  }
+  // Optimistic: the switch flips at once and flips back if the save fails.
+  async function setPaused(next: boolean) {
+    setView(v => v && { ...v, paused: next });
+    if (!(await save({ paused: next }))) setView(v => v && { ...v, paused: !next });
+  }
+  async function saveSchedule(next: WeekSchedule): Promise<boolean> {
+    const ok = await save({ schedule: next });
+    if (ok) setView(v => v && { ...v, schedule: next });
+    return ok;
+  }
+
   async function reconnect() {
     try {
-      const r = await fetch("/api/settings/reconnect", { method: "POST", headers });
-      if (!r.ok) { setStatus(t(lang, "mini_reconnect_failed")); return; }
+      const r = await fetch("/api/settings/reconnect", { method: "POST", headers: headers() });
+      if (!r.ok) throw new Error(`POST /api/settings/reconnect ${r.status}`);
       const { url } = await r.json();
-      const tg = (window as unknown as { Telegram?: { WebApp?: { openLink?: (u: string) => void } } }).Telegram?.WebApp;
-      if (tg?.openLink) tg.openLink(url); else window.open(url, "_blank");
-    } catch { setStatus(t(lang, "mini_reconnect_failed")); }
+      openLink(url);
+    } catch (err) {
+      failed(t(lang, "mini_reconnect_failed"), "reconnect failed", err);
+    }
   }
+
   async function clearContext() {
     if (!window.confirm(t(lang, "mini_clear_confirm"))) return;
-    setStatus(t(lang, "mini_clearing"));
+    setToast({ text: t(lang, "mini_clearing"), kind: "progress" });
     try {
-      const r = await fetch("/api/settings/clear-context", { method: "POST", headers });
-      if (!r.ok) { setStatus(t(lang, "mini_clear_failed")); return; }
+      const r = await fetch("/api/settings/clear-context", { method: "POST", headers: headers() });
+      if (!r.ok) throw new Error(`POST /api/settings/clear-context ${r.status}`);
       await loadView();
-      setStatus(t(lang, "mini_cleared"));
-    } catch { setStatus(t(lang, "mini_clear_failed")); }
+      setToast({ text: t(lang, "mini_cleared"), kind: "done" });
+    } catch (err) {
+      failed(t(lang, "mini_clear_failed"), "clear conversation failed", err);
+    }
   }
 
   async function provision() {
     setProvUrl(""); setProvCopied(false);
     const idNum = Number(provId);
-    if (!Number.isInteger(idNum) || provId.trim() === "") { setStatus(t(lang, "mini_provision_bad_id")); return; }
+    if (!Number.isInteger(idNum) || provId.trim() === "") { setToast({ text: t(lang, "mini_provision_bad_id"), kind: "error" }); return; }
     setProvBusy(true);
     try {
-      const r = await fetch("/api/admin/provision-user", { method: "POST", headers, body: JSON.stringify({ telegramUserId: idNum, language: provLang }) });
+      const r = await fetch("/api/admin/provision-user", { method: "POST", headers: headers(), body: JSON.stringify({ telegramUserId: idNum, language: provLang }) });
       const data = await r.json().catch(() => ({}));
-      if (!r.ok) { setStatus(data.error ? `${t(lang, "mini_provision_failed")}: ${data.error}` : t(lang, "mini_provision_failed")); return; }
-      setProvUrl(data.consentUrl); setStatus("");
-    } catch { setStatus(t(lang, "mini_provision_failed")); }
-    finally { setProvBusy(false); }
+      if (!r.ok) {
+        const text = data.error ? `${t(lang, "mini_provision_failed")}: ${data.error}` : t(lang, "mini_provision_failed");
+        failed(text, "provision failed", new Error(`POST /api/admin/provision-user ${r.status}`));
+        return;
+      }
+      setProvUrl(data.consentUrl);
+      setToast(null);
+    } catch (err) {
+      failed(t(lang, "mini_provision_failed"), "provision failed", err);
+    } finally {
+      setProvBusy(false);
+    }
   }
   async function copyProvUrl() {
-    try { await navigator.clipboard.writeText(provUrl); setProvCopied(true); } catch { /* clipboard blocked */ }
+    try { await navigator.clipboard.writeText(provUrl); setProvCopied(true); }
+    catch (err) { console.error("clipboard write failed", err); }
   }
 
-  if (!view) return <main dir={dir(lang)} style={S.main}><p>{status}</p></main>;
+  if (!view) {
+    return (
+      <main className="mm" dir={dir(lang)} lang={lang}>
+        <p className="mm-status" role={loadFailed ? "alert" : "status"}>{t(lang, loadFailed ? "mini_load_error" : "mini_loading")}</p>
+      </main>
+    );
+  }
+
+  const zones = timezoneOptions(view.timezone, browserTimezones());
+  const ctx = view.context;
+  const gmailStatus = view.gmail.connected
+    ? (view.gmail.needsReconnect ? t(lang, "mini_needs_reconnect") : t(lang, "mini_connected"))
+    : t(lang, "mini_not_connected");
 
   return (
-    <main dir={dir(lang)} style={S.main}>
-      <h2 style={S.h}>{t(lang, "mini_settings")}</h2>
+    <main className="mm" dir={dir(lang)} lang={lang}>
+      <h1 className="mm-title">{t(lang, "mini_settings")}</h1>
 
-      <label style={S.row}>{t(lang, "mini_language")}
-        <select value={view.language} onChange={e => saveLanguage(e.target.value as Lang)}>
-          <option value="en">English</option>
-          <option value="he">עברית</option>
-        </select>
-      </label>
+      <Section header={t(lang, "mini_section_briefs")} footer={t(lang, "mini_schedule_note")}>
+        <Card>
+          <ScheduleCard lang={lang} schedule={view.schedule} onSave={saveSchedule} />
+        </Card>
+        <Card>
+          <label className="mm-row">
+            <span className="mm-row-label">{t(lang, "mini_pause")}</span>
+            <Switch checked={view.paused} onChange={setPaused} />
+          </label>
+        </Card>
+      </Section>
 
-      <label style={S.row}>{t(lang, "mini_timezone")}
-        <input style={S.input} defaultValue={view.timezone} dir="ltr"
-          onBlur={e => save({ timezone: e.target.value })} />
-      </label>
+      <Section header={t(lang, "mini_section_general")}>
+        <Card>
+          <label className="mm-row">
+            <span className="mm-row-label">{t(lang, "mini_language")}</span>
+            <Picker value={view.language} options={LANGUAGES} onChange={v => saveLanguage(v as Lang)} />
+          </label>
+          <label className="mm-row">
+            <span className="mm-row-label">{t(lang, "mini_timezone")}</span>
+            {zones
+              ? <Picker value={view.timezone} options={zones.map(z => [z, z] as const)} ltr onChange={saveTimezone} />
+              : <input className="mm-input mm-input-end" dir="ltr" defaultValue={view.timezone}
+                  onBlur={e => { const v = e.target.value.trim(); if (v && v !== view.timezone) void saveTimezone(v); }} />}
+          </label>
+        </Card>
+      </Section>
 
-      <div style={S.row}>{t(lang, "mini_digest_window")}
-        <span dir="ltr">
-          <select defaultValue={view.digestStartHour} onChange={e => save({ digestStartHour: Number(e.target.value) } as Partial<View>)}>
-            {HOURS.slice(0, 24).map(h => <option key={h} value={h}>{String(h).padStart(2, "0")}:00</option>)}
-          </select>
-          {" – "}
-          <select defaultValue={view.digestEndHour} onChange={e => save({ digestEndHour: Number(e.target.value) } as Partial<View>)}>
-            {HOURS.map(h => <option key={h} value={h}>{String(h).padStart(2, "0")}:00</option>)}
-          </select>
-        </span>
-      </div>
+      <Section header={t(lang, "mini_gmail")}>
+        <Card>
+          <div className="mm-row">
+            <span className="mm-row-label mm-ellipsis">{view.gmail.email ? <bdi>{view.gmail.email}</bdi> : t(lang, "mini_gmail")}</span>
+            <span className={view.gmail.needsReconnect ? "mm-row-value mm-danger" : "mm-row-value"}>{gmailStatus}</span>
+          </div>
+          <button type="button" className="mm-row mm-action" onClick={reconnect}>{t(lang, "mini_reconnect")}</button>
+        </Card>
+      </Section>
 
-      <div style={S.row}>{t(lang, "mini_active_days")}
-        <span style={S.days}>
-          {DAYS.map(d => {
-            const active = days.includes(d);
-            const disabled = active && days.length === 1; // the last active day can't be turned off
-            return (
-              <button key={d} type="button" aria-pressed={active} disabled={disabled}
-                style={{ ...(active ? S.dayOn : S.dayOff), ...(disabled ? S.dayDisabled : {}) }} onClick={() => toggleDay(d)}>
-                {t(lang, `mini_day_${d}` as MsgKey)}
-              </button>
-            );
-          })}
-        </span>
-      </div>
+      <Section>
+        <Card>
+          <details className="mm-details">
+            <summary className="mm-row">
+              <span className="mm-row-label">{t(lang, "mini_learned_rules")}</span>
+              <span className="mm-row-value mm-num">{view.rules.length}</span>
+              <span className="mm-chevron" aria-hidden="true" />
+            </summary>
+            {view.rules.length === 0
+              ? <p className="mm-row mm-note">{t(lang, "mini_none_yet")}</p>
+              : view.rules.map((r, i) => (
+                <div key={i} className="mm-row">
+                  <span className="mm-row-label">
+                    <bdi className="mm-wrap">{r.matchValue}</bdi>
+                    <span className="mm-row-sub">{[r.scope, r.verdict, r.action].filter(Boolean).join(" · ")}</span>
+                  </span>
+                </div>
+              ))}
+          </details>
+        </Card>
+      </Section>
 
-      <label style={S.row}>{t(lang, "mini_pause")}
-        <input type="checkbox" defaultChecked={view.paused} onChange={e => save({ paused: e.target.checked })} />
-      </label>
+      <Section header={t(lang, "mini_context")}
+        footer={<><p>{t(lang, "mini_context_desc")}</p><p>{t(lang, "mini_context_note", { n: fmt(ctx.compactAtTokens) })}</p></>}>
+        <Card>
+          <Row label={t(lang, "mini_total")} value={<span className="mm-num mm-text">≈ {fmt(ctx.totalTokens)} {t(lang, "mini_tokens")}</span>} />
+          <Row label={t(lang, "mini_system_rules")} value={<span className="mm-num">~{fmt(ctx.systemTokens)}</span>} />
+          <Row label={t(lang, "mini_summary")} value={<span className="mm-num">~{fmt(ctx.summaryTokens)}</span>} />
+          <Row label={`${t(lang, "mini_recent_turns")} (${ctx.windowTurns})`} value={<span className="mm-num">~{fmt(ctx.windowTokens)}</span>} />
+        </Card>
+      </Section>
 
-      <div style={S.row}>{t(lang, "mini_gmail")}
-        <span>
-          {view.gmail.connected
-            ? (view.gmail.needsReconnect ? t(lang, "mini_needs_reconnect") : <span dir="auto">✅ {view.gmail.email}</span>)
-            : t(lang, "mini_not_connected")}
-          {" "}<button style={S.btn} onClick={reconnect}>{t(lang, "mini_reconnect")}</button>
-        </span>
-      </div>
-
-      <details style={S.details}>
-        <summary style={S.summary}>{t(lang, "mini_learned_rules")} ({view.rules.length})</summary>
-        {view.rules.length === 0 ? <p style={S.dim}>{t(lang, "mini_none_yet")}</p> : (
-          <ul style={S.list}>
-            {view.rules.map((r, i) => (
-              <li key={i} style={{ marginBottom: 8 }}>
-                <div dir="auto" style={{ overflowWrap: "anywhere" }}>{r.matchValue}</div>
-                <div style={S.dim}>{[r.scope, r.verdict, r.action].filter(Boolean).join(" · ")}</div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </details>
-
-      <h3 style={S.h}>{t(lang, "mini_context")}</h3>
-      <p style={S.dim}>{t(lang, "mini_context_desc")}</p>
-      <ul style={S.list}>
-        <li>{t(lang, "mini_total")}: <b>≈ {fmt(view.context.totalTokens)}</b> {t(lang, "mini_tokens")}</li>
-        <li style={S.dim}>{t(lang, "mini_system_rules")}: ~{fmt(view.context.systemTokens)}</li>
-        <li style={S.dim}>{t(lang, "mini_summary")}: ~{fmt(view.context.summaryTokens)}</li>
-        <li style={S.dim}>{t(lang, "mini_recent_turns")} ({view.context.windowTurns}): ~{fmt(view.context.windowTokens)}</li>
-      </ul>
-      <p style={S.dim}>{t(lang, "mini_context_note", { n: fmt(view.context.compactAtTokens) })}</p>
-      <button style={S.btn} onClick={clearContext}>{t(lang, "mini_clear_conversation")}</button>
-      <p style={S.dim}>{t(lang, "mini_clear_conversation_desc")}</p>
+      <Section footer={t(lang, "mini_clear_conversation_desc")}>
+        <Card>
+          <button type="button" className="mm-row mm-action mm-danger" onClick={clearContext}>{t(lang, "mini_clear_conversation")}</button>
+        </Card>
+      </Section>
 
       {view.isOwner && (
-        <>
-          <h3 style={S.h}>{t(lang, "mini_provision_title")}</h3>
-          <p style={S.dim}>{t(lang, "mini_provision_desc")}</p>
-          <label style={S.row}>{t(lang, "mini_provision_tgid")}
-            <input style={S.input} inputMode="numeric" dir="ltr" value={provId}
-              onChange={e => setProvId(e.target.value)} placeholder="762715667" />
-          </label>
-          <label style={S.row}>{t(lang, "mini_language")}
-            <select value={provLang} onChange={e => setProvLang(e.target.value as Lang)}>
-              <option value="he">עברית</option>
-              <option value="en">English</option>
-            </select>
-          </label>
-          <button style={S.btn} onClick={provision} disabled={provBusy}>
-            {provBusy ? t(lang, "mini_provision_creating") : t(lang, "mini_provision_create")}
-          </button>
+        <Section header={t(lang, "mini_provision_title")} footer={t(lang, "mini_provision_desc")}>
+          <Card>
+            <label className="mm-row">
+              <span className="mm-row-label">{t(lang, "mini_provision_tgid")}</span>
+              <input className="mm-input mm-input-end mm-num" inputMode="numeric" dir="ltr" value={provId}
+                onChange={e => setProvId(e.target.value)} placeholder="123456789" />
+            </label>
+            <label className="mm-row">
+              <span className="mm-row-label">{t(lang, "mini_language")}</span>
+              <Picker value={provLang} options={[["he", "עברית"], ["en", "English"]]} onChange={v => setProvLang(v as Lang)} />
+            </label>
+            <button type="button" className="mm-row mm-action" onClick={provision} disabled={provBusy}>
+              {provBusy ? t(lang, "mini_provision_creating") : t(lang, "mini_provision_create")}
+            </button>
+          </Card>
           {provUrl && (
-            <div style={{ marginTop: 10 }}>
-              <p style={S.dim}>{t(lang, "mini_provision_created")}</p>
-              <input style={{ ...S.input, width: "100%", maxWidth: "none" }} dir="ltr" readOnly value={provUrl}
-                onFocus={e => e.currentTarget.select()} />
-              <button style={{ ...S.btn, marginTop: 8 }} onClick={copyProvUrl}>
+            <Card>
+              <div className="mm-row mm-stack">
+                <span className="mm-note">{t(lang, "mini_provision_created")}</span>
+                <input className="mm-input" dir="ltr" readOnly value={provUrl} onFocus={e => e.currentTarget.select()} />
+              </div>
+              <button type="button" className="mm-row mm-action" onClick={copyProvUrl}>
                 {provCopied ? t(lang, "mini_provision_copied") : t(lang, "mini_provision_copy")}
               </button>
-            </div>
+            </Card>
           )}
-        </>
+        </Section>
       )}
 
-      <p style={S.dim}>{status}</p>
+      <Toast toast={toast} />
     </main>
   );
 }
-
-const S: Record<string, React.CSSProperties> = {
-  main: { fontFamily: "system-ui, sans-serif", padding: 16, color: "var(--tg-theme-text-color, #000)", background: "var(--tg-theme-bg-color, #fff)", maxWidth: 480, textAlign: "start" },
-  h: { margin: "12px 0 8px" },
-  row: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "8px 0", borderBottom: "1px solid var(--tg-theme-hint-color, #eee)" },
-  input: { flex: 1, maxWidth: 200 },
-  btn: { padding: "4px 10px", background: "var(--tg-theme-button-color, #2ea6ff)", color: "var(--tg-theme-button-text-color, #fff)", border: "none", borderRadius: 6, cursor: "pointer" },
-  days: { display: "flex", flexWrap: "wrap", gap: 4, justifyContent: "flex-end" },
-  dayOn: { minWidth: 34, padding: "4px 6px", background: "var(--tg-theme-button-color, #2ea6ff)", color: "var(--tg-theme-button-text-color, #fff)", border: "1px solid transparent", borderRadius: 6, cursor: "pointer" },
-  dayOff: { minWidth: 34, padding: "4px 6px", background: "transparent", color: "var(--tg-theme-hint-color, #888)", border: "1px solid var(--tg-theme-hint-color, #ccc)", borderRadius: 6, cursor: "pointer" },
-  dayDisabled: { opacity: 0.5, cursor: "not-allowed" },
-  list: { paddingInlineStart: 18 },
-  dim: { color: "var(--tg-theme-hint-color, #888)", fontSize: 13 },
-  details: { margin: "12px 0", borderBottom: "1px solid var(--tg-theme-hint-color, #eee)", paddingBottom: 8 },
-  summary: { margin: "8px 0", fontSize: "1.05em", fontWeight: 600, cursor: "pointer" },
-};

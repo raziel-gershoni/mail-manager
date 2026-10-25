@@ -1,5 +1,6 @@
 import Script from "next/script";
 import type { ReactNode } from "react";
+import "./miniapp.css";
 
 export const metadata = { title: "Mail Manager — Settings" };
 
