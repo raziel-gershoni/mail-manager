@@ -57,7 +57,9 @@ export default function MiniApp() {
       return true;
     } catch (err) {
       console.error("settings load failed", err);
-      setLoadFailed(true);
+      // First load: the full-screen error. Later reloads: the screen stays, so say it with a toast.
+      if (view) setToast({ text: t(lang, "mini_load_error"), kind: "error" });
+      else setLoadFailed(true);
       return false;
     }
   }
@@ -112,8 +114,7 @@ export default function MiniApp() {
     try {
       const r = await fetch("/api/settings/clear-context", { method: "POST", headers: headers() });
       if (!r.ok) throw new Error(`POST /api/settings/clear-context ${r.status}`);
-      await loadView();
-      setToast({ text: t(lang, "mini_cleared"), kind: "done" });
+      if (await loadView()) setToast({ text: t(lang, "mini_cleared"), kind: "done" });
     } catch (err) {
       failed(t(lang, "mini_clear_failed"), "clear conversation failed", err);
     }
