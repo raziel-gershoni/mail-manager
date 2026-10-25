@@ -12,7 +12,11 @@ describe("schema", () => {
     const cols = Object.keys((schema.memories as any));
     for (const c of ["matchType","matchValue","verdict"]) expect(cols).toContain(c);
   });
-  it("user_settings has the weekly schedule column", () => {
-    expect(Object.keys(schema.userSettings as any)).toContain("schedule");
+  it("user_settings has the weekly schedule, and no longer names the old hours and days", () => {
+    const cols = Object.keys(schema.userSettings as any);
+    expect(cols).toContain("schedule");
+    // 0020 drops these columns while this code is live, so it must never name them.
+    for (const c of ["digestStartHour", "digestEndHour", "activeDays"]) expect(cols).not.toContain(c);
   });
+
 });

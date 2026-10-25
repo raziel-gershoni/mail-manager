@@ -2,7 +2,8 @@
 import type { TelegramLinkRepo, UserDirectory } from "../users/identity.js";
 import { ensureOwnerLink } from "../users/identity.js";
 import type { EffectiveSettings } from "../settings/settings.js";
-import { isActiveDay, isWithinDigestWindow } from "../settings/window.js";
+import { isScheduledNow } from "../settings/window.js";
+import { log } from "../util/log.js";
 
 // How long each user's poll may keep taking on new mail, measured from the start of the
 // run. The rest of the 300s maxDuration (~100s) covers that user's guarded/preference
@@ -37,8 +38,10 @@ export async function pollAllUsers(deps: FanoutDeps): Promise<{ polled: number; 
       const link = await deps.links.getByUserId(userId);
       if (!link) return "skipped";                                    // no chat to deliver to
       const s = await deps.settingsFor(userId);
-      if (s.paused || !isActiveDay(deps.now, s.timezone, s.activeDays)
-        || !isWithinDigestWindow(deps.now, s.timezone, s.digestStartHour, s.digestEndHour)) return "gated";
+      // Logged so prod shows why a brief didn't come. The Gmail cursor stays put while a
+      // user is gated, so the first run back catches up on everything in between.
+      const gatedBy = s.paused ? "paused" : !isScheduledNow(deps.now, s.timezone, s.schedule) ? "schedule" : null;
+      if (gatedBy) { log("poll.gated", { userId, reason: gatedBy }); return "gated"; }
       await deps.pollUser(userId, link.chatId, s.timezone, s.language, deadline);
       return "polled";
     } catch (e) {

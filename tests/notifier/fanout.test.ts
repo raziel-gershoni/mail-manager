@@ -1,14 +1,15 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { pollAllUsers, POLL_LOOP_BUDGET_MS } from "../../src/notifier/fanout.js";
-import { weekdayInZone } from "../../src/settings/window.js";
-import { ALL_DAYS } from "../../src/settings/settings.js";
+import { localWeekdayHour } from "../../src/settings/window.js";
+import { ALWAYS_ON, type DayHours } from "../../src/settings/schedule.js";
 import { fakeTelegramLinkRepo, fakeUserDirectory } from "../../src/users/identity.js";
 import type { EffectiveSettings } from "../../src/settings/settings.js";
 
 const OWNER = 555;
 const IN_WINDOW = new Date("2026-07-02T12:00:00Z"); // noon UTC
+const every = (hours: DayHours | null) => Array.from({ length: 7 }, () => hours);
 const on = (over: Partial<EffectiveSettings> = {}): EffectiveSettings =>
-  ({ timezone: "UTC", digestStartHour: 8, digestEndHour: 22, paused: false, language: "en", activeDays: [0, 1, 2, 3, 4, 5, 6], ...over });
+  ({ timezone: "UTC", paused: false, language: "en", schedule: every({ from: 8, to: 22 }), ...over });
 
 describe("pollAllUsers", () => {
   it("bootstraps the owner link, then polls each in-window user at their chat + timezone", async () => {
@@ -45,9 +46,9 @@ describe("pollAllUsers", () => {
     const links = fakeTelegramLinkRepo([{ userId: 1, telegramUserId: OWNER, chatId: OWNER }]);
     const dir = fakeUserDirectory([1]);
     const calls: number[] = [];
-    // window 8-9 UTC; now is noon UTC → outside
+    // 08–09 UTC every day; now is noon UTC → outside
     const res = await pollAllUsers({ ownerTelegramId: OWNER, links, directory: dir, now: IN_WINDOW,
-      settingsFor: async () => on({ digestStartHour: 8, digestEndHour: 9 }), pollUser: async (u) => { calls.push(u); } });
+      settingsFor: async () => on({ schedule: every({ from: 8, to: 9 }) }), pollUser: async (u) => { calls.push(u); } });
     expect(calls).toEqual([]);
     expect(res).toEqual({ polled: 0, skipped: 0, gated: 1, errored: 0 });
   });
@@ -64,19 +65,43 @@ describe("pollAllUsers", () => {
     expect(res).toEqual({ polled: 1, skipped: 0, gated: 0, errored: 1 });
   });
 
-  it("gates a user on an inactive day, polls them on an active one", async () => {
-    const today = weekdayInZone(IN_WINDOW, "UTC");
+  it("gates a user on a day that's off, polls them on a day that's on", async () => {
+    const today = localWeekdayHour(IN_WINDOW, "UTC").weekday;
     const links = fakeTelegramLinkRepo([{ userId: 1, telegramUserId: OWNER, chatId: OWNER }]);
     const dir = fakeUserDirectory([1]);
     const calls: number[] = [];
     const off = await pollAllUsers({ ownerTelegramId: OWNER, links, directory: dir, now: IN_WINDOW,
-      settingsFor: async () => on({ activeDays: ALL_DAYS.filter(d => d !== today) }), pollUser: async (u) => { calls.push(u); } });
+      settingsFor: async () => on({ schedule: ALWAYS_ON.map((h, d) => (d === today ? null : h)) }), pollUser: async (u) => { calls.push(u); } });
     expect(calls).toEqual([]);
     expect(off).toEqual({ polled: 0, skipped: 0, gated: 1, errored: 0 });
     const onDay = await pollAllUsers({ ownerTelegramId: OWNER, links, directory: dir, now: IN_WINDOW,
-      settingsFor: async () => on({ activeDays: [today] }), pollUser: async (u) => { calls.push(u); } });
+      settingsFor: async () => on({ schedule: ALWAYS_ON.map((h, d) => (d === today ? h : null)) }), pollUser: async (u) => { calls.push(u); } });
     expect(calls).toEqual([1]);
     expect(onDay).toEqual({ polled: 1, skipped: 0, gated: 0, errored: 0 });
+  });
+
+  it("logs why a user was gated: paused, or outside their schedule", async () => {
+    const links = fakeTelegramLinkRepo([
+      { userId: 1, telegramUserId: OWNER, chatId: OWNER },
+      { userId: 2, telegramUserId: 222, chatId: 222 },
+      { userId: 3, telegramUserId: 333, chatId: 333 },
+    ]);
+    const out = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const res = await pollAllUsers({ ownerTelegramId: OWNER, links, directory: fakeUserDirectory([1, 2, 3]), now: IN_WINDOW,
+        settingsFor: async (u) => (u === 1 ? on({ paused: true }) : u === 2 ? on({ schedule: every({ from: 8, to: 9 }) }) : on()),
+        pollUser: async () => {} });
+      expect(res).toEqual({ polled: 1, skipped: 0, gated: 2, errored: 0 });
+      const events = out.mock.calls.flatMap(c => { try { return [JSON.parse(String(c[0]))]; } catch { return []; } });
+      const gated = events.filter(e => e.event === "poll.gated");
+      expect(gated).toHaveLength(2);
+      expect(gated).toEqual(expect.arrayContaining([
+        { event: "poll.gated", userId: 1, reason: "paused" },
+        { event: "poll.gated", userId: 2, reason: "schedule" },
+      ]));
+    } finally {
+      out.mockRestore();
+    }
   });
 
   it("hands each poll a deadline POLL_LOOP_BUDGET_MS after the run started", async () => {

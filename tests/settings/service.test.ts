@@ -1,24 +1,22 @@
 import { describe, it, expect } from "vitest";
-import { buildSettingsView, validateSettingsPatch, mergePatch } from "../../src/settings/service.js";
+import { buildSettingsView, validateSettingsPatch, mergePatch, LEGACY_PATCH_ERROR } from "../../src/settings/service.js";
 import type { EffectiveSettings } from "../../src/settings/settings.js";
+import { ALWAYS_ON, type WeekSchedule } from "../../src/settings/schedule.js";
 
-const eff: EffectiveSettings = { timezone: "UTC", digestStartHour: 0, digestEndHour: 24, paused: false, language: "en", activeDays: [0, 1, 2, 3, 4, 5, 6] };
+const h = (from: number, to: number) => ({ from, to });
+const OWNER: WeekSchedule = [h(7, 23), h(7, 23), h(7, 23), h(7, 23), h(7, 23), h(7, 15), h(23, 24)];
+const eff: EffectiveSettings = { timezone: "UTC", paused: false, language: "en", schedule: ALWAYS_ON };
 
 describe("validateSettingsPatch", () => {
   it("accepts a valid partial patch", () => {
-    expect(validateSettingsPatch({ digestStartHour: 8, digestEndHour: 22, paused: true, timezone: "Asia/Jerusalem" }))
-      .toEqual({ digestStartHour: 8, digestEndHour: 22, paused: true, timezone: "Asia/Jerusalem" });
+    expect(validateSettingsPatch({ paused: true, timezone: "Asia/Jerusalem", schedule: OWNER }))
+      .toEqual({ paused: true, timezone: "Asia/Jerusalem", schedule: OWNER });
   });
-  it("rejects out-of-range hours, bad tz, non-boolean paused, non-object", () => {
-    expect(validateSettingsPatch({ digestStartHour: 24 })).toHaveProperty("error"); // start max 23
-    expect(validateSettingsPatch({ digestEndHour: 25 })).toHaveProperty("error");
+  it("rejects a bad tz, a non-boolean paused, and a non-object", () => {
     expect(validateSettingsPatch({ timezone: "Not/AZone" })).toHaveProperty("error");
     expect(validateSettingsPatch({ paused: "yes" })).toHaveProperty("error");
     expect(validateSettingsPatch(null)).toHaveProperty("error");
     expect(validateSettingsPatch([])).toHaveProperty("error");
-  });
-  it("allows digestEndHour 24 (always-on end)", () => {
-    expect(validateSettingsPatch({ digestEndHour: 24 })).toEqual({ digestEndHour: 24 });
   });
   it("accepts language en|he and rejects others", () => {
     expect(validateSettingsPatch({ language: "he" })).toEqual({ language: "he" });
@@ -26,31 +24,33 @@ describe("validateSettingsPatch", () => {
     expect(validateSettingsPatch({ language: "fr" })).toHaveProperty("error");
     expect(validateSettingsPatch({ language: 3 })).toHaveProperty("error");
   });
-  it("accepts activeDays and normalizes them to ascending order", () => {
-    expect(validateSettingsPatch({ activeDays: [6, 0, 3] })).toEqual({ activeDays: [0, 3, 6] });
-    expect(validateSettingsPatch({ activeDays: [0, 1, 2, 3, 4, 5, 6] })).toEqual({ activeDays: [0, 1, 2, 3, 4, 5, 6] });
+  it("rejects an invalid schedule", () => {
+    expect(validateSettingsPatch({ schedule: Array(7).fill(null) })).toEqual({ error: "invalid schedule" }); // "Pause briefs" covers none
+    expect(validateSettingsPatch({ schedule: OWNER.slice(0, 6) })).toEqual({ error: "invalid schedule" });
+    expect(validateSettingsPatch({ schedule: [h(7, 25), null, null, null, null, null, null] })).toEqual({ error: "invalid schedule" });
+    expect(validateSettingsPatch({ schedule: "every day" })).toEqual({ error: "invalid schedule" });
   });
-  it("rejects empty, duplicate, out-of-range, non-integer and non-array activeDays", () => {
-    expect(validateSettingsPatch({ activeDays: [] })).toEqual({ error: "invalid activeDays" });   // "Pause briefs" covers none
-    expect(validateSettingsPatch({ activeDays: [1, 1] })).toEqual({ error: "invalid activeDays" });
-    expect(validateSettingsPatch({ activeDays: [7] })).toEqual({ error: "invalid activeDays" });
-    expect(validateSettingsPatch({ activeDays: [-1] })).toEqual({ error: "invalid activeDays" });
-    expect(validateSettingsPatch({ activeDays: [1.5] })).toEqual({ error: "invalid activeDays" });
-    expect(validateSettingsPatch({ activeDays: ["1"] })).toEqual({ error: "invalid activeDays" });
-    expect(validateSettingsPatch({ activeDays: 1 })).toEqual({ error: "invalid activeDays" });
+  it("rejects a save from the old settings screen, so it shows Save failed instead of Saved", () => {
+    expect(LEGACY_PATCH_ERROR).toBe("settings app updated — reopen it");
+    for (const legacy of [{ digestStartHour: 8 }, { digestEndHour: 22 }, { activeDays: [0, 1] }, { paused: true, activeDays: [0] }]) {
+      expect(validateSettingsPatch(legacy)).toEqual({ error: LEGACY_PATCH_ERROR });
+    }
+  });
+  it("ignores other unknown keys", () => {
+    expect(validateSettingsPatch({ paused: true, theme: "dark" })).toEqual({ paused: true });
   });
 });
 
 describe("mergePatch", () => {
   it("overlays only provided fields onto the effective settings", () => {
-    expect(mergePatch(eff, { paused: true })).toEqual({ timezone: "UTC", digestStartHour: 0, digestEndHour: 24, paused: true, language: "en", activeDays: [0, 1, 2, 3, 4, 5, 6] });
+    expect(mergePatch(eff, { paused: true })).toEqual({ timezone: "UTC", paused: true, language: "en", schedule: ALWAYS_ON });
   });
   it("overlays language when provided", () => {
     expect(mergePatch(eff, { language: "he" }).language).toBe("he");
   });
-  it("overlays activeDays when provided, keeps them otherwise", () => {
-    expect(mergePatch(eff, { activeDays: [0, 1, 2, 3, 4, 5] }).activeDays).toEqual([0, 1, 2, 3, 4, 5]);
-    expect(mergePatch(eff, { paused: true }).activeDays).toEqual([0, 1, 2, 3, 4, 5, 6]);
+  it("overlays the schedule when provided, keeps it otherwise", () => {
+    expect(mergePatch(eff, { schedule: OWNER }).schedule).toEqual(OWNER);
+    expect(mergePatch({ ...eff, schedule: OWNER }, { paused: true }).schedule).toEqual(OWNER);
   });
 });
 
@@ -68,7 +68,7 @@ describe("buildSettingsView", () => {
     const view = buildSettingsView(eff, { email: "me@gmail.com", needsReconnect: true }, rules, usage);
     expect(view.gmail).toEqual({ email: "me@gmail.com", connected: true, needsReconnect: true });
     expect(view.context).toEqual(usage); // context usage is passed through to the view
-    expect(view.activeDays).toEqual([0, 1, 2, 3, 4, 5, 6]); // settings pass straight through to the mini app
+    expect(view.schedule).toEqual(ALWAYS_ON); // settings pass straight through to the mini app
     expect(view.rules).toEqual([ // only match rules; review → "guarded trash", review_archive → "guarded archive", keep → "keep"
       { matchValue: "x@y.com", scope: "sender", verdict: "important", action: "" },
       { matchValue: "linkedin.com", scope: "domain", verdict: "unimportant", action: "trash" },

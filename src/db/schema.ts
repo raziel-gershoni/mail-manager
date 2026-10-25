@@ -35,14 +35,13 @@ export const oauthStates = pgTable("oauth_states", {
 export const userSettings = pgTable("user_settings", {
   userId: integer("user_id").primaryKey().references(() => users.id),
   timezone: text("timezone"),                                  // null → fall back to OWNER_TZ / UTC
-  digestStartHour: integer("digest_start_hour").notNull().default(0),
-  digestEndHour: integer("digest_end_hour").notNull().default(24),   // 0–24 = always-on
   paused: boolean("paused").notNull().default(false),
-  activeDays: integer("active_days").array().notNull().default(sql`'{0,1,2,3,4,5,6}'::integer[]`), // 0 = Sunday … 6 = Saturday
   // The weekly brief schedule: 7 entries, 0 = Sunday … 6 = Saturday, each null (off) or
   // {from, to} whole hours (see src/settings/schedule.ts).
   schedule: jsonb("schedule").$type<WeekSchedule>().notNull()
     .default(sql`'[{"from":0,"to":24},{"from":0,"to":24},{"from":0,"to":24},{"from":0,"to":24},{"from":0,"to":24},{"from":0,"to":24},{"from":0,"to":24}]'::jsonb`),
+  // digest_start_hour, digest_end_hour and active_days are still in the database until
+  // migration 0020 drops them; nothing reads or writes them.
   language: text("language"),                                  // null → "en"
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

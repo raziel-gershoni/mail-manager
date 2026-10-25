@@ -2,51 +2,46 @@ import type { EffectiveSettings, UserSettingsRow } from "./settings.js";
 import type { MemoryRow } from "../memory/store.js";
 import type { ContextUsage } from "../context/assemble.js";
 import { t, type Lang } from "../i18n/index.js";
+import { isValidSchedule, type WeekSchedule } from "./schedule.js";
 
 export interface SettingsView extends EffectiveSettings {
   gmail: { email: string | null; connected: boolean; needsReconnect: boolean };
   rules: Array<{ matchValue: string; scope: string; verdict: string; action: string }>;
   context: ContextUsage;
 }
-export interface SettingsPatch { timezone?: string; digestStartHour?: number; digestEndHour?: number; paused?: boolean; language?: Lang; activeDays?: number[]; }
+export interface SettingsPatch { timezone?: string; paused?: boolean; language?: Lang; schedule?: WeekSchedule; }
 
-function isHour(v: unknown, max: number): v is number {
-  return typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= max;
-}
+// Keys the settings screen sent before the weekly schedule. An old screen left open
+// across a deploy still sends them; rejecting the save makes it show "Save failed"
+// instead of "Saved" for a change that would be dropped. Reopening loads the new screen.
+const LEGACY_KEYS = ["digestStartHour", "digestEndHour", "activeDays"] as const;
+export const LEGACY_PATCH_ERROR = "settings app updated — reopen it";
+
 function isValidTimezone(tz: string): boolean {
   try { new Intl.DateTimeFormat("en-GB", { timeZone: tz }); return true; } catch { return false; }
 }
 function isValidLanguage(v: unknown): v is Lang {
   return v === "en" || v === "he";
 }
-// Weekdays 0 (Sunday) … 6 (Saturday), unique, at least one: "Pause briefs" covers none.
-function isActiveDays(v: unknown): v is number[] {
-  return Array.isArray(v) && v.length > 0
-    && v.every(d => typeof d === "number" && Number.isInteger(d) && d >= 0 && d <= 6)
-    && new Set(v).size === v.length;
-}
 
 export function validateSettingsPatch(body: unknown): SettingsPatch | { error: string } {
   if (!body || typeof body !== "object" || Array.isArray(body)) return { error: "invalid body" };
   const p = body as Record<string, unknown>;
+  if (LEGACY_KEYS.some(k => p[k] !== undefined)) return { error: LEGACY_PATCH_ERROR };
   const out: SettingsPatch = {};
   if (p.timezone !== undefined) { if (typeof p.timezone !== "string" || !isValidTimezone(p.timezone)) return { error: "invalid timezone" }; out.timezone = p.timezone; }
-  if (p.digestStartHour !== undefined) { if (!isHour(p.digestStartHour, 23)) return { error: "invalid digestStartHour" }; out.digestStartHour = p.digestStartHour; }
-  if (p.digestEndHour !== undefined) { if (!isHour(p.digestEndHour, 24)) return { error: "invalid digestEndHour" }; out.digestEndHour = p.digestEndHour; }
   if (p.paused !== undefined) { if (typeof p.paused !== "boolean") return { error: "invalid paused" }; out.paused = p.paused; }
   if (p.language !== undefined) { if (!isValidLanguage(p.language)) return { error: "invalid language" }; out.language = p.language; }
-  if (p.activeDays !== undefined) { if (!isActiveDays(p.activeDays)) return { error: "invalid activeDays" }; out.activeDays = [...p.activeDays].sort((a, b) => a - b); }
+  if (p.schedule !== undefined) { if (!isValidSchedule(p.schedule)) return { error: "invalid schedule" }; out.schedule = p.schedule; }
   return out;
 }
 
 export function mergePatch(eff: EffectiveSettings, patch: SettingsPatch): UserSettingsRow {
   return {
     timezone: patch.timezone ?? eff.timezone,
-    digestStartHour: patch.digestStartHour ?? eff.digestStartHour,
-    digestEndHour: patch.digestEndHour ?? eff.digestEndHour,
     paused: patch.paused ?? eff.paused,
     language: patch.language ?? eff.language,
-    activeDays: patch.activeDays ?? eff.activeDays,
+    schedule: patch.schedule ?? eff.schedule,
   };
 }
 

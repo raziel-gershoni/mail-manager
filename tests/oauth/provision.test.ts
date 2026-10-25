@@ -3,6 +3,7 @@ import { parseProvisionBody, provisionUser } from "../../src/oauth/provision.js"
 import { fakeTelegramLinkRepo } from "../../src/users/identity.js";
 import { fakeSettingsRepo } from "../../src/settings/settings.js";
 import { fakeOAuthStateRepo } from "../../src/oauth/reconnect.js";
+import { ALWAYS_ON } from "../../src/settings/schedule.js";
 
 describe("parseProvisionBody", () => {
   it("accepts a valid telegramUserId + language", () => {
@@ -42,6 +43,7 @@ describe("provisionUser", () => {
     expect(res).toEqual({ userId: 5, consentUrl: "https://consent?state=STATE1" });
     expect(links.all()).toEqual([{ userId: 5, telegramUserId: 999, chatId: 999 }]);
     expect((await settings.get(5))?.language).toBe("he");
+    expect((await settings.get(5))?.schedule).toEqual(ALWAYS_ON);
     // state is fresh within the 1h window...
     expect(await states.consume("STATE1", new Date(now.getTime() + 3_599_000))).toBe(5);
   });
