@@ -37,4 +37,11 @@ describe("i18n", () => {
     expect(typeof t(l, "intro")).toBe("string");
     expect(t(l, "intro").length).toBeGreaterThan(0);
   });
+  it("settings-screen strings carry no emoji or check marks", () => {
+    for (const lang of ["en", "he"] as const) {
+      for (const [k, v] of Object.entries(messages[lang] as Record<string, string>)) {
+        if (k.startsWith("mini_")) expect(v, `${lang}.${k}`).not.toMatch(/[✅✓✔⚠️]|\p{Extended_Pictographic}/u);
+      }
+    }
+  });
 });
