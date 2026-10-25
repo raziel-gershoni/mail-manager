@@ -51,6 +51,9 @@ export function setupTelegramChrome(): () => void {
 
 export function openLink(url: string): void {
   const tg = webApp();
-  if (tg?.openLink) attempt("openLink", () => tg.openLink?.(url));
-  else window.open(url, "_blank");
+  if (tg?.openLink) {
+    try { tg.openLink(url); return; }
+    catch (err) { console.error("telegram.openLink failed, opening a browser tab instead", err); }
+  }
+  window.open(url, "_blank");
 }

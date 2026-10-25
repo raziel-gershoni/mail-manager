@@ -147,7 +147,7 @@ const en = {
   mini_gmail: "Gmail",
   mini_needs_reconnect: "Needs reconnect",
   mini_connected: "Connected",
-  mini_not_connected: "not connected",
+  mini_not_connected: "Not connected",
   mini_reconnect: "Reconnect",
   mini_learned_rules: "Learned rules",
   mini_none_yet: "None yet.",

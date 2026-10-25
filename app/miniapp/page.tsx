@@ -49,7 +49,8 @@ export default function MiniApp() {
     setToast({ text, kind: "error" });
   }
 
-  async function loadView(): Promise<boolean> {
+  // `l` is the language to speak in if the reload fails (after a language change, the new one).
+  async function loadView(l: Lang = lang): Promise<boolean> {
     try {
       const r = await fetch("/api/settings", { headers: headers() });
       if (!r.ok) throw new Error(`GET /api/settings ${r.status}`);
@@ -58,7 +59,7 @@ export default function MiniApp() {
     } catch (err) {
       console.error("settings load failed", err);
       // First load: the full-screen error. Later reloads: the screen stays, so say it with a toast.
-      if (view) setToast({ text: t(lang, "mini_load_error"), kind: "error" });
+      if (view) setToast({ text: t(l, "mini_load_error"), kind: "error" });
       else setLoadFailed(true);
       return false;
     }
@@ -81,7 +82,7 @@ export default function MiniApp() {
 
   // Re-fetches, so every label and the layout direction switch over.
   async function saveLanguage(next: Lang) {
-    if (await save({ language: next }, next)) await loadView();
+    if (await save({ language: next }, next)) await loadView(next);
   }
   async function saveTimezone(next: string) {
     if (await save({ timezone: next })) setView(v => v && { ...v, timezone: next });
@@ -194,10 +195,14 @@ export default function MiniApp() {
 
       <Section header={t(lang, "mini_gmail")}>
         <Card>
-          <div className="mm-row">
-            <span className="mm-row-label mm-ellipsis">{view.gmail.email ? <bdi>{view.gmail.email}</bdi> : t(lang, "mini_gmail")}</span>
-            <span className={view.gmail.needsReconnect ? "mm-row-value mm-danger" : "mm-row-value"}>{gmailStatus}</span>
-          </div>
+          {view.gmail.email ? (
+            <div className="mm-row">
+              <span className="mm-row-label mm-ellipsis mm-ltr" dir="ltr">{view.gmail.email}</span>
+              <span className={view.gmail.needsReconnect ? "mm-row-value mm-danger" : "mm-row-value"}>{gmailStatus}</span>
+            </div>
+          ) : (
+            <div className="mm-row"><span className="mm-row-label mm-off">{gmailStatus}</span></div>
+          )}
           <button type="button" className="mm-row mm-action" onClick={reconnect}>{t(lang, "mini_reconnect")}</button>
         </Card>
       </Section>
