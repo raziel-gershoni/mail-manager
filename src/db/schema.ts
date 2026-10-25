@@ -1,6 +1,7 @@
 // src/db/schema.ts
 import { sql } from "drizzle-orm";
 import { pgTable, serial, integer, text, timestamp, boolean, bigint, uniqueIndex, index, jsonb, primaryKey } from "drizzle-orm/pg-core";
+import type { WeekSchedule } from "../settings/schedule.js";
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -38,6 +39,10 @@ export const userSettings = pgTable("user_settings", {
   digestEndHour: integer("digest_end_hour").notNull().default(24),   // 0–24 = always-on
   paused: boolean("paused").notNull().default(false),
   activeDays: integer("active_days").array().notNull().default(sql`'{0,1,2,3,4,5,6}'::integer[]`), // 0 = Sunday … 6 = Saturday
+  // The weekly brief schedule: 7 entries, 0 = Sunday … 6 = Saturday, each null (off) or
+  // {from, to} whole hours (see src/settings/schedule.ts).
+  schedule: jsonb("schedule").$type<WeekSchedule>().notNull()
+    .default(sql`'[{"from":0,"to":24},{"from":0,"to":24},{"from":0,"to":24},{"from":0,"to":24},{"from":0,"to":24},{"from":0,"to":24},{"from":0,"to":24}]'::jsonb`),
   language: text("language"),                                  // null → "en"
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

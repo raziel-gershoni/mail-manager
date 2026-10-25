@@ -12,4 +12,7 @@ describe("schema", () => {
     const cols = Object.keys((schema.memories as any));
     for (const c of ["matchType","matchValue","verdict"]) expect(cols).toContain(c);
   });
+  it("user_settings has the weekly schedule column", () => {
+    expect(Object.keys(schema.userSettings as any)).toContain("schedule");
+  });
 });
