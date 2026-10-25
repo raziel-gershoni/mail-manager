@@ -1,7 +1,7 @@
 "use client";
 // app/miniapp/ScheduleCard.tsx — the weekly brief schedule: a grouped summary to read,
 // and a row per day to edit. Edits apply only on Save; Cancel discards them.
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { t, type Lang } from "../../src/i18n/index.js";
 import { enableDay, formatHour, groupSchedule, isOvernight, type DayHours, type WeekSchedule } from "../../src/settings/schedule.js";
 import { dayName, daysText, hoursText } from "../../src/settings/schedule-text.js";
@@ -18,6 +18,17 @@ export function ScheduleCard({ lang, schedule, onSave }: {
   const [draft, setDraft] = useState<Array<DayHours | null> | null>(null); // null = view mode
   const [saving, setSaving] = useState(false);
   const idBase = useId();
+  const editRef = useRef<HTMLButtonElement>(null);
+  const editTitleRef = useRef<HTMLDivElement>(null);
+  const isEditing = draft !== null;
+  const wasEditing = useRef(isEditing);
+  // The button that was focused (Edit, or Save/Cancel) disappears with the mode, so put
+  // keyboard and screen-reader focus where the user now is instead of losing it to the page.
+  useEffect(() => {
+    if (wasEditing.current === isEditing) return;
+    wasEditing.current = isEditing;
+    (isEditing ? editTitleRef.current : editRef.current)?.focus();
+  }, [isEditing]);
   const title = <span className="mm-row-label mm-strong">{t(lang, "mini_digest_window")}</span>;
 
   if (!draft) {
@@ -25,7 +36,7 @@ export function ScheduleCard({ lang, schedule, onSave }: {
       <>
         <div className="mm-row">
           {title}
-          <button type="button" className="mm-link" onClick={() => setDraft(schedule.map(h => (h ? { from: h.from, to: h.to } : null)))}>
+          <button ref={editRef} type="button" className="mm-link" onClick={() => setDraft(schedule.map(h => (h ? { from: h.from, to: h.to } : null)))}>
             {t(lang, "mini_edit")}
           </button>
         </div>
@@ -47,7 +58,7 @@ export function ScheduleCard({ lang, schedule, onSave }: {
 
   return (
     <>
-      <div className="mm-row">{title}</div>
+      <div ref={editTitleRef} tabIndex={-1} className="mm-row mm-focus-target">{title}</div>
       {editing.map((h, day) => {
         const nameId = `${idBase}-day${day}`;
         return (

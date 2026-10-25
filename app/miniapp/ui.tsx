@@ -59,12 +59,18 @@ export function Picker({ value, options, onChange, ltr, disabled }: {
 
 export interface ToastState { text: string; kind: "progress" | "done" | "error" }
 
-// Always in the DOM, so screen readers announce each change of text.
+// One visible toast, plus two live regions that are always in the DOM: screen readers
+// announce text that appears in an existing region, but not reliably when a region's role
+// changes, so progress/done and errors each get their own.
 export function Toast({ toast }: { toast: ToastState | null }) {
   const error = toast?.kind === "error";
   return (
-    <div className="mm-toast" role={error ? "alert" : "status"} aria-live={error ? "assertive" : "polite"}>
-      {toast && <div key={`${toast.kind}:${toast.text}`} className={error ? "mm-toast-msg mm-toast-error" : "mm-toast-msg"}>{toast.text}</div>}
-    </div>
+    <>
+      <div className="mm-sr-only" role="status">{toast && !error ? toast.text : ""}</div>
+      <div className="mm-sr-only" role="alert">{toast && error ? toast.text : ""}</div>
+      <div className="mm-toast" aria-hidden="true">
+        {toast && <div key={`${toast.kind}:${toast.text}`} className={error ? "mm-toast-msg mm-toast-error" : "mm-toast-msg"}>{toast.text}</div>}
+      </div>
+    </>
   );
 }

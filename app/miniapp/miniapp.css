@@ -21,9 +21,13 @@ html:has(.mm) {
   --mm-accent: var(--tg-theme-accent-text-color, var(--tg-theme-link-color, #2481cc));
   --mm-destructive: var(--tg-theme-destructive-text-color, #e53935);
   --mm-on: var(--tg-theme-button-color, #2481cc);
-  --mm-separator: var(--tg-theme-section-separator-color, color-mix(in srgb, var(--mm-hint) 30%, transparent));
-  --mm-fill: color-mix(in srgb, var(--mm-hint) 14%, transparent);
-  --mm-track: color-mix(in srgb, var(--mm-hint) 38%, transparent);
+  /* Tints of the hint colour. Plain greys first: an older WebView without color-mix()
+     (iOS 16.1, Android WebView before 111) would otherwise drop them to transparent. */
+  --mm-separator: var(--tg-theme-section-separator-color, rgba(142, 142, 147, 0.3));
+  --mm-fill: rgba(142, 142, 147, 0.14);
+  --mm-track: rgba(142, 142, 147, 0.38);
+  --mm-toast-bg: var(--mm-text);
+  --mm-toast-error-bg: var(--mm-destructive);
   --mm-gutter: 16px;
 
   box-sizing: border-box;
@@ -36,6 +40,17 @@ html:has(.mm) {
   font: 16px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   -webkit-text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
+}
+
+@supports (color: color-mix(in srgb, red, blue)) {
+  .mm {
+    --mm-separator: var(--tg-theme-section-separator-color, color-mix(in srgb, var(--mm-hint) 30%, transparent));
+    --mm-fill: color-mix(in srgb, var(--mm-hint) 14%, transparent);
+    --mm-track: color-mix(in srgb, var(--mm-hint) 38%, transparent);
+    --mm-toast-bg: color-mix(in srgb, var(--mm-text) 88%, transparent);
+    /* Darker than the destructive colour itself, so white text stays readable in dark themes. */
+    --mm-toast-error-bg: color-mix(in srgb, var(--mm-destructive) 78%, #000000);
+  }
 }
 
 @media (prefers-color-scheme: dark) {
@@ -95,19 +110,21 @@ html:has(.mm) {
 .mm-action:focus-visible { outline-offset: -2px; }
 
 /* A text button inside a row: Edit, Cancel, Save. */
-.mm-link { flex: none; margin: -8px -4px; padding: 8px 4px; border: 0; background: none; color: var(--mm-accent); font: inherit; cursor: pointer; }
+.mm-link { flex: none; margin: -12px -8px; padding: 12px 8px; border: 0; background: none; color: var(--mm-accent); font: inherit; cursor: pointer; }
 .mm-link:disabled { opacity: 0.45; cursor: default; }
 
 /* Pickers: the value is drawn by us, the native select sits invisibly on top so a tap
-   opens the platform's own picker. 16px keeps iOS from zooming in. */
-.mm-picker { position: relative; display: inline-flex; flex: 0 1 auto; align-items: center; gap: 6px; min-width: 0; color: var(--mm-hint); }
+   opens the platform's own picker. In a row, the select covers the whole row (it anchors
+   to .mm-row), so tapping the label opens it too, as in Telegram's own settings. 16px
+   keeps iOS from zooming in. */
+.mm-picker { display: inline-flex; flex: 0 1 auto; align-items: center; gap: 6px; min-width: 0; color: var(--mm-hint); }
 .mm-picker::after { content: ""; flex: none; width: 7px; height: 7px; margin-top: -4px; border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
 .mm-picker-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mm-picker-select { position: absolute; inset: -8px 0; width: 100%; margin: 0; opacity: 0; font-size: 16px; cursor: pointer; appearance: none; -webkit-appearance: none; }
+.mm-picker-select { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; font-size: 16px; cursor: pointer; appearance: none; -webkit-appearance: none; }
 .mm-picker-select:disabled { cursor: default; }
 .mm-picker:has(.mm-picker-select:focus-visible), .mm-pill:has(.mm-picker-select:focus-visible) { outline: 2px solid var(--mm-accent); outline-offset: 2px; border-radius: 6px; }
 .mm-pill { position: relative; display: inline-block; padding: 6px 10px; border-radius: 8px; background: var(--mm-fill); color: var(--mm-text); font-variant-numeric: tabular-nums; line-height: 1.25; }
-.mm-pill .mm-picker-select { inset: 0; }
+.mm-pill .mm-picker-select { inset: -7px 0; height: auto; } /* a 46px tall target on a 32px pill */
 .mm-pill:has(.mm-picker-select:disabled) { opacity: 0.45; }
 
 .mm-input { min-width: 0; width: 100%; margin: 0; padding: 8px 10px; border: 0; border-radius: 8px; background: var(--mm-fill); color: var(--mm-text); font: inherit; font-size: 16px; }
@@ -154,8 +171,11 @@ html:has(.mm) {
 
 /* Toast: "Saving…", "Saved", "Save failed". */
 .mm-toast { position: fixed; inset-inline: 0; bottom: calc(20px + env(safe-area-inset-bottom)); z-index: 10; display: flex; justify-content: center; padding-inline: var(--mm-gutter); pointer-events: none; }
-.mm-toast-msg { max-width: 420px; padding: 10px 16px; border-radius: 12px; background: color-mix(in srgb, var(--mm-text) 88%, transparent); color: var(--mm-page); font-size: 15px; line-height: 1.3; text-align: center; animation: mm-toast-in 0.18s ease-out; }
-.mm-toast-error { background: var(--mm-destructive); color: #ffffff; }
+.mm-toast-msg { max-width: 420px; padding: 10px 16px; border-radius: 12px; background: var(--mm-toast-bg); color: var(--mm-page); font-size: 15px; line-height: 1.3; text-align: center; animation: mm-toast-in 0.18s ease-out; }
+.mm-toast-error { background: var(--mm-toast-error-bg); color: #ffffff; }
+/* Screen-reader-only live regions behind the toast (see Toast in ui.tsx). */
+.mm-sr-only { position: absolute; inset-block-start: 0; inset-inline-start: 0; width: 1px; height: 1px; margin: 0; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.mm-focus-target:focus { outline: none; }
 @keyframes mm-toast-in { from { opacity: 0; transform: translateY(6px); } }
 
 @media (prefers-reduced-motion: reduce) {
