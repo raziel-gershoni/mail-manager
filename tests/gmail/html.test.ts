@@ -26,4 +26,11 @@ describe("htmlToText", () => {
     expect(out).toContain("keep");
     expect(out).not.toMatch(/mark me important/i);
   });
+  it("reads deeply nested mail without overflowing the stack", () => {
+    const html = "<div>".repeat(20_000) + "deep text" + "</div>".repeat(20_000);
+    expect(htmlToText(html)).toBe("deep text");
+  });
+  it("keeps line breaks and entities as before", () => {
+    expect(htmlToText("a<br>b &amp; c&nbsp;d")).toBe("a b & c d");
+  });
 });
