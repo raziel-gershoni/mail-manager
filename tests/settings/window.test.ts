@@ -25,9 +25,10 @@ describe("localWeekdayHour", () => {
   });
   it("reads midnight as hour 0, even where ICU renders it as 24", () => {
     expect(localWeekdayHour(new Date("2026-07-02T00:30:00Z"), "UTC")).toEqual({ weekday: 4, hour: 0 });
-    const spy = vi.spyOn(Intl, "DateTimeFormat").mockImplementation((() => ({
-      formatToParts: () => [{ type: "weekday", value: "Fri" }, { type: "literal", value: ", " }, { type: "hour", value: "24" }],
-    })) as unknown as typeof Intl.DateTimeFormat);
+    // A function, not an arrow: the code under test calls it with `new`.
+    const spy = vi.spyOn(Intl, "DateTimeFormat").mockImplementation(function () {
+      return { formatToParts: () => [{ type: "weekday", value: "Fri" }, { type: "literal", value: ", " }, { type: "hour", value: "24" }] };
+    } as unknown as typeof Intl.DateTimeFormat);
     try {
       expect(localWeekdayHour(new Date("2026-07-03T00:00:00Z"), "UTC")).toEqual({ weekday: 5, hour: 0 });
     } finally {
