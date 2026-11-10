@@ -1,5 +1,4 @@
 // src/cleanup/tools.ts
-import { errorText } from "../util/errors.js";
 import { randomUUID } from "node:crypto";
 import type { ToolDef, ToolContext } from "../agent/tools.js";
 import type { TrashCandidate } from "../llm/provider.js";
@@ -11,6 +10,7 @@ import { bucketByAction } from "./apply-rules.js";
 import { guardVet } from "./guard.js";
 import { GMAIL_FETCH_CONCURRENCY } from "../gmail/client.js";
 import { mapLimit } from "../util/concurrency.js";
+import { errorText } from "../util/errors.js";
 import { log } from "../util/log.js";
 
 // Guarded (review) senders read FULL bodies, so cap the per-run body-reads well

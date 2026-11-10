@@ -1,11 +1,11 @@
 // src/oauth/google.ts
-import { withoutQuery } from "../util/errors.js";
 import { google } from "googleapis";
 import { OAuth2Client } from "google-auth-library";
 import type { Env } from "../config/env.js";
 import { db, schema } from "../db/client.js";
 import { eq } from "drizzle-orm";
 import { encryptSecret, decryptSecret } from "../lib/crypto.js";
+import { withoutQuery } from "../util/errors.js";
 
 const SCOPE = "https://www.googleapis.com/auth/gmail.modify";
 

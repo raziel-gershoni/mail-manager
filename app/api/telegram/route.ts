@@ -1,9 +1,9 @@
 // app/api/telegram/route.ts
-import { errorText } from "../../../src/util/errors.js";
 import { env } from "../../../src/config/env.js";
 import { enqueue } from "../../../src/queue/qstash.js";
 import { isAuthorizedTelegram } from "../../../src/users/identity.js";
 import { dbTelegramLinkRepo } from "../../../src/db/user-adapters.js";
+import { errorText } from "../../../src/util/errors.js";
 import { log, logPreview } from "../../../src/util/log.js";
 
 export const runtime = "nodejs";

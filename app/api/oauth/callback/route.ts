@@ -1,5 +1,4 @@
 // app/api/oauth/callback/route.ts
-import { withoutQuery } from "../../../../src/util/errors.js";
 import { telegramBot } from "../../../../src/telegram/client.js";
 import { env } from "../../../../src/config/env.js";
 import { exchangeAndStore } from "../../../../src/oauth/google.js";
@@ -9,6 +8,7 @@ import { dbOAuthStateRepo } from "../../../../src/db/oauth-state-adapter.js";
 import { dbSettingsRepo } from "../../../../src/db/settings-adapter.js";
 import { effectiveSettings } from "../../../../src/settings/settings.js";
 import { t, type Lang } from "../../../../src/i18n/index.js";
+import { withoutQuery } from "../../../../src/util/errors.js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

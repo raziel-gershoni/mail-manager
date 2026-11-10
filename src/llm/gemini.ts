@@ -1,11 +1,11 @@
 // src/llm/gemini.ts
-import { errorText } from "../util/errors.js";
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import type { ClassifyInput, ClassifyResult, LLMProvider, TrashCandidate, BriefEmail, StreamSink, AgentStep, ToolCall } from "./provider.js";
 import { parseReviewJson, parseSpamJson, parseActedJson } from "./provider.js";
 import type { SpamCandidate, ActedCandidate } from "./provider.js";
 import type { AgentMessage } from "../context/assemble.js";
 import type { MemoryIndexEntry } from "../memory/store.js";
+import { errorText } from "../util/errors.js";
 import { log } from "../util/log.js";
 import { attachmentLine } from "../gmail/parts.js";
 import { notReadReason } from "../attachments/read.js";

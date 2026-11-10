@@ -1,6 +1,6 @@
-import { errorText } from "../util/errors.js";
 import type { Bot } from "grammy";
 import telegramifyMarkdown from "telegramify-markdown";
+import { errorText } from "../util/errors.js";
 import { log } from "../util/log.js";
 
 // Telegram rejects a message over 4096 characters (counted as shown, after MarkdownV2

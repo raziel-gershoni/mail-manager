@@ -11,6 +11,7 @@ import { effectiveSettings } from "../../../src/settings/settings.js";
 import { buildSettingsView, validateSettingsPatch, mergePatch } from "../../../src/settings/service.js";
 import { contextUsage } from "../../../src/context/assemble.js";
 import { SYSTEM_PROMPT } from "../../../src/telegram/bot.js";
+import { withoutQuery } from "../../../src/util/errors.js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,7 +26,7 @@ async function authUser(req: Request): Promise<{ userId: number; isOwner: boolea
   return { userId, isOwner: v.telegramUserId === e.TELEGRAM_OWNER_ID };
 }
 
-export async function GET(req: Request): Promise<Response> {
+async function handleGet(req: Request): Promise<Response> {
   const e = env();
   const auth = await authUser(req);
   if (auth === null) return new Response("unauthorized", { status: 401 });
@@ -39,7 +40,17 @@ export async function GET(req: Request): Promise<Response> {
   return Response.json({ ...buildSettingsView(eff, account, store.list(), usage), isOwner });
 }
 
-export async function POST(req: Request): Promise<Response> {
+// An error that escapes leaves without the SQL and params drizzle puts in its message, so
+// Next's own uncaught-error log stays clean. Still a throw, so the status stays a 500.
+export async function GET(req: Request): Promise<Response> {
+  try {
+    return await handleGet(req);
+  } catch (err) {
+    throw withoutQuery(err);
+  }
+}
+
+async function handlePost(req: Request): Promise<Response> {
   const e = env();
   const auth = await authUser(req);
   if (auth === null) return new Response("unauthorized", { status: 401 });
@@ -49,4 +60,14 @@ export async function POST(req: Request): Promise<Response> {
   const eff = effectiveSettings(await dbSettingsRepo().get(userId), e.OWNER_TZ);
   await dbSettingsRepo().upsert(userId, mergePatch(eff, patch));
   return Response.json({ ok: true });
+}
+
+// An error that escapes leaves without the SQL and params drizzle puts in its message, so
+// Next's own uncaught-error log stays clean. Still a throw, so the status stays a 500.
+export async function POST(req: Request): Promise<Response> {
+  try {
+    return await handlePost(req);
+  } catch (err) {
+    throw withoutQuery(err);
+  }
 }

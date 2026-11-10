@@ -1,10 +1,10 @@
 // src/db/adapters.ts
-import { withoutQuery } from "../util/errors.js";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db, schema } from "./client.js";
 import { matchRuleIn, keyFromSlug } from "../memory/store.js";
 import type { MemoryStore, RuleMatch, MemoryIndexEntry, MemoryRow, Verdict } from "../memory/store.js";
 import type { SeenRepo, SeenRow, SyncStateRepo } from "../notifier/sync.js";
+import { withoutQuery } from "../util/errors.js";
 
 // NOTE: dbMemoryStore loads the user's rows once (call per run). Writes go straight to the DB.
 export async function dbMemoryStore(userId: number): Promise<MemoryStore & { flush(): Promise<void> }> {

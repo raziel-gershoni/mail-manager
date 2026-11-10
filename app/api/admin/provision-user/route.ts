@@ -12,12 +12,13 @@ import { dbOAuthStateRepo } from "../../../../src/db/oauth-state-adapter.js";
 import { PROVISION_STATE_TTL_MS } from "../../../../src/oauth/reconnect.js";
 import { parseProvisionBody, provisionUser } from "../../../../src/oauth/provision.js";
 import { log } from "../../../../src/util/log.js";
+import { withoutQuery } from "../../../../src/util/errors.js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-export async function POST(req: Request): Promise<Response> {
+async function handlePost(req: Request): Promise<Response> {
   const e = env();
   // Owner-only: verify the Mini App initData, then require the bootstrap owner id.
   const v = verifyInitData(req.headers.get("x-telegram-init-data") ?? "", e.TELEGRAM_BOT_TOKEN, new Date());
@@ -40,4 +41,14 @@ export async function POST(req: Request): Promise<Response> {
   // Log the event WITHOUT the consent URL (it authorizes a Gmail grant).
   log("provision.created", { userId: result.userId, telegramUserId: parsed.telegramUserId, language: parsed.language });
   return Response.json(result);
+}
+
+// An error that escapes leaves without the SQL and params drizzle puts in its message, so
+// Next's own uncaught-error log stays clean. Still a throw, so the status stays a 500.
+export async function POST(req: Request): Promise<Response> {
+  try {
+    return await handlePost(req);
+  } catch (err) {
+    throw withoutQuery(err);
+  }
 }

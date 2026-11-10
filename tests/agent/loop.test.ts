@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
+import { DrizzleQueryError } from "drizzle-orm";
 import { runAgentTurn } from "../../src/agent/loop.js";
 import { fakeAgentLLM } from "../../src/llm/provider.js";
-import { readOnlyTools, type ToolContext } from "../../src/agent/tools.js";
+import { readOnlyTools, type ToolContext, type ToolDef } from "../../src/agent/tools.js";
 import { fakeGmailClient } from "../../src/gmail/client.js";
 import { inMemoryStore } from "../../src/memory/store.js";
 
@@ -112,6 +113,36 @@ describe("runAgentTurn", () => {
       const events = spy.mock.calls.map(c => { try { return (JSON.parse(c[0] as string) as { event: string }).event; } catch { return null; } });
       expect(events).toContain("agent.tool");
       expect(events).toContain("agent.final");
+    } finally { spy.mockRestore(); }
+  });
+  it("keeps a failed query's SQL and params out of the tool result sent to the model and out of the logs", async () => {
+    // drizzle 0.44+ puts "Failed query: <sql> params: <params>" in the error message. The
+    // loop pushes { error } to Gemini and logs it, so both must carry only the driver's message.
+    const sql = 'insert into "memories" ("rule_text") values ($1)';
+    const failing: ToolDef = {
+      schema: { name: "save_rule", description: "x", parameters: {} }, mutating: true,
+      run: async () => { throw new DrizzleQueryError(sql, ["secret-param"], new Error("connection reset by peer")); },
+    };
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const seen: any[][] = [];
+      let n = 0;
+      const llm = fakeAgentLLM((messages) => {
+        seen.push(messages.map(m => ({ ...m })));
+        return n++ === 0
+          ? { kind: "tool_calls", calls: [{ name: "save_rule", args: {}, id: "c1" }] }
+          : { kind: "final", text: "done" };
+      });
+      await runAgentTurn([{ role: "user", content: "x" }], { llm, tools: [failing], ctx: ctx() });
+      const toolMsg = seen[1]!.find((m: any) => m.role === "tool");
+      const sent = JSON.stringify(toolMsg.result);
+      expect(sent).toContain("connection reset by peer");
+      expect(sent).not.toContain("insert into");
+      expect(sent).not.toContain("secret-param");
+      const logged = spy.mock.calls.map(c => String(c[0])).join("\n");
+      expect(logged).toContain("connection reset by peer");
+      expect(logged).not.toContain("insert into");
+      expect(logged).not.toContain("secret-param");
     } finally { spy.mockRestore(); }
   });
 });

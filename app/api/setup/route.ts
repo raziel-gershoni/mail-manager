@@ -1,9 +1,9 @@
 // app/api/setup/route.ts
-import { withoutQuery } from "../../../src/util/errors.js";
 import { env } from "../../../src/config/env.js";
 import { isSetupAuthorized } from "../../../src/setup/auth.js";
 import { ensurePollSchedule } from "../../../src/queue/qstash.js";
 import { ensureTelegramWebhook } from "../../../src/telegram/bot.js";
+import { errorText, withoutQuery } from "../../../src/util/errors.js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,13 +21,13 @@ export async function POST(req: Request): Promise<Response> {
     out.schedule = await ensurePollSchedule(e);
   } catch (err) {
     console.error("setup: schedule step failed", withoutQuery(err));
-    return Response.json({ ok: false, step: "schedule", error: (err as Error).message }, { status: 500 });
+    return Response.json({ ok: false, step: "schedule", error: errorText(err) }, { status: 500 });
   }
   try {
     out.webhook = await ensureTelegramWebhook(e);
   } catch (err) {
     console.error("setup: webhook step failed", withoutQuery(err));
-    return Response.json({ ok: false, step: "webhook", error: (err as Error).message }, { status: 500 });
+    return Response.json({ ok: false, step: "webhook", error: errorText(err) }, { status: 500 });
   }
   return Response.json(out);
 }

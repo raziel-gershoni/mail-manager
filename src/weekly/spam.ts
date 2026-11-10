@@ -2,7 +2,6 @@
 // The weekly spam check: list last week's Spam, flag what looks like real mail, and hand
 // that to the report. Read-only: nothing here moves mail — only the owner's "rescue"
 // (the rescue_from_spam tool) ever takes anything out of Spam.
-import { errorText } from "../util/errors.js";
 import type { GmailClient } from "../gmail/client.js";
 import { GMAIL_FETCH_CONCURRENCY } from "../gmail/client.js";
 import type { EmailMeta } from "../gmail/headers.js";
@@ -13,6 +12,7 @@ import type { LLMProvider, SpamCandidate, SpamVerdict } from "../llm/provider.js
 import type { MemoryStore } from "../memory/store.js";
 import { mapLimit } from "../util/concurrency.js";
 import { beforeDeadline, TIMED_OUT } from "../util/deadline.js";
+import { errorText } from "../util/errors.js";
 import { log } from "../util/log.js";
 
 export const SPAM_SCAN_CAP = 300; // a week of spam; past this the report says it checked the newest 300

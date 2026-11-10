@@ -6,12 +6,13 @@ import { buildAuthUrl, ensureBootstrapUser } from "../../../../src/oauth/google.
 import { isSetupAuthorized } from "../../../../src/setup/auth.js";
 import { searchParam } from "../../../../src/http/url.js";
 import { dbOAuthStateRepo } from "../../../../src/db/oauth-state-adapter.js";
+import { withoutQuery } from "../../../../src/util/errors.js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-export async function GET(req: Request): Promise<Response> {
+async function handleGet(req: Request): Promise<Response> {
   const e = env();
   const expected = e.SETUP_SECRET;
   if (!expected) return new Response("setup not configured (SETUP_SECRET unset)", { status: 500 });
@@ -21,4 +22,14 @@ export async function GET(req: Request): Promise<Response> {
   const state = randomBytes(16).toString("hex");
   await dbOAuthStateRepo().create(state, userId);
   return new Response(null, { status: 302, headers: { Location: buildAuthUrl(e, state) } });
+}
+
+// An error that escapes leaves without the SQL and params drizzle puts in its message, so
+// Next's own uncaught-error log stays clean. Still a throw, so the status stays a 500.
+export async function GET(req: Request): Promise<Response> {
+  try {
+    return await handleGet(req);
+  } catch (err) {
+    throw withoutQuery(err);
+  }
 }

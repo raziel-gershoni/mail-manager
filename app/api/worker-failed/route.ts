@@ -2,7 +2,6 @@
 // QStash calls this after it has exhausted every retry for a conversational turn.
 // It is the last line of defence against silence: by the time we get here the owner
 // has been waiting with no reply and no further attempt is coming.
-import { errorText } from "../../../src/util/errors.js";
 import { env } from "../../../src/config/env.js";
 import { verifyQStash } from "../../../src/queue/qstash.js";
 import { parseFailureBody } from "../../../src/queue/failure.js";
@@ -13,6 +12,7 @@ import { dbOpsEventRepo } from "../../../src/db/ops-events-adapter.js";
 import { recordOpsEvent } from "../../../src/ops/events.js";
 import { effectiveSettings } from "../../../src/settings/settings.js";
 import { sendFormatted } from "../../../src/telegram/send.js";
+import { errorText } from "../../../src/util/errors.js";
 import { log } from "../../../src/util/log.js";
 import { t, type Lang } from "../../../src/i18n/index.js";
 import { telegramBot } from "../../../src/telegram/client.js";

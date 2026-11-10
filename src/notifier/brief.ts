@@ -1,11 +1,11 @@
 // src/notifier/brief.ts
-import { errorText } from "../util/errors.js";
 import type { GmailClient } from "../gmail/client.js";
 import type { LLMProvider, BriefEmail } from "../llm/provider.js";
 import type { MemoryStore } from "../memory/store.js";
 import { MAX_BRIEF_ATTACHMENTS, MAX_READ_BYTES_PER_EMAIL, MAX_READ_FILES_PER_EMAIL, prioritize, selectForReading, type AttachmentMeta } from "../gmail/parts.js";
 import { ATTACHMENT_READ_CONCURRENCY, readAttachments, type AttachmentRead } from "../attachments/read.js";
 import { mapLimit } from "../util/concurrency.js";
+import { errorText } from "../util/errors.js";
 import { log } from "../util/log.js";
 import { ruleTag } from "../agent/rule-tag.js";
 import { dateContext } from "../context/date.js";

@@ -1,5 +1,4 @@
 // app/api/poll/route.ts
-import { errorText } from "../../../src/util/errors.js";
 import { env } from "../../../src/config/env.js";
 import { verifyQStash } from "../../../src/queue/qstash.js";
 import { authedGmailFor } from "../../../src/oauth/google.js";
@@ -25,6 +24,7 @@ import { pollAllUsers, POLL_LOOP_BUDGET_MS } from "../../../src/notifier/fanout.
 import { runWeeklyTasks } from "../../../src/weekly/run.js";
 import { dbWeeklyRunRepo } from "../../../src/db/weekly-runs-adapter.js";
 import { sendFormatted, sendPlain } from "../../../src/telegram/send.js";
+import { errorText, withoutQuery } from "../../../src/util/errors.js";
 import { log } from "../../../src/util/log.js";
 import { t } from "../../../src/i18n/index.js";
 import { telegramBot } from "../../../src/telegram/client.js";
@@ -33,7 +33,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // Hobby + Fluid compute allows up to 300s
 
-export async function POST(req: Request): Promise<Response> {
+async function handlePost(req: Request): Promise<Response> {
   const t0 = Date.now();
   const e = env();
   await verifyQStash(e, req);
@@ -131,4 +131,14 @@ export async function POST(req: Request): Promise<Response> {
   });
   log("poll.done", { ...summary, ms: Date.now() - t0 });
   return Response.json({ ok: true, ...summary });
+}
+
+// An error that escapes leaves without the SQL and params drizzle puts in its message, so
+// Next's own uncaught-error log stays clean. Still a throw, so the status stays a 500.
+export async function POST(req: Request): Promise<Response> {
+  try {
+    return await handlePost(req);
+  } catch (err) {
+    throw withoutQuery(err);
+  }
 }

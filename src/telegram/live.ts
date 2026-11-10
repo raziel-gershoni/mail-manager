@@ -5,10 +5,10 @@
 // EVERY function here is best-effort. A failure to show progress must never fail
 // the turn — the owner would rather get an unformatted answer than no answer, so
 // every Telegram error is swallowed and logged.
-import { errorText } from "../util/errors.js";
 import type { Bot } from "grammy";
 import telegramifyMarkdown from "telegramify-markdown";
 import { isRateLimited, messageParts, sendFormatted, sendParts, TELEGRAM_PART_CHARS } from "./send.js";
+import { errorText } from "../util/errors.js";
 import { log } from "../util/log.js";
 
 // Telegram clears the "typing…" status after about 5s, so refresh just inside that.

@@ -1,9 +1,9 @@
 // Fan the poll out over every user with a linked Google account, respecting per-user settings.
-import { withoutQuery } from "../util/errors.js";
 import type { TelegramLinkRepo, UserDirectory } from "../users/identity.js";
 import { ensureOwnerLink } from "../users/identity.js";
 import type { EffectiveSettings } from "../settings/settings.js";
 import { isScheduledNow } from "../settings/window.js";
+import { withoutQuery } from "../util/errors.js";
 import { log } from "../util/log.js";
 
 // How long each user's poll may keep taking on new mail, measured from the start of the

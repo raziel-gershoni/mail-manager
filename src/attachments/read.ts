@@ -3,11 +3,11 @@
 // caller's caps, downloads each file, and asks Gemini for a plain-text extract. Nothing is
 // stored. One bad file never sinks the rest: a download error or a Gemini timeout marks
 // that file "failed" and the others still come back.
-import { errorText } from "../util/errors.js";
 import type { GmailClient } from "../gmail/client.js";
 import type { LLMProvider } from "../llm/provider.js";
 import { selectForReading, type AttachmentMeta } from "../gmail/parts.js";
 import { mapLimit } from "../util/concurrency.js";
+import { errorText } from "../util/errors.js";
 import { log } from "../util/log.js";
 
 export interface AttachmentRead { name: string; mimeType: string; size: number; status: "read" | "unreadable" | "too-large" | "skipped" | "failed"; text?: string }

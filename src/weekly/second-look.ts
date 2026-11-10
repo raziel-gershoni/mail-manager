@@ -2,7 +2,6 @@
 // The weekly retrospect's second look: re-read what the bot trashed or archived this week
 // (messages in Trash stay readable by id) and ask the model whether any of it was
 // plausibly a mistake. Read-only: it only reports; the owner decides what to restore.
-import { errorText } from "../util/errors.js";
 import type { GmailClient } from "../gmail/client.js";
 import { GMAIL_FETCH_CONCURRENCY } from "../gmail/client.js";
 import type { EmailMeta } from "../gmail/headers.js";
@@ -12,6 +11,7 @@ import type { LLMProvider, ActedCandidate } from "../llm/provider.js";
 import type { ActedSource } from "../notifier/activity.js";
 import { mapLimit } from "../util/concurrency.js";
 import { beforeDeadline, TIMED_OUT } from "../util/deadline.js";
+import { errorText } from "../util/errors.js";
 import { log } from "../util/log.js";
 import type { WeekFacts } from "./gather.js";
 

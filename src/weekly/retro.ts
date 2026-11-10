@@ -2,10 +2,10 @@
 // The weekly retrospect: what the bot did over the last 7 days, a second look at what it
 // trashed or archived, and the operational issues it hit. Read-only on mail: restoring
 // is the owner's call, by replying "restore 1" / "restore all" to the report.
-import { errorText } from "../util/errors.js";
 import type { DigestRef } from "../notifier/refs.js";
 import { t, type Lang, type MsgKey } from "../i18n/index.js";
 import { OPS_RETENTION_MS, type OpsEvent, type OpsEventKind } from "../ops/events.js";
+import { errorText } from "../util/errors.js";
 import { log } from "../util/log.js";
 import { gatherWeek, retroSince, retroUntil, type WeekFacts } from "./gather.js";
 import { secondLook, checkableActed, SECOND_LOOK_CAP, type SecondLook } from "./second-look.js";

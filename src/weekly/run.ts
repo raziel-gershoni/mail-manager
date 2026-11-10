@@ -7,7 +7,6 @@
 // A job that keeps failing is capped: each failure is a "weekly_failed" ops event, and
 // once a kind has failed WEEKLY_MAX_ATTEMPTS times this week the owner gets a short
 // notice instead and the week is closed — the scan isn't re-run every hour all week.
-import { errorText } from "../util/errors.js";
 import type { GmailClient } from "../gmail/client.js";
 import type { LLMProvider } from "../llm/provider.js";
 import type { MemoryStore } from "../memory/store.js";
@@ -22,6 +21,7 @@ import type { ActivityRepo } from "../notifier/activity.js";
 import type { ActionLogRepo } from "../cleanup/proposals.js";
 import { recordOpsEvent, type OpsEventRepo } from "../ops/events.js";
 import { retroUntil } from "./gather.js";
+import { errorText } from "../util/errors.js";
 import { log } from "../util/log.js";
 
 // Both measured from the start of the poll run (runStart = deadline − POLL_LOOP_BUDGET_MS),

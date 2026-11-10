@@ -23,12 +23,13 @@ import { dbIdempotencyRepo } from "../../../src/db/idempotency-adapter.js";
 import { log, logPreview } from "../../../src/util/log.js";
 import { t } from "../../../src/i18n/index.js";
 import { telegramBot } from "../../../src/telegram/client.js";
+import { withoutQuery } from "../../../src/util/errors.js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // Hobby + Fluid compute allows up to 300s
 
-export async function POST(req: Request): Promise<Response> {
+async function handlePost(req: Request): Promise<Response> {
   const t0 = Date.now();
   const e = env();
   const update = await verifyQStash(e, req) as any;
@@ -111,4 +112,14 @@ export async function POST(req: Request): Promise<Response> {
   }
   log("worker.done", { updateId, userId, ms: Date.now() - t0 });
   return Response.json(outcome.result);
+}
+
+// An error that escapes leaves without the SQL and params drizzle puts in its message, so
+// Next's own uncaught-error log stays clean. Still a throw, so the status stays a 500.
+export async function POST(req: Request): Promise<Response> {
+  try {
+    return await handlePost(req);
+  } catch (err) {
+    throw withoutQuery(err);
+  }
 }
