@@ -2,6 +2,7 @@
 // The weekly spam check: list last week's Spam, flag what looks like real mail, and hand
 // that to the report. Read-only: nothing here moves mail — only the owner's "rescue"
 // (the rescue_from_spam tool) ever takes anything out of Spam.
+import { errorText } from "../util/errors.js";
 import type { GmailClient } from "../gmail/client.js";
 import { GMAIL_FETCH_CONCURRENCY } from "../gmail/client.js";
 import type { EmailMeta } from "../gmail/headers.js";
@@ -22,8 +23,6 @@ export interface FlaggedSpam { id: string; from: string; subject: string; reason
 // judged (a failed read, a failed batch, a missing or malformed verdict). What the deadline
 // cut off is neither — `incomplete` says so.
 export interface SpamCheck { total: number; flagged: FlaggedSpam[]; judged: number; unjudged: number; capped: boolean; incomplete: boolean }
-
-const errText = (err: unknown) => err instanceof Error ? err.message : String(err);
 
 // THROWS when there was something to judge but nothing could be: no message could be read,
 // or no model batch call came back (each rejected, or was cut by the deadline). A Gemini
@@ -47,7 +46,7 @@ export async function checkSpam(deps: { gmail: GmailClient; llm: LLMProvider; st
     try {
       return await deps.gmail.getMeta(id);
     } catch (err) {
-      if (!isNotFound(err)) { unjudged++; log("weekly.spam_read_failed", { id, error: errText(err) }); }
+      if (!isNotFound(err)) { unjudged++; log("weekly.spam_read_failed", { id, error: errorText(err) }); }
       return null;
     }
   });
@@ -81,7 +80,7 @@ export async function checkSpam(deps: { gmail: GmailClient; llm: LLMProvider; st
     } catch (err) {
       // A failed call judged nothing: the whole batch is "couldn't judge".
       unjudged += batch.length;
-      log("weekly.spam_review_failed", { n: batch.length, error: errText(err) });
+      log("weekly.spam_review_failed", { n: batch.length, error: errorText(err) });
       continue;
     }
     if (res === TIMED_OUT) { incomplete = true; break; }

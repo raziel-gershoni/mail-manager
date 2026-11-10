@@ -1,4 +1,5 @@
 // app/api/telegram/route.ts
+import { errorText } from "../../../src/util/errors.js";
 import { env } from "../../../src/config/env.js";
 import { enqueue } from "../../../src/queue/qstash.js";
 import { isAuthorizedTelegram } from "../../../src/users/identity.js";
@@ -32,7 +33,7 @@ export async function POST(req: Request): Promise<Response> {
   } catch (err) {
     // Enqueue failed (QStash down/rate-limited) — 500 makes Telegram retry the
     // webhook later, which would delay processing. Logging it surfaces that path.
-    log("telegram.enqueue_error", { updateId, error: err instanceof Error ? err.message : String(err) });
+    log("telegram.enqueue_error", { updateId, error: errorText(err) });
     throw err;
   }
   return Response.json({ ok: true });

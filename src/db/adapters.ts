@@ -1,4 +1,5 @@
 // src/db/adapters.ts
+import { withoutQuery } from "../util/errors.js";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db, schema } from "./client.js";
 import { matchRuleIn, keyFromSlug } from "../memory/store.js";
@@ -92,7 +93,7 @@ export async function dbMemoryStore(userId: number): Promise<MemoryStore & { flu
     async flush(): Promise<void> {
       const results = await Promise.allSettled(pending);
       const rejected = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
-      for (const r of rejected) console.error("memory upsert failed", r.reason);
+      for (const r of rejected) console.error("memory upsert failed", withoutQuery(r.reason));
       if (rejected.length > 0) {
         throw new Error(`${rejected.length} learned-rule write(s) failed`);
       }

@@ -1,4 +1,5 @@
 // src/llm/gemini.ts
+import { errorText } from "../util/errors.js";
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import type { ClassifyInput, ClassifyResult, LLMProvider, TrashCandidate, BriefEmail, StreamSink, AgentStep, ToolCall } from "./provider.js";
 import { parseReviewJson, parseSpamJson, parseActedJson } from "./provider.js";
@@ -121,7 +122,7 @@ export async function consumeAgentStream(
     if (!text && calls.length === 0) throw err;
     // Otherwise keep what we got: a truncated answer beats no answer, and the
     // owner can always ask again.
-    log("gemini.stream_truncated", { chars: text.length, calls: calls.length, error: err instanceof Error ? err.message : String(err) });
+    log("gemini.stream_truncated", { chars: text.length, calls: calls.length, error: errorText(err) });
   }
   if (calls.length) return { kind: "tool_calls", calls };
   return { kind: "final", text };
@@ -302,7 +303,7 @@ export function geminiProvider(apiKey: string): LLMProvider {
         } catch (err) {
           // consumeAgentStream only rethrows when NOTHING was emitted, so the sink
           // is untouched and re-running non-streamed cannot duplicate text.
-          log("gemini.stream_fallback", { error: err instanceof Error ? err.message : String(err) });
+          log("gemini.stream_fallback", { error: errorText(err) });
         }
       }
       const res = await ai.models.generateContent({ model: MODEL, contents, config });

@@ -6,6 +6,7 @@
 // counts these events). Until now these were console logs only.
 // They are written through recordOpsEvent, which NEVER throws: recording an event must
 // never break the path it observes. Kept for 30 days (the retrospect prunes).
+import { errorText } from "../util/errors.js";
 import { log } from "../util/log.js";
 
 export type OpsEventKind = "poll_incomplete" | "cursor_expired" | "reconnect_needed" | "poll_errored" | "worker_failed" | "weekly_failed";
@@ -22,7 +23,7 @@ export async function recordOpsEvent(repo: OpsEventRepo, userId: number, kind: O
   try {
     await repo.record(userId, kind, detail);
   } catch (err) {
-    log("ops.record_failed", { userId, kind, error: err instanceof Error ? err.message : String(err) });
+    log("ops.record_failed", { userId, kind, error: errorText(err) });
   }
 }
 

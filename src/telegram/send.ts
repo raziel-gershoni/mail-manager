@@ -1,3 +1,4 @@
+import { errorText } from "../util/errors.js";
 import type { Bot } from "grammy";
 import telegramifyMarkdown from "telegramify-markdown";
 import { log } from "../util/log.js";
@@ -77,7 +78,7 @@ function renderedLength(part: string): number {
     return telegramifyMarkdown(part, "escape").replace(/\\([\s\S])/g, "$1").length;
   } catch (err) {
     // The send falls back to plain text for this part anyway, and plain fits.
-    log("telegram.render_measure_failed", { error: err instanceof Error ? err.message : String(err) });
+    log("telegram.render_measure_failed", { error: errorText(err) });
     return 0;
   }
 }
@@ -106,7 +107,7 @@ async function sendPart(bot: Bot, chatId: number, text: string, silent: boolean)
     return m.message_id;
   } catch (err) {
     if (isRateLimited(err)) throw err;
-    log("telegram.format_fallback", { error: err instanceof Error ? err.message : String(err) });
+    log("telegram.format_fallback", { error: errorText(err) });
     const m = await bot.api.sendMessage(chatId, text, extra);
     return m.message_id;
   }
@@ -121,7 +122,7 @@ export async function sendParts(bot: Bot, chatId: number, parts: string[], silen
     try {
       ids.push(await sendPart(bot, chatId, part, silent || i > 0));
     } catch (err) {
-      log("telegram.part_failed", { part: i + 1, of: parts.length, error: err instanceof Error ? err.message : String(err) });
+      log("telegram.part_failed", { part: i + 1, of: parts.length, error: errorText(err) });
       throw err;
     }
   }

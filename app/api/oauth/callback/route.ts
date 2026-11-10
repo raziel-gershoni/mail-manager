@@ -1,4 +1,5 @@
 // app/api/oauth/callback/route.ts
+import { withoutQuery } from "../../../../src/util/errors.js";
 import { telegramBot } from "../../../../src/telegram/client.js";
 import { env } from "../../../../src/config/env.js";
 import { exchangeAndStore } from "../../../../src/oauth/google.js";
@@ -22,7 +23,7 @@ async function botDeepLink(token: string): Promise<string | null> {
     const me = await telegramBot(token).api.getMe();
     cachedBotLink = me.username ? `https://t.me/${me.username}` : null;
   } catch (err) {
-    console.error("oauth callback getMe failed", err);
+    console.error("oauth callback getMe failed", withoutQuery(err));
     cachedBotLink = null;
   }
   return cachedBotLink;
@@ -54,7 +55,7 @@ export async function GET(req: Request): Promise<Response> {
     if (link) return page(escapeHtml(t(lang, "oauth_connected", { email })), link, t(lang, "oauth_open_bot"));
     return page(escapeHtml(t(lang, "oauth_connected_manual", { email })));
   } catch (err) {
-    console.error("oauth callback error", err);
+    console.error("oauth callback error", withoutQuery(err));
     return page(escapeHtml(t("en", "oauth_failed")));
   }
 }

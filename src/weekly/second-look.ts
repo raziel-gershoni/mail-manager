@@ -2,6 +2,7 @@
 // The weekly retrospect's second look: re-read what the bot trashed or archived this week
 // (messages in Trash stay readable by id) and ask the model whether any of it was
 // plausibly a mistake. Read-only: it only reports; the owner decides what to restore.
+import { errorText } from "../util/errors.js";
 import type { GmailClient } from "../gmail/client.js";
 import { GMAIL_FETCH_CONCURRENCY } from "../gmail/client.js";
 import type { EmailMeta } from "../gmail/headers.js";
@@ -71,7 +72,7 @@ export async function secondLook(
     } catch (err) {
       if (isNotFound(err)) { state.skippedGone++; return null; }
       state.unjudged++;
-      log("weekly.retro_fetch_failed", { id: it.id, error: err instanceof Error ? err.message : String(err) });
+      log("weekly.retro_fetch_failed", { id: it.id, error: errorText(err) });
       return null;
     }
   });
@@ -116,7 +117,7 @@ export async function secondLook(
       state.unjudged += batch.length - judged.size;
     } catch (err) {
       state.unjudged += batch.length;
-      log("weekly.retro_review_failed", { n: batch.length, error: err instanceof Error ? err.message : String(err) });
+      log("weekly.retro_review_failed", { n: batch.length, error: errorText(err) });
     }
   }
 

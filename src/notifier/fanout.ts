@@ -1,4 +1,5 @@
 // Fan the poll out over every user with a linked Google account, respecting per-user settings.
+import { withoutQuery } from "../util/errors.js";
 import type { TelegramLinkRepo, UserDirectory } from "../users/identity.js";
 import { ensureOwnerLink } from "../users/identity.js";
 import type { EffectiveSettings } from "../settings/settings.js";
@@ -45,10 +46,10 @@ export async function pollAllUsers(deps: FanoutDeps): Promise<{ polled: number; 
       await deps.pollUser(userId, link.chatId, s.timezone, s.language, deadline);
       return "polled";
     } catch (e) {
-      console.error(`poll failed for user ${userId}`, e);
+      console.error(`poll failed for user ${userId}`, withoutQuery(e));
       if (deps.onUserError) {
         try { await deps.onUserError(userId, e); }
-        catch (hookErr) { console.error(`poll error hook failed for user ${userId}`, hookErr); }
+        catch (hookErr) { console.error(`poll error hook failed for user ${userId}`, withoutQuery(hookErr)); }
       }
       return "errored";
     }

@@ -2,6 +2,7 @@
 // QStash calls this after it has exhausted every retry for a conversational turn.
 // It is the last line of defence against silence: by the time we get here the owner
 // has been waiting with no reply and no further attempt is coming.
+import { errorText } from "../../../src/util/errors.js";
 import { env } from "../../../src/config/env.js";
 import { verifyQStash } from "../../../src/queue/qstash.js";
 import { parseFailureBody } from "../../../src/queue/failure.js";
@@ -56,7 +57,7 @@ export async function POST(req: Request): Promise<Response> {
     log("worker_failed.notify", { updateId: failed.updateId, chatId: failed.chatId });
     await sendFormatted(telegramBot(e.TELEGRAM_BOT_TOKEN), failed.chatId, t(language, "turn_failed"));
   } catch (err) {
-    log("worker_failed.error", { error: err instanceof Error ? err.message : String(err) });
+    log("worker_failed.error", { error: errorText(err) });
   }
   return Response.json({ ok: true });
 }

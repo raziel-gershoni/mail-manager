@@ -1,3 +1,4 @@
+import { errorText } from "../util/errors.js";
 import type { AgentMessage } from "../context/assemble.js";
 import type { LLMProvider, StreamSink } from "../llm/provider.js";
 import type { ToolDef, ToolContext } from "./tools.js";
@@ -114,7 +115,7 @@ export async function runAgentTurn(
       // rejection would otherwise escape the loop, skip the forced-final safety net,
       // and leave the owner with no reply at all (worker throws → silent QStash retry).
       // Fall through to the forced-final path so the owner ALWAYS gets an answer.
-      log("agent.step_error", { iter: i, ms: Date.now() - stepStart, error: err instanceof Error ? err.message : String(err) });
+      log("agent.step_error", { iter: i, ms: Date.now() - stepStart, error: errorText(err) });
       stop = "error"; break;
     } finally {
       // The step has settled — resolved, rejected or abandoned. Whatever its stream
@@ -137,7 +138,7 @@ export async function runAgentTurn(
         result = await dispatchTool(call.name, call.args, ctx, deps.tools);
         log("agent.tool", { iter: i, name: call.name, args: call.args, result: summarize(result), ms: Date.now() - toolStart });
       } catch (e) {
-        const error = e instanceof Error ? e.message : String(e);
+        const error = errorText(e);
         result = { error };
         log("agent.tool", { iter: i, name: call.name, args: call.args, error, ms: Date.now() - toolStart });
       }
@@ -164,7 +165,7 @@ export async function runAgentTurn(
     }
     log("agent.forced_final_timeout", {});
   } catch (e) {
-    log("agent.forced_final_error", { error: e instanceof Error ? e.message : String(e) });
+    log("agent.forced_final_error", { error: errorText(e) });
   } finally {
     forcedGate.close();
   }

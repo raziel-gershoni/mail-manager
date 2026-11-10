@@ -2,6 +2,7 @@
 // The weekly retrospect: what the bot did over the last 7 days, a second look at what it
 // trashed or archived, and the operational issues it hit. Read-only on mail: restoring
 // is the owner's call, by replying "restore 1" / "restore all" to the report.
+import { errorText } from "../util/errors.js";
 import type { DigestRef } from "../notifier/refs.js";
 import { t, type Lang, type MsgKey } from "../i18n/index.js";
 import { OPS_RETENTION_MS, type OpsEvent, type OpsEventKind } from "../ops/events.js";
@@ -131,7 +132,7 @@ export async function retroReport(deps: WeeklyDeps, deadline: number): Promise<{
   try {
     await ops.prune(new Date(now.getTime() - OPS_RETENTION_MS));
   } catch (err) {
-    log("weekly.ops_prune_failed", { userId: deps.userId, error: err instanceof Error ? err.message : String(err) });
+    log("weekly.ops_prune_failed", { userId: deps.userId, error: errorText(err) });
   }
   // The window is the previous Sunday–Saturday week (C2): both edges, so this week's
   // activity so far waits for next week's report.

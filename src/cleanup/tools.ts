@@ -1,4 +1,5 @@
 // src/cleanup/tools.ts
+import { errorText } from "../util/errors.js";
 import { randomUUID } from "node:crypto";
 import type { ToolDef, ToolContext } from "../agent/tools.js";
 import type { TrashCandidate } from "../llm/provider.js";
@@ -44,7 +45,7 @@ async function recordChatActivity(ctx: ToolContext, ids: string[], action: "tras
     });
     await ctx.activity.record(ctx.userId, items);
   } catch (err) {
-    log("cleanup.activity_record_failed", { userId: ctx.userId, action, n: ids.length, error: err instanceof Error ? err.message : String(err) });
+    log("cleanup.activity_record_failed", { userId: ctx.userId, action, n: ids.length, error: errorText(err) });
   }
 }
 

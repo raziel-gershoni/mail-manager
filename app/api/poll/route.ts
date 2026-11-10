@@ -1,4 +1,5 @@
 // app/api/poll/route.ts
+import { errorText } from "../../../src/util/errors.js";
 import { env } from "../../../src/config/env.js";
 import { verifyQStash } from "../../../src/queue/qstash.js";
 import { authedGmailFor } from "../../../src/oauth/google.js";
@@ -49,7 +50,7 @@ export async function POST(req: Request): Promise<Response> {
     settingsFor: async (userId) => effectiveSettings(await settingsRepo.get(userId), e.OWNER_TZ),
     // A failed user poll becomes a poll_errored ops event for the weekly retrospect.
     // recordOpsEvent never throws, and the fan-out guards the hook as well.
-    onUserError: (userId, err) => recordOpsEvent(ops, userId, "poll_errored", { error: err instanceof Error ? err.message : String(err) }),
+    onUserError: (userId, err) => recordOpsEvent(ops, userId, "poll_errored", { error: errorText(err) }),
     pollUser: async (userId, chatId, timezone, language, deadline) => {
       try {
         const auth = await authedGmailFor(userId, e);
@@ -96,7 +97,7 @@ export async function POST(req: Request): Promise<Response> {
           const refs = buildDigestRefs(res.important, res.acted);
           if (refs.length > 0) await Promise.all(sentIds.map(sentId => dbDigestRefRepo().save(userId, sentId, refs)));
         } catch (err) {
-          log("poll.side_record_failed", { userId, error: err instanceof Error ? err.message : String(err) });
+          log("poll.side_record_failed", { userId, error: errorText(err) });
         }
         log("poll.brief", { userId, important: ids.length, processed: res.processed, guardedTrashed: res.guardedTrashed, guardedArchived: res.guardedArchived, plainTrashed: res.plainTrashed, plainArchived: res.plainArchived, prefTrashed: res.prefTrashed, prefArchived: res.prefArchived, remaining: res.remaining });
         // The weekly jobs (spam check, retrospect) run AFTER this hour's report is sent and
@@ -114,7 +115,7 @@ export async function POST(req: Request): Promise<Response> {
             activity: dbActivityRepo(), actionLog: dbActionLogRepo(), ops,
           });
         } catch (err) {
-          log("weekly.failed", { userId, error: err instanceof Error ? err.message : String(err) });
+          log("weekly.failed", { userId, error: errorText(err) });
         }
       } catch (err) {
         if (isInvalidGrant(err)) {

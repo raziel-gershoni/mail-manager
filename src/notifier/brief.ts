@@ -1,4 +1,5 @@
 // src/notifier/brief.ts
+import { errorText } from "../util/errors.js";
 import type { GmailClient } from "../gmail/client.js";
 import type { LLMProvider, BriefEmail } from "../llm/provider.js";
 import type { MemoryStore } from "../memory/store.js";
@@ -55,7 +56,7 @@ async function briefAttachments(
     chosen.forEach((a, i) => result.set(a, reads[i] ?? notRead(a, "failed")));
   } catch (err) {
     // readAttachments already isolates each file; this only keeps the brief itself safe.
-    log("brief.attachments_failed", { error: err instanceof Error ? err.message : String(err) });
+    log("brief.attachments_failed", { error: errorText(err) });
     for (const a of chosen) if (!result.has(a)) result.set(a, notRead(a, "failed"));
   }
   const all = [...result.values()];

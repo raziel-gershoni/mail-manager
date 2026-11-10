@@ -5,6 +5,7 @@
 // EVERY function here is best-effort. A failure to show progress must never fail
 // the turn — the owner would rather get an unformatted answer than no answer, so
 // every Telegram error is swallowed and logged.
+import { errorText } from "../util/errors.js";
 import type { Bot } from "grammy";
 import telegramifyMarkdown from "telegramify-markdown";
 import { isRateLimited, messageParts, sendFormatted, sendParts, TELEGRAM_PART_CHARS } from "./send.js";
@@ -19,15 +20,11 @@ export const STREAM_EDIT_MS = 1_500;
 // preview, and "Two" tells the owner nothing.
 export const STREAM_MIN_CHARS = 24;
 
-function errText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
 // Keep the "typing…" status alive for the whole turn. Returns stop() — call it
 // from a `finally` so a thrown turn can't leave the interval running.
 export function startTyping(bot: Bot, chatId: number): () => void {
   const tick = () => {
-    void bot.api.sendChatAction(chatId, "typing").catch(err => log("live.typing_error", { error: errText(err) }));
+    void bot.api.sendChatAction(chatId, "typing").catch(err => log("live.typing_error", { error: errorText(err) }));
   };
   tick(); // immediately, so the status appears before the first model call
   const timer = setInterval(tick, TYPING_REFRESH_MS);
@@ -95,7 +92,7 @@ export function liveReply(bot: Bot, chatId: number, opts: { now?: () => number }
         shownText = text;
       } catch (err) {
         if (isRateLimited(err)) interval *= 2; // back off rather than hammer the chat
-        log("live.flush_error", { error: errText(err) });
+        log("live.flush_error", { error: errorText(err) });
       }
     });
   };
@@ -127,7 +124,7 @@ export function liveReply(bot: Bot, chatId: number, opts: { now?: () => number }
       if (stray === undefined) return chain;
       chain = chain.then(async () => {
         try { await bot.api.deleteMessage(chatId, stray); }
-        catch (err) { log("live.delete_error", { error: errText(err) }); }
+        catch (err) { log("live.delete_error", { error: errorText(err) }); }
       });
       return chain;
     },
@@ -154,10 +151,10 @@ export function liveReply(bot: Bot, chatId: number, opts: { now?: () => number }
         // Formatting failed (bad entities, or the text is already identical).
         // The streamed plain text is still correct — try once more without markup,
         // and if even that fails, leave what's on screen rather than lose the answer.
-        log("live.commit_format_error", { error: errText(err) });
+        log("live.commit_format_error", { error: errorText(err) });
         try { await bot.api.editMessageText(chatId, id, first); }
         catch (err2) {
-          log("live.commit_error", { error: errText(err2) });
+          log("live.commit_error", { error: errorText(err2) });
           // The last streamed text stays on screen, so what follows IS what follows it,
           // not what follows `first`: nothing is shown twice, and a tail the stream
           // never reached still arrives.

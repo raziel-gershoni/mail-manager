@@ -1,4 +1,5 @@
 // src/oauth/google.ts
+import { withoutQuery } from "../util/errors.js";
 import { google } from "googleapis";
 import { OAuth2Client } from "google-auth-library";
 import type { Env } from "../config/env.js";
@@ -68,9 +69,9 @@ export async function authedGmailFor(userId: number, env: Env): Promise<OAuth2Cl
       const enc = encryptSecret(tokens.refresh_token, env.TOKEN_ENC_KEY);
       void db().update(schema.googleAccounts).set({ encRefreshToken: enc, updatedAt: new Date() })
         .where(eq(schema.googleAccounts.id, acct.id))
-        .catch((e) => console.error("failed to persist rotated refresh token", e));
+        .catch((e) => console.error("failed to persist rotated refresh token", withoutQuery(e)));
     } catch (e) {
-      console.error("failed to persist rotated refresh token", e);
+      console.error("failed to persist rotated refresh token", withoutQuery(e));
     }
   });
   return client;
