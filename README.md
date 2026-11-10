@@ -61,7 +61,7 @@ Mail Manager polls each linked Gmail account on a schedule, classifies incoming 
 ## 🚀 Getting started
 
 ### Prerequisites
-- Node.js >= 20
+- Node.js 24
 - A Neon Postgres database
 - A Google Cloud OAuth client (Web) with the Gmail API enabled and the `gmail.modify` scope
 - A Telegram bot (via @BotFather) and your numeric Telegram user id
