@@ -17,6 +17,8 @@ export function htmlToText(html: string): string {
 // The parser's own .text recurses once per nesting level, so a mail nested a few thousand
 // elements deep overflowed the stack. This walks the same tree in the same order with an
 // explicit stack: decoded text nodes, and "\n" for <br>, as .text gives.
+// Entities are decoded per text node, so a legacy entity split by a tag ("&not<b>in;</b>")
+// reads "¬in;" as a browser shows it, not "∉" as decoding the joined string would.
 function textOf(root: HTMLElement): string {
   let out = "";
   const stack: Node[] = [root];

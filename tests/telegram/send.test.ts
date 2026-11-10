@@ -3,7 +3,6 @@
 // as plain text: nothing in them may render as a link, a mailto link or formatting.
 import { describe, it, expect } from "vitest";
 import type { Bot } from "grammy";
-import telegramifyMarkdown from "telegramify-markdown";
 import { messageParts, sendFormatted, sendPlain, splitMessage, TELEGRAM_PART_CHARS } from "../../src/telegram/send.js";
 import { composeSpamReport } from "../../src/weekly/spam-report.js";
 import type { FlaggedSpam, SpamCheck } from "../../src/weekly/spam.js";
@@ -248,8 +247,12 @@ describe("code blocks across a cut", () => {
 });
 
 describe("MarkdownV2 escaping", () => {
-  it("escapes a literal backslash so Telegram shows it", () => {
+  it("escapes a literal backslash in the text actually sent", async () => {
     // A lone "\" would escape the next character and vanish from the rendered message.
-    expect(telegramifyMarkdown("C:\\Users", "escape").trimEnd()).toBe("C:\\\\Users");
+    const { bot, calls } = fakeBot();
+    await sendFormatted(bot, 555, "C:\\Users");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.other?.parse_mode).toBe("MarkdownV2");
+    expect(calls[0]!.text.trimEnd()).toBe("C:\\\\Users");
   });
 });

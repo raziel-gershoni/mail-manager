@@ -21,7 +21,11 @@ export async function enqueue(env: Env, path: "/api/worker", body: unknown): Pro
 export async function verifyQStash(env: Env, req: Request): Promise<unknown> {
   const signature = req.headers.get("upstash-signature") ?? "";
   const bodyText = await req.text();
+  // devMode: false pins the configured keys. Left unset, the SDK reads QSTASH_DEV from the
+  // environment and, if it is "true"/"1", verifies against the signing keys published in
+  // the package, so anyone could forge /api/poll and /api/worker calls.
   const receiver = new Receiver({
+    devMode: false,
     currentSigningKey: env.QSTASH_CURRENT_SIGNING_KEY,
     nextSigningKey: env.QSTASH_NEXT_SIGNING_KEY,
   });
