@@ -3,6 +3,7 @@
 // as plain text: nothing in them may render as a link, a mailto link or formatting.
 import { describe, it, expect } from "vitest";
 import type { Bot } from "grammy";
+import telegramifyMarkdown from "telegramify-markdown";
 import { messageParts, sendFormatted, sendPlain, splitMessage, TELEGRAM_PART_CHARS } from "../../src/telegram/send.js";
 import { composeSpamReport } from "../../src/weekly/spam-report.js";
 import type { FlaggedSpam, SpamCheck } from "../../src/weekly/spam.js";
@@ -243,5 +244,12 @@ describe("code blocks across a cut", () => {
     // Nothing of the code is lost or doubled.
     const lines = parts.join("\n").split("\n").filter(l => l.startsWith("const "));
     expect(lines).toEqual(code.split("\n"));
+  });
+});
+
+describe("MarkdownV2 escaping", () => {
+  it("escapes a literal backslash so Telegram shows it", () => {
+    // A lone "\" would escape the next character and vanish from the rendered message.
+    expect(telegramifyMarkdown("C:\\Users", "escape").trimEnd()).toBe("C:\\\\Users");
   });
 });
