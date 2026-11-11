@@ -13,10 +13,3 @@ next-env.d.ts
 # AI-assisted planning/spec artifacts (kept locally, not published)
 .superpowers/
 docs/superpowers/
-
-# AI instruction files (kept locally, not published)
-CLAUDE.md
-CLAUDE.local.md
-AGENTS.md
-GEMINI.md
-.claude/
