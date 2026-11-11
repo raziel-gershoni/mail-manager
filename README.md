@@ -51,7 +51,7 @@ Mail Manager polls each linked Gmail account on a schedule, classifies incoming 
 **Weekly retrospect: a second look at what the bot did.** Right after the spam check comes the week in review: what was trashed, archived, rescued and undone, the top senders, and new or changed rules. The bot re-reads what it trashed or archived and lists anything that was plausibly a mistake under "⚠️ Worth a look" — it stays read-only until you reply "restore 1" or "restore all". An 🛠 Ops section lists the week's operational issues: an unfinished catch-up, an expired Gmail cursor, a needed reconnect, a failed hourly check, chat reply or weekly report. Both reports are marked done only once they're sent: a run that fails (a Gemini outage included) retries the next hour, up to 3 times a week, then tells you it couldn't — a week is never closed silently. Sender, subject and reason text is defanged (`paypa1[.]com`, `a[at]b[.]com`) so nothing in a report can be tapped.
 
 ## 🛠️ Tech stack
-**Frontend:** Next.js 15 (App Router), React 19 — public landing page and a Telegram Mini App for settings, with English/Hebrew i18n and RTL.
+**Frontend:** Next.js 16 (App Router, webpack build), React 19 — public landing page and a Telegram Mini App for settings, with English/Hebrew i18n and RTL.
 **Backend / API:** Next.js route handlers on Vercel serverless; grammY for the Telegram bot.
 **Data:** Neon Postgres via Drizzle ORM (migrations with drizzle-kit).
 **AI:** Google Gemini via `@google/genai` for classification and the agentic tool loop.
