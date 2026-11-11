@@ -463,7 +463,7 @@ function charged(d: { gmail: any; seen: any }, stepMs = 50): () => number {
   return () => t;
 }
 
-// The shape googleapis throws for an HTTP 404 (a GaxiosError: status on the error and
+// The shape the Gmail client throws for an HTTP 404 (a GaxiosError: status on the error and
 // on its response). history.list returns it when startHistoryId is older than the
 // history Gmail still keeps.
 function gaxiosError(status: number, message: string): Error {

@@ -24,7 +24,7 @@ function judging(fn: (items: ActedCandidate[]) => { verdicts: ActedVerdict[]; un
 }
 const allFine = judging(items => ({ verdicts: items.map(i => ({ id: i.id, looksWrong: false, reason: "routine" })), unjudged: 0 }));
 const noDeadline = { deadline: Number.POSITIVE_INFINITY, now: () => 0 };
-// The shape googleapis throws for an HTTP error (a GaxiosError).
+// The shape the Gmail client throws for an HTTP error (a GaxiosError).
 function gaxiosError(status: number, message: string): Error {
   return Object.assign(new Error(message), { status, response: { status, data: { error: { code: status, message } } } });
 }

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { isNotFound } from "../../src/gmail/errors.js";
 
 describe("isNotFound", () => {
-  it("matches the googleapis 404 shape (numeric code + status)", () => {
+  it("matches the Gmail client's 404 shape (numeric code + status)", () => {
     // Shape observed in production: `{ status: 404, code: 404, message: "Requested entity was not found." }`
     expect(isNotFound({ status: 404, code: 404, message: "Requested entity was not found." })).toBe(true);
   });
