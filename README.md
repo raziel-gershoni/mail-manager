@@ -55,7 +55,7 @@ Mail Manager polls each linked Gmail account on a schedule, classifies incoming 
 **Backend / API:** Next.js route handlers on Vercel serverless; grammY for the Telegram bot.
 **Data:** Neon Postgres via Drizzle ORM (migrations with drizzle-kit).
 **AI:** Google Gemini via `@google/genai` for classification and the agentic tool loop.
-**Email:** Gmail API (`googleapis`, `gmail.modify`) with cursor-based history sync.
+**Email:** Gmail API (`@googleapis/gmail`, `gmail.modify`) with cursor-based history sync.
 **Infra:** Upstash QStash for the scheduled poll cron and signed job delivery; Vercel for hosting and deploy-time migrations.
 
 ## 🚀 Getting started

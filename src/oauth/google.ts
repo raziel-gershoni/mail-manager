@@ -1,5 +1,5 @@
 // src/oauth/google.ts
-import { google } from "googleapis";
+import { gmail as gmailApi } from "@googleapis/gmail";
 import { OAuth2Client } from "google-auth-library";
 import type { Env } from "../config/env.js";
 import { db, schema } from "../db/client.js";
@@ -10,7 +10,9 @@ import { withoutQuery } from "../util/errors.js";
 const SCOPE = "https://www.googleapis.com/auth/gmail.modify";
 
 export function oauthClient(env: Env): OAuth2Client {
-  return new google.auth.OAuth2(env.GOOGLE_CLIENT_ID, env.GOOGLE_CLIENT_SECRET, env.GOOGLE_REDIRECT_URI);
+  return new OAuth2Client({
+    clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET, redirectUri: env.GOOGLE_REDIRECT_URI,
+  });
 }
 
 export function buildAuthUrl(env: Env, state: string): string {
@@ -35,7 +37,7 @@ export async function exchangeAndStore(env: Env, code: string, userId: number): 
   const { tokens } = await client.getToken(code);
   if (!tokens.refresh_token) throw new Error("no refresh_token (re-consent with prompt=consent)");
   client.setCredentials(tokens);
-  const gmail = google.gmail({ version: "v1", auth: client });
+  const gmail = gmailApi({ version: "v1", auth: client });
   const profile = await gmail.users.getProfile({ userId: "me" });
   const email = profile.data.emailAddress;
   if (!email) throw new Error("could not resolve account email from gmail profile");

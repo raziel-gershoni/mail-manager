@@ -18,12 +18,12 @@
   },
   "dependencies": {
     "@google/genai": "^2.32.0",
+    "@googleapis/gmail": "^22.0.2",
     "@grammyjs/auto-retry": "^2.0.2",
     "@neondatabase/serverless": "^1.2.0",
     "@upstash/qstash": "^2.12.1",
     "drizzle-orm": "^0.45.4",
     "google-auth-library": "^11.3.4",
-    "googleapis": "^189.0.0",
     "grammy": "^1.46.0",
     "next": "^15.5.29",
     "node-html-parser": "^9.0.7",

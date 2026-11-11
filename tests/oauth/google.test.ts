@@ -15,5 +15,6 @@ describe("buildAuthUrl", () => {
     expect(url.searchParams.get("scope")).toBe("https://www.googleapis.com/auth/gmail.modify");
     expect(url.searchParams.get("state")).toBe("state123");
     expect(url.searchParams.get("client_id")).toBe("cid");
+    expect(url.searchParams.get("redirect_uri")).toBe("https://app/api/oauth/callback");
   });
 });

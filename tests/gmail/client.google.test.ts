@@ -1,5 +1,5 @@
 // tests/gmail/client.google.test.ts
-// googleGmailClient against a mocked googleapis: pins what goes on the wire, and that the
+// googleGmailClient against a mocked @googleapis/gmail: pins what goes on the wire, and that the
 // REAL client (not just the fake) parses bodies and attachments out of the part tree.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { KB, filePart, inlineImage, multipart, rawMessage, textPart, withAttachments } from "../fixtures/mime.js";
@@ -8,25 +8,23 @@ import type { AttachmentMeta } from "../../src/gmail/parts.js";
 const calls = vi.hoisted(() => [] as { method: string; params: any }[]);
 const api = vi.hoisted(() => ({ message: undefined as unknown, attachment: undefined as unknown }));
 
-vi.mock("googleapis", () => ({
-  google: {
-    gmail: () => ({
-      users: {
-        messages: {
-          async get(params: any) { calls.push({ method: "messages.get", params }); return { data: api.message }; },
-          attachments: {
-            async get(params: any) { calls.push({ method: "attachments.get", params }); return { data: api.attachment }; },
-          },
+vi.mock("@googleapis/gmail", () => ({
+  gmail: () => ({
+    users: {
+      messages: {
+        async get(params: any) { calls.push({ method: "messages.get", params }); return { data: api.message }; },
+        attachments: {
+          async get(params: any) { calls.push({ method: "attachments.get", params }); return { data: api.attachment }; },
         },
       },
-    }),
-  },
+    },
+  }),
 }));
 
 const { googleGmailClient } = await import("../../src/gmail/client.js");
 const client = () => googleGmailClient({} as any);
 
-describe("googleGmailClient (googleapis mocked)", () => {
+describe("googleGmailClient (@googleapis/gmail mocked)", () => {
   beforeEach(() => { calls.length = 0; api.message = undefined; api.attachment = undefined; });
 
   it("getMeta fetches format full (to see the part tree) and keeps only the headers callers read", async () => {
@@ -56,7 +54,7 @@ describe("googleGmailClient (googleapis mocked)", () => {
   });
 });
 
-describe("googleGmailClient.getAttachment (googleapis mocked)", () => {
+describe("googleGmailClient.getAttachment (@googleapis/gmail mocked)", () => {
   beforeEach(() => { calls.length = 0; api.message = undefined; api.attachment = undefined; });
   const pdf: AttachmentMeta = { partId: "1", attachmentId: "att-1", filename: "invoice.pdf", mimeType: "application/pdf", size: 120 * KB, inline: false };
 

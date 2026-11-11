@@ -1,4 +1,4 @@
-import { google } from "googleapis";
+import { gmail as gmailApi } from "@googleapis/gmail";
 import type { OAuth2Client } from "google-auth-library";
 import { parseMessage, type EmailMeta, type GmailRawMessage } from "./headers.js";
 import { findBodyPart, findPart, base64UrlToBase64, type AttachmentMeta } from "./parts.js";
@@ -46,7 +46,7 @@ export interface GmailClient {
 }
 
 export function googleGmailClient(auth: OAuth2Client): GmailClient {
-  const gmail = google.gmail({ version: "v1", auth });
+  const gmail = gmailApi({ version: "v1", auth });
   const c: GmailClient = {
     async currentHistoryId() {
       const res = await gmail.users.getProfile({ userId: "me" });
