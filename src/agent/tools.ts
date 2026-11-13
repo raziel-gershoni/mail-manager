@@ -1,6 +1,7 @@
 // src/agent/tools.ts
 import type { GmailClient } from "../gmail/client.js";
 import { GMAIL_FETCH_CONCURRENCY } from "../gmail/client.js";
+import { isDraft } from "../gmail/headers.js";
 import type { MemoryStore, Verdict } from "../memory/store.js";
 import type { ToolSchema, LLMProvider } from "../llm/provider.js";
 import type { ProposalRepo, ActionLogRepo } from "../cleanup/proposals.js";
@@ -48,10 +49,11 @@ export function readOnlyTools(): ToolDef[] {
   return [
     {
       mutating: false,
-      schema: { name: "search_gmail", description: "Search the owner's mail with a Gmail query; returns message metadata (no bodies), with each message's attachments as a one-line summary. Searches the INBOX by default — to look beyond it, include an in: operator (e.g. in:anywhere = all mail incl. archived/trash/spam; in:sent; in:trash).",
+      schema: { name: "search_gmail", description: "Search the owner's mail with a Gmail query; returns message metadata (no bodies), with each message's attachments as a one-line summary. Searches the INBOX by default — to look beyond it, include an in: operator (e.g. in:anywhere = all mail incl. archived/trash/spam; in:sent; in:trash). The owner's drafts are never returned: if asked about drafts, say you can't see them rather than that there are none.",
         parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
       async run(args, ctx) {
-        const metas = await ctx.gmail.search(scopeSearchToInbox(String(args.query ?? "")));
+        // Drafts are left out (see isDraft): the agent never sees, reads or acts on one.
+        const metas = (await ctx.gmail.search(scopeSearchToInbox(String(args.query ?? "")))).filter(m => !isDraft(m));
         // Attachments as one summary line: the raw list carries Gmail's attachment ids (long
         // opaque tokens), and 25 rows of those could push the result past the 40k tool cap.
         return metas.map(m => ({ ...m, attachments: attachmentLine(m.attachments), rule: ruleTag(ctx.memory.findRuleFor(m.fromEmail, m.fromDomain)) }));

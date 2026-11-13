@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { GmailClient } from "../gmail/client.js";
-import type { EmailMeta } from "../gmail/headers.js";
+import { isDraft, type EmailMeta } from "../gmail/headers.js";
 import type { MemoryStore } from "../memory/store.js";
 import type { LLMProvider } from "../llm/provider.js";
 import type { ActionLogRepo } from "../cleanup/proposals.js";
@@ -127,6 +127,13 @@ export async function runPoll(deps: PollDeps): Promise<PollResult> {
     if (email.labelIds.includes("SENT")) {
       log("poll.msg", { userId: deps.userId, ...logMeta(email), action: "skipped-self" });
       await deps.seen.record(deps.userId, { messageId: id, surfaced: false, verdict: "skipped", reason: "self" });
+      continue;
+    }
+    // The owner's own draft (see isDraft): skipped the same way, before any rule or LLM,
+    // so it is never briefed, judged, trashed or archived.
+    if (isDraft(email)) {
+      log("poll.msg", { userId: deps.userId, ...logMeta(email), action: "skipped-draft" });
+      await deps.seen.record(deps.userId, { messageId: id, surfaced: false, verdict: "skipped", reason: "draft" });
       continue;
     }
     processed++;

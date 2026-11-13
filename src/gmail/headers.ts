@@ -9,7 +9,7 @@ export interface GmailRawMessage {
 export interface EmailMeta {
   id: string; threadId: string; from: string; fromEmail: string; fromDomain: string;
   subject: string; snippet: string; date: Date; headers: Record<string, string>;
-  labelIds: string[]; // e.g. ["INBOX","SENT"]; a SENT label means the owner sent it (not incoming)
+  labelIds: string[]; // e.g. ["INBOX","SENT"]; SENT or DRAFT means it's the owner's own mail (not incoming)
   attachments: AttachmentMeta[]; // the message's files, tiny images dropped; names are UNTRUSTED sender text
 }
 
@@ -17,6 +17,13 @@ export interface EmailMeta {
 // chains run to kilobytes). Keep only the ones callers read, so EmailMeta — spread into
 // search_gmail's tool output — stays as lean as it was under format "metadata".
 const KEPT_HEADERS = new Set(["from", "subject", "date", "list-unsubscribe", "precedence"]);
+
+// The owner's own unsent draft. Each save replaces it with a new message id, and a reply
+// draft inside an inbox thread shows up in the "added to inbox" history, so anything
+// that lists mail must leave it out: it is never incoming mail and never safe to act on.
+export function isDraft(m: { labelIds: string[] }): boolean {
+  return m.labelIds.includes("DRAFT");
+}
 
 function parseAddress(from: string): { email: string; domain: string } {
   const m = from.match(/<([^>]+)>/);

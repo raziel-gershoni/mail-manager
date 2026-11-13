@@ -35,6 +35,22 @@ describe("dispatchTool", () => {
     const r = await dispatchTool("search_gmail", { query: "from:y.com" }, ctx(), tools) as any[];
     expect(r[0].id).toBe("a");
   });
+  it("search_gmail leaves out the owner's drafts", async () => {
+    const c = {
+      userId: 1,
+      gmail: fakeGmailClient({
+        historyId: "1", addedSince: {},
+        messages: {
+          a: { id: "a", threadId: "t", snippet: "s", labelIds: ["INBOX"], payload: { headers: [{ name: "From", value: "x@y.com" }, { name: "Subject", value: "Hi" }] } },
+          d: { id: "d", threadId: "t", snippet: "s", labelIds: ["DRAFT"], payload: { headers: [{ name: "From", value: "me@z.com" }, { name: "Subject", value: "Re: Hi" }] } },
+        },
+        searchResults: { "in:anywhere Hi": ["a", "d"] },
+      }),
+      memory: inMemoryStore(),
+    };
+    const r = await dispatchTool("search_gmail", { query: "in:anywhere Hi" }, c, tools) as any[];
+    expect(r.map(m => m.id)).toEqual(["a"]);
+  });
   it("count_messages scopes a bare query to the inbox", async () => {
     const r = await dispatchTool("count_messages", { query: "from:y.com" }, ctx(), tools) as { query: string; count: number };
     expect(r).toEqual({ query: "in:inbox from:y.com", count: 1 }); // bare query defaulted to the inbox

@@ -175,6 +175,35 @@ describe("runPoll", () => {
     expect(await d.seen.get(1, "mine")).toEqual({ messageId: "mine", surfaced: false, verdict: "skipped", reason: "self" });
   });
 
+  it("skips the owner's own draft (DRAFT label) — never counted, ruled, judged, surfaced or acted on", async () => {
+    // A reply draft inside an inbox thread shows up in the "added to inbox" history (seen
+    // in prod), and every save gives it a new message id. It carries DRAFT, not SENT.
+    // The trash rule on the draft's sender proves the skip runs before any rule.
+    const store = inMemoryStore();
+    store.upsertRule({ matchValue: "x.com", scope: "domain", verdict: "unimportant", description: "x", action: "trash" });
+    const judged: string[] = [];
+    const d = deps({
+      store,
+      llm: fakeLLM(i => { judged.push(i.email.id); return { important: true, suspicious: false, reason: "x" }; }),
+      gmail: fakeGmailClient({
+        historyId: "200",
+        addedSince: { "100": ["draft", "a"] },
+        messages: {
+          draft: { id:"draft", threadId:"t", snippet:"", labelIds:["DRAFT"], payload:{ headers:[{name:"From",value:"me@x.com"},{name:"Subject",value:"Re: Lunch"}] } },
+          a: { id:"a", threadId:"t", snippet:"", payload:{ headers:[{name:"From",value:"jane@y.com"},{name:"Subject",value:"Lunch"}] } },
+        },
+      }),
+    });
+    await d.sync.set(1, "100");
+    const r = await runPoll(d);
+    expect(r.processed).toBe(1);                                      // only jane counted
+    expect(r.important.map((i: any) => i.messageId)).toEqual(["a"]);  // the draft is never briefed
+    expect(judged).toEqual(["a"]);                                    // nor sent to the LLM
+    expect(r.unruled).toEqual([]);
+    expect(d.gmail.trashedIds!()).toEqual([]);                        // the trash rule never reached it
+    expect(await d.seen.get(1, "draft")).toEqual({ messageId: "draft", surfaced: false, verdict: "skipped", reason: "draft" });
+  });
+
   it("skips messages already seen", async () => {
     const d = deps();
     await d.sync.set(1, "100");
